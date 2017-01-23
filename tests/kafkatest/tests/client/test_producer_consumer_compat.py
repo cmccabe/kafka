@@ -55,7 +55,6 @@ class TestProducerConsumerCompat(ProduceConsumeValidateTest):
 
     @parametrize(broker_version=str(TRUNK))
     @parametrize(broker_version=str(LATEST_0_10_0))
-    @parametrize(broker_version=str(LATEST_0_10_1))
     def test_produce_consume(self, broker_version):
         print("running producer_consumer_compat with broker_version = %s" % broker_version)
         self.kafka.set_version(KafkaVersion(broker_version))
