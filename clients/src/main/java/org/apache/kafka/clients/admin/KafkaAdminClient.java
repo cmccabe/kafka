@@ -50,6 +50,8 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteTopicsRequest;
 import org.apache.kafka.common.requests.DeleteTopicsResponse;
+import org.apache.kafka.common.requests.ListTopicsRequest;
+import org.apache.kafka.common.requests.ListTopicsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.utils.Time;
@@ -871,8 +873,36 @@ public class KafkaAdminClient extends AdminClient {
     }
 
     @Override
-    public ListTopicsResults listTopics(ListTopicsOptions options) {
+    public ListTopicsResults listTopics(final ListTopicsOptions options) {
         final KafkaFuture<Map<String, TopicListing>> topicListingFuture = new KafkaFuture<>();
+        runnable.call(new Call("listTopics", getDeadlineMs(options.timeoutMs()), new LeastLoadedNodeProvider()) {
+            @Override
+            AbstractRequest.Builder createRequest(int timeoutMs) {
+                return new ListTopicsRequest.Builder(options.listInternal());
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                ListTopicsResponse response = (ListTopicsResponse) abstractResponse;
+                if (response.error() != Errors.NONE) {
+                    throw response.error().exception();
+                }
+                Map<String, TopicListing> topicListing = new HashMap<>();
+                for (ListTopicsResponse.Topic topic : response.topics()) {
+                    topicListing.put(topic.name(), new TopicListing(topic.name(), topic.internal()));
+                }
+                topicListingFuture.complete(topicListing);
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                topicListingFuture.completeExceptionally(throwable);
+            }
+        });
+        return new ListTopicsResults(topicListingFuture);
+    }
+
+    /*
         runnable.call(new Call("listTopics", getDeadlineMs(options.timeoutMs()), new LeastLoadedNodeProvider()) {
             @Override
             AbstractRequest.Builder createRequest(int timeoutMs) {
@@ -895,8 +925,7 @@ public class KafkaAdminClient extends AdminClient {
                 topicListingFuture.completeExceptionally(throwable);
             }
         });
-        return new ListTopicsResults(topicListingFuture);
-    }
+    */
 
     @Override
     public DescribeTopicsResults describeTopics(final Collection<String> topicNames, DescribeTopicsOptions options) {

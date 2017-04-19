@@ -35,6 +35,7 @@ import kafka.network.RequestChannel.{Request, Response, Session}
 import kafka.security.auth
 import kafka.security.auth.{Authorizer, ClusterAction, Create, Delete, Describe, Group, Operation, Read, Resource, Write}
 import kafka.utils.{Exit, Logging, ZKGroupTopicDirs, ZkUtils}
+import org.apache.kafka.clients.admin.TopicListing
 import org.apache.kafka.common.errors.{ClusterAuthorizationException, InvalidRequestException, NotLeaderForPartitionException, TopicExistsException, UnknownTopicOrPartitionException, UnsupportedForMessageFormatException}
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.metrics.Metrics
@@ -109,6 +110,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.END_TXN => handleEndTxnRequest(request)
         case ApiKeys.WRITE_TXN_MARKERS => handleWriteTxnMarkersRequest(request)
         case ApiKeys.TXN_OFFSET_COMMIT => handleTxnOffsetCommitRequest(request)
+        case ApiKeys.LIST_TOPICS => handleListTopicsRequest(request)
       }
     } catch {
       case e: FatalExitError => throw e
@@ -1357,6 +1359,19 @@ class KafkaApis(val requestChannel: RequestChannel,
   def handleTxnOffsetCommitRequest(request: Request): Unit = {
     val emptyResponse = new java.util.HashMap[TopicPartition, Errors]()
     requestChannel.sendResponse(new RequestChannel.Response(request, new TxnOffsetCommitResponse(emptyResponse)))
+  }
+
+  def handleListTopicsRequest(request: Request): Unit = {
+    val metadataRequest = request.body[ListTopicsRequest]
+    val requestVersion = request.header.apiVersion()
+
+    val allTopicNames = metadataCache.getAllTopics()
+    var authorizedTopics = allTopicNames.filter(
+        topicName => authorize(request.session, Describe, new Resource(auth.Topic, topicName)))
+    val topics = allTopicNames.map(topicName =>
+        new ListTopicsResponse.Topic(topicName, Topic.isInternal(topicName)))
+    val responseBody = new ListTopicsResponse(Errors.NONE, topics.toList.asJava);
+    requestChannel.sendResponse(new RequestChannel.Response(request, responseBody))
   }
 
   def handleOffsetForLeaderEpochRequest(request: RequestChannel.Request): Unit = {

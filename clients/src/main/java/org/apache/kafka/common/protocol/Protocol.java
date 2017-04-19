@@ -1435,6 +1435,16 @@ public class Protocol {
     public static final Schema[] TXN_OFFSET_COMMIT_REQUEST = new Schema[] {TXN_OFFSET_COMMIT_REQUEST_V0};
     public static final Schema[] TXN_OFFSET_COMMIT_RESPONSE = new Schema[] {TXN_OFFSET_COMMIT_RESPONSE_V0};
 
+    public static final Schema TOPIC_LISTING = new Schema(new Field("name", STRING), new Field("internal", BOOLEAN));
+
+    public static final Schema LIST_TOPICS_REQUEST_V0 = new Schema(new Field("list_internal", BOOLEAN));
+
+    public static final Schema LIST_TOPICS_RESPONSE_V0 = new Schema(new Field("error_code", INT16),
+                                                                    new Field("topics", new ArrayOf(TOPIC_LISTING)));
+
+    public static final Schema[] LIST_TOPICS_REQUEST = new Schema[] {LIST_TOPICS_REQUEST_V0};
+    public static final Schema[] LIST_TOPICS_RESPONSE = new Schema[] {LIST_TOPICS_RESPONSE_V0};
+
     /* an array of all requests and responses with all schema versions; a null value in the inner array means that the
      * particular version is not supported */
     public static final Schema[][] REQUESTS = new Schema[ApiKeys.MAX_API_KEY + 1][];
@@ -1474,6 +1484,7 @@ public class Protocol {
         REQUESTS[ApiKeys.END_TXN.id] = END_TXN_REQUEST;
         REQUESTS[ApiKeys.WRITE_TXN_MARKERS.id] = WRITE_TXN_REQUEST;
         REQUESTS[ApiKeys.TXN_OFFSET_COMMIT.id] = TXN_OFFSET_COMMIT_REQUEST;
+        REQUESTS[ApiKeys.LIST_TOPICS.id] = LIST_TOPICS_REQUEST;
 
         RESPONSES[ApiKeys.PRODUCE.id] = PRODUCE_RESPONSE;
         RESPONSES[ApiKeys.FETCH.id] = FETCH_RESPONSE;
@@ -1504,6 +1515,7 @@ public class Protocol {
         RESPONSES[ApiKeys.END_TXN.id] = END_TXN_RESPONSE;
         RESPONSES[ApiKeys.WRITE_TXN_MARKERS.id] = WRITE_TXN_RESPONSE;
         RESPONSES[ApiKeys.TXN_OFFSET_COMMIT.id] = TXN_OFFSET_COMMIT_RESPONSE;
+        RESPONSES[ApiKeys.LIST_TOPICS.id] = LIST_TOPICS_RESPONSE;
 
         /* set the minimum and maximum version of each api */
         for (ApiKeys api : ApiKeys.values()) {

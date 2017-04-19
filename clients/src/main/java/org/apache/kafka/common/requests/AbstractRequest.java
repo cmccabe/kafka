@@ -192,6 +192,9 @@ public abstract class AbstractRequest extends AbstractRequestResponse {
             case TXN_OFFSET_COMMIT:
                 request = new TxnOffsetCommitRequest(struct, version);
                 break;
+            case LIST_TOPICS:
+                request = new ListTopicsRequest(struct, version);
+                break;
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `getRequest`, the " +
                         "code should be updated to do so.", apiKey));

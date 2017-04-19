@@ -107,6 +107,8 @@ public abstract class AbstractResponse extends AbstractRequestResponse {
                 return new WriteTxnMarkersResponse(struct);
             case TXN_OFFSET_COMMIT:
                 return new TxnOffsetCommitResponse(struct);
+            case LIST_TOPICS:
+                return new ListTopicsResponse(struct);
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `getResponse`, the " +
                         "code should be updated to do so.", apiKey));

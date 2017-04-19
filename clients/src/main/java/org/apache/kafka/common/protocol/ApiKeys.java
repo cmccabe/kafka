@@ -53,7 +53,8 @@ public enum ApiKeys {
     ADD_OFFSETS_TO_TXN(25, "AddOffsetsToTxn"),
     END_TXN(26, "EndTxn"),
     WRITE_TXN_MARKERS(27, "WriteTxnMarkers"),
-    TXN_OFFSET_COMMIT(28, "TxnOffsetCommit");
+    TXN_OFFSET_COMMIT(28, "TxnOffsetCommit"),
+    LIST_TOPICS(29, "ListTopics");
 
     private static final ApiKeys[] ID_TO_TYPE;
     private static final int MIN_API_KEY = 0;
