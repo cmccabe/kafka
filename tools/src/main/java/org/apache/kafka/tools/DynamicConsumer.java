@@ -25,11 +25,10 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.utils.Exit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.misc.Signal;
-import sun.misc.SignalHandler;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -120,6 +119,10 @@ public class DynamicConsumer {
 
     private final TestConfig testConfig;
 
+    private long prevTimeMinutes = 0;
+
+    private int messagesThisMinute = 0;
+
     private int curTopicIndex = 0;
 
     private int curTopicMessageCount = 0;
@@ -134,27 +137,19 @@ public class DynamicConsumer {
         this.testConfig = testConfig;
         this.consumerProps = new Properties();
         if (testConfig.propertiesFile != null) {
-            log.debug("loading properties file {}", testConfig.propertiesFile);
+            log.warn("loading properties file {}", testConfig.propertiesFile);
             try (InputStream propStream = new FileInputStream(testConfig.propertiesFile)) {
                 consumerProps.load(propStream);
             }
         }
         consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, testConfig.bootstrapServer);
         consumerProps.put(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, 512);
-        this.consumer = new KafkaConsumer<>(consumerProps);
+        ByteArrayDeserializer deserializer = new ByteArrayDeserializer();
+        this.consumer = new KafkaConsumer<>(consumerProps, deserializer, deserializer);
     }
 
     private String curTopicName() {
         return String.format("%s%06d", testConfig.topicPrefix, curTopicIndex);
-    }
-
-    private void installSignalHandler() {
-        Signal.handle(new Signal("USR1"), new SignalHandler() {
-            public void handle(Signal sig) {
-                closing.set(true);
-            }
-        });
-        log.info("Installed signal handler for USR1.");
     }
 
     private void installShutdownHook() {
@@ -164,36 +159,46 @@ public class DynamicConsumer {
                 throttleLatch.countDown();
             }
         });
-        log.info("Installed shutdown hook.");
+        log.warn("Installed shutdown hook.");
     }
 
     private void subscribeToCurTopic() {
         consumer.subscribe(Collections.singleton(curTopicName()));
-        log.info("Subscribed to {}.", curTopicName());
+        log.warn("Subscribed to {}.", curTopicName());
     }
 
     void run() throws Exception {
-        installSignalHandler();
+        installShutdownHook();
 
         subscribeToCurTopic();
-        System.out.println("{\"name\" : \"startup_complete\"");
+        System.out.println("{\"name\" : \"startup_complete\"}");
         while (!closing.get()) {
-            if (curTopicMessageCount >= testConfig.messagesPerTopic) {
-                log.info("Received {} messages for {}.  Advancing topic counter.",
-                    curTopicMessageCount, curTopicName());
+            long curTimeMs = System.currentTimeMillis();
+            long curTimeMinutes = TimeUnit.MILLISECONDS.toMinutes(curTimeMs);
+            if (curTimeMinutes != prevTimeMinutes) {
+                log.warn("Received {} message(s) in the last minute.  curTopicName={}, curTopicMessageCount={}",
+                        messagesThisMinute, curTopicName(), curTopicMessageCount);
+                messagesThisMinute = 0;
+                prevTimeMinutes = curTimeMinutes;
+            } else if (curTopicMessageCount >= testConfig.messagesPerTopic) {
+                log.warn("Received {} messages for {}.  Advancing topic counter.",
+                        curTopicMessageCount, curTopicName());
                 curTopicMessageCount = 0;
                 curTopicIndex++;
                 subscribeToCurTopic();
+            } else {
+                ConsumerRecords<byte[], byte[]> records = consumer.poll(0);
+                for (Iterator<ConsumerRecord<byte[], byte[]>> iter = records.iterator(); iter.hasNext(); ) {
+                    iter.next();
+                    curTopicMessageCount++;
+                    messagesThisMinute++;
+                    log.warn("curTopicName={}, curTopicMessageCount={}, messagesThisMinute={}.",
+                        curTopicName(), curTopicMessageCount, messagesThisMinute);
+                }
+                throttleLatch.await(1, TimeUnit.MILLISECONDS);
             }
-            ConsumerRecords<byte[], byte[]> records = consumer.poll(0);
-            for (Iterator<ConsumerRecord<byte[], byte[]>> iter = records.iterator(); iter.hasNext();) {
-                iter.next();
-                curTopicMessageCount++;
-                log.debug("curTopicName={}, curTopicMessageCount={}.", curTopicName(), curTopicMessageCount);
-            }
-            throttleLatch.await(1, TimeUnit.MILLISECONDS);
         }
         consumer.close();
-        System.out.println("{\"name\" : \"shutdown_complete\"");
+        System.out.println("{\"name\" : \"shutdown_complete\"}");
     }
 }

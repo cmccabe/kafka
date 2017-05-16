@@ -27,6 +27,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Exit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -149,7 +150,7 @@ public class DynamicProducer {
 
     private final Properties producerProps;
 
-    private final KafkaProducer<byte[], byte[]> producer;
+    private final KafkaProducer<String, String> producer;
 
     private final AdminClient adminClient;
 
@@ -159,14 +160,14 @@ public class DynamicProducer {
         this.testConfig = testConfig;
         this.producerProps = new Properties();
         if (testConfig.propertiesFile != null) {
-            log.debug("loading properties file {}", testConfig.propertiesFile);
+            log.warn("loading properties file {}", testConfig.propertiesFile);
             try (InputStream propStream = new FileInputStream(testConfig.propertiesFile)) {
                 producerProps.load(propStream);
             }
         }
         producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, testConfig.bootstrapServer);
-        ByteArraySerializer serializer = new ByteArraySerializer();
-        this.producer = new KafkaProducer<byte[], byte[]>(producerProps, serializer, serializer);
+        StringSerializer serializer = new StringSerializer();
+        this.producer = new KafkaProducer<String, String>(producerProps, serializer, serializer);
         this.adminClient = AdminClient.create(new AdminClientConfig(producerProps));
     }
 
@@ -181,13 +182,13 @@ public class DynamicProducer {
                 latch.countDown();
             }
         });
-        log.info("Installed shutdown hook.");
+        log.warn("Installed shutdown hook.");
     }
 
     private boolean canDescribeTopic(String topicName) {
         if (adminClient.describeTopics(Collections.singleton(topicName)).all().isCompletedExceptionally())
             return false;
-        log.debug("Successfully described topic {}.", topicName);
+        log.warn("Successfully described topic {}.", topicName);
         return true;
     }
 
@@ -205,34 +206,34 @@ public class DynamicProducer {
     void run() throws Exception {
         installShutdownHook();
 
-        System.out.println("{\"name\" : \"startup_complete\"");
+        System.out.println("{\"name\" : \"startup_complete\"}");
         while (!closing.get()) {
             long curTimeMs = System.currentTimeMillis();
             long curTimeMinutes = TimeUnit.MILLISECONDS.toMinutes(curTimeMs);
             if (curTimeMinutes != prevTimeMinutes) {
+                log.warn("Sent {} message(s) in the last minute.  curTopicName={}", messagesThisMinute, curTopicName());
                 messagesThisMinute = 0;
                 prevTimeMinutes = curTimeMinutes;
             } else if (messagesThisMinute > testConfig.maxMessagesPerMinute) {
                 long remainderMs =
                     1000 - (curTimeMs - TimeUnit.MINUTES.toMillis(curTimeMinutes));
                 latch.await(remainderMs, TimeUnit.MILLISECONDS);
-            } else if (curTopicMessageCount >= testConfig.messagesPerTopic) {
-                log.info("Sent {} messages for {}.  Advancing topic counter.",
+            } else if (curTopicMessageCount > testConfig.messagesPerTopic) {
+                log.warn("Sent {} messages for {}.  Flushing and advancing topic counter.",
                     curTopicMessageCount, curTopicName());
+                producer.flush();
                 curTopicMessageCount = 0;
                 curTopicIndex++;
                 createTopic();
             } else {
-                byte[] key = curTopicName().getBytes(StandardCharsets.UTF_8);
-                byte[] value = ByteBuffer.allocate(4).putInt(curTopicMessageCount).array();
-                ProducerRecord record = new ProducerRecord(curTopicName(), key, value);
+                ProducerRecord record = new ProducerRecord(curTopicName(), Integer.toString(curTopicMessageCount));
                 curTopicMessageCount++;
                 messagesThisMinute++;
-                log.debug("curTopicName={}, curTopicMessageCount={}.", curTopicName(), curTopicMessageCount);
+                log.warn("curTopicName={}, curTopicMessageCount={}.", curTopicName(), curTopicMessageCount);
                 producer.send(record);
             }
         }
         producer.close();
-        System.out.println("{\"name\" : \"shutdown_complete\"");
+        System.out.println("{\"name\" : \"shutdown_complete\"}");
     }
 }
