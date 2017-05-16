@@ -148,7 +148,7 @@ public class AdminClientConfig extends AbstractConfig {
                                 .withClientSaslSupport();
     }
 
-    AdminClientConfig(Map<?, ?> props) {
+    public AdminClientConfig(Map<?, ?> props) {
         super(CONFIG, props);
     }
 
