@@ -146,7 +146,7 @@ public class DynamicProducer {
 
     private long prevTimeMinutes = 0;
 
-    private int messagesThisMinute = 0;
+    private int curMinuteMessageCount = 0;
 
     private final Properties producerProps;
 
@@ -211,14 +211,14 @@ public class DynamicProducer {
             long curTimeMs = System.currentTimeMillis();
             long curTimeMinutes = TimeUnit.MILLISECONDS.toMinutes(curTimeMs);
             if (curTimeMinutes != prevTimeMinutes) {
-                log.warn("Sent {} message(s) in the last minute.  curTopicName={}", messagesThisMinute, curTopicName());
-                messagesThisMinute = 0;
+                log.warn("Sent {} message(s) in the last minute.  curTopicName={}", curMinuteMessageCount, curTopicName());
+                curMinuteMessageCount = 0;
                 prevTimeMinutes = curTimeMinutes;
-            } else if (messagesThisMinute > testConfig.maxMessagesPerMinute) {
+            } else if (curMinuteMessageCount >= testConfig.maxMessagesPerMinute) {
                 long remainderMs =
                     1000 - (curTimeMs - TimeUnit.MINUTES.toMillis(curTimeMinutes));
                 latch.await(remainderMs, TimeUnit.MILLISECONDS);
-            } else if (curTopicMessageCount > testConfig.messagesPerTopic) {
+            } else if (curTopicMessageCount >= testConfig.messagesPerTopic) {
                 log.warn("Sent {} messages for {}.  Flushing and advancing topic counter.",
                     curTopicMessageCount, curTopicName());
                 producer.flush();
@@ -228,9 +228,10 @@ public class DynamicProducer {
             } else {
                 ProducerRecord record = new ProducerRecord(curTopicName(), Integer.toString(curTopicMessageCount));
                 curTopicMessageCount++;
-                messagesThisMinute++;
-                log.warn("curTopicName={}, curTopicMessageCount={}.", curTopicName(), curTopicMessageCount);
+                curMinuteMessageCount++;
                 producer.send(record);
+                log.warn("Sent {}/{} message(s) to {}",
+                    curTopicMessageCount, testConfig.messagesPerTopic, curTopicName());
             }
         }
         producer.close();

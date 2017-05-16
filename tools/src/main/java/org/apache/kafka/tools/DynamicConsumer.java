@@ -25,6 +25,8 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.utils.Exit;
 import org.slf4j.Logger;
@@ -33,8 +35,11 @@ import org.slf4j.LoggerFactory;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -48,12 +53,14 @@ public class DynamicConsumer {
     static class TestConfig {
         final String propertiesFile;
         final String topicPrefix;
+        final int partitionsPerTopic;
         final int messagesPerTopic;
         final String bootstrapServer;
 
         TestConfig(Namespace res) {
             this.propertiesFile = res.getString("propertiesFile");
             this.topicPrefix = res.getString("topicPrefix");
+            this.partitionsPerTopic = res.getInt("partitionsPerTopic");
             this.messagesPerTopic = res.getInt("messagesPerTopic");
             this.bootstrapServer = res.getString("bootstrapServer");
         }
@@ -78,6 +85,13 @@ public class DynamicConsumer {
             .dest("topicPrefix")
             .metavar("TOPIC_PREFIX")
             .help("the prefix to use for topic names");
+        parser.addArgument("--partitions-per-topic")
+            .action(store())
+            .required(true)
+            .type(Integer.class)
+            .dest("partitionsPerTopic")
+            .metavar("PARTITIONS_PER_TOPIC")
+            .help("the number of partitions in each topic");
         parser.addArgument("--messages-per-topic")
             .action(store())
             .required(true)
@@ -163,7 +177,12 @@ public class DynamicConsumer {
     }
 
     private void subscribeToCurTopic() {
-        consumer.subscribe(Collections.singleton(curTopicName()));
+        List<TopicPartition> topicPartitions = new ArrayList<>();
+        for (int i = 0; i < testConfig.partitionsPerTopic; i++) {
+            topicPartitions.add(new TopicPartition(curTopicName(), i));
+        }
+        consumer.assign(topicPartitions);
+        consumer.seekToBeginning(topicPartitions);
         log.warn("Subscribed to {}.", curTopicName());
     }
 
