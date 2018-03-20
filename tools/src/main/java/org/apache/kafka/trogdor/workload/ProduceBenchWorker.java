@@ -19,6 +19,7 @@ package org.apache.kafka.trogdor.workload;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.node.TextNode;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -34,6 +35,7 @@ import org.apache.kafka.trogdor.common.Platform;
 import org.apache.kafka.trogdor.common.ThreadUtils;
 import org.apache.kafka.trogdor.common.WorkerUtils;
 import org.apache.kafka.trogdor.task.TaskWorker;
+import org.apache.kafka.trogdor.task.WorkerStatusTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,7 +48,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class ProduceBenchWorker implements TaskWorker {
     private static final Logger log = LoggerFactory.getLogger(ProduceBenchWorker.class);
@@ -61,7 +62,7 @@ public class ProduceBenchWorker implements TaskWorker {
 
     private ScheduledExecutorService executor;
 
-    private AtomicReference<String> status;
+    private WorkerStatusTracker status;
 
     private KafkaFutureImpl<String> doneFuture;
 
@@ -81,7 +82,7 @@ public class ProduceBenchWorker implements TaskWorker {
     }
 
     @Override
-    public void start(Platform platform, AtomicReference<String> status,
+    public void start(Platform platform, WorkerStatusTracker status,
                       KafkaFutureImpl<String> doneFuture) throws Exception {
         if (!running.compareAndSet(false, true)) {
             throw new IllegalStateException("ProducerBenchWorker is already running.");
@@ -111,8 +112,9 @@ public class ProduceBenchWorker implements TaskWorker {
                     String name = topicIndexToName(i);
                     newTopics.put(name, new NewTopic(name, spec.numPartitions(), spec.replicationFactor()));
                 }
+                status.update(new TextNode("Creating " + spec.totalTopics() + " topic(s)"));
                 WorkerUtils.createTopics(log, spec.bootstrapServers(), newTopics, false);
-
+                status.update(new TextNode("Created " + spec.totalTopics() + " topic(s)"));
                 executor.submit(new SendRecords());
             } catch (Throwable e) {
                 WorkerUtils.abort(log, "Prepare", e, doneFuture);
@@ -179,7 +181,7 @@ public class ProduceBenchWorker implements TaskWorker {
             this.histogram = new Histogram(5000);
             int perPeriod = WorkerUtils.perSecToPerPeriod(spec.targetMessagesPerSec(), THROTTLE_PERIOD_MS);
             this.statusUpdaterFuture = executor.scheduleWithFixedDelay(
-                new StatusUpdater(histogram), 1, 1, TimeUnit.MINUTES);
+                new StatusUpdater(histogram), 30, 30, TimeUnit.SECONDS);
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, spec.bootstrapServers());
             for (Map.Entry<String, String> entry : spec.producerConf().entrySet()) {
@@ -216,10 +218,10 @@ public class ProduceBenchWorker implements TaskWorker {
                 WorkerUtils.abort(log, "SendRecords", e, doneFuture);
             } finally {
                 statusUpdaterFuture.cancel(false);
-                new StatusUpdater(histogram).run();
+                StatusData statusData = new StatusUpdater(histogram).update();
                 long curTimeMs = Time.SYSTEM.milliseconds();
                 log.info("Sent {} total record(s) in {} ms.  status: {}",
-                    histogram.summarize().numSamples(), curTimeMs - startTimeMs, status.get());
+                    histogram.summarize().numSamples(), curTimeMs - startTimeMs, statusData);
             }
             doneFuture.complete("");
             return null;
@@ -242,16 +244,20 @@ public class ProduceBenchWorker implements TaskWorker {
         @Override
         public void run() {
             try {
-                Histogram.Summary summary = histogram.summarize(percentiles);
-                StatusData statusData = new StatusData(summary.numSamples(), summary.average(),
-                    summary.percentiles().get(0).value(),
-                    summary.percentiles().get(1).value(),
-                    summary.percentiles().get(2).value());
-                String statusDataString = JsonUtil.toJsonString(statusData);
-                status.set(statusDataString);
+                update();
             } catch (Exception e) {
                 WorkerUtils.abort(log, "StatusUpdater", e, doneFuture);
             }
+        }
+
+        StatusData update() {
+            Histogram.Summary summary = histogram.summarize(percentiles);
+            StatusData statusData = new StatusData(summary.numSamples(), summary.average(),
+                summary.percentiles().get(0).value(),
+                summary.percentiles().get(1).value(),
+                summary.percentiles().get(2).value());
+            status.update(JsonUtil.JSON_SERDE.valueToTree(statusData));
+            return statusData;
         }
     }
 
