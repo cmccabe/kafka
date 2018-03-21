@@ -27,12 +27,11 @@ import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.trogdor.common.JsonUtil;
 import org.apache.kafka.trogdor.rest.CoordinatorStatusResponse;
 import org.apache.kafka.trogdor.rest.CreateTaskRequest;
-import org.apache.kafka.trogdor.rest.CreateTaskResponse;
+import org.apache.kafka.trogdor.rest.DestroyTaskRequest;
 import org.apache.kafka.trogdor.rest.Empty;
 import org.apache.kafka.trogdor.rest.JsonRestServer;
 import org.apache.kafka.trogdor.rest.JsonRestServer.HttpResponse;
 import org.apache.kafka.trogdor.rest.StopTaskRequest;
-import org.apache.kafka.trogdor.rest.StopTaskResponse;
 import org.apache.kafka.trogdor.rest.TasksRequest;
 import org.apache.kafka.trogdor.rest.TasksResponse;
 import org.slf4j.Logger;
@@ -116,18 +115,25 @@ public class CoordinatorClient {
         return resp.body();
     }
 
-    public CreateTaskResponse createTask(CreateTaskRequest request) throws Exception {
-        HttpResponse<CreateTaskResponse> resp =
-            JsonRestServer.<CreateTaskResponse>httpRequest(log, url("/coordinator/task/create"), "POST",
-                request, new TypeReference<CreateTaskResponse>() { }, maxTries);
-        return resp.body();
+    public void createTask(CreateTaskRequest request) throws Exception {
+        HttpResponse<Empty> resp =
+            JsonRestServer.<Empty>httpRequest(log, url("/coordinator/task/create"), "POST",
+                request, new TypeReference<Empty>() { }, maxTries);
+        resp.body();
     }
 
-    public StopTaskResponse stopTask(StopTaskRequest request) throws Exception {
-        HttpResponse<StopTaskResponse> resp =
-            JsonRestServer.<StopTaskResponse>httpRequest(log, url("/coordinator/task/stop"), "PUT",
-                request, new TypeReference<StopTaskResponse>() { }, maxTries);
-        return resp.body();
+    public void stopTask(StopTaskRequest request) throws Exception {
+        HttpResponse<Empty> resp =
+            JsonRestServer.<Empty>httpRequest(log, url("/coordinator/task/stop"), "PUT",
+                request, new TypeReference<Empty>() { }, maxTries);
+        resp.body();
+    }
+
+    public void destroyTask(DestroyTaskRequest request) throws Exception {
+        HttpResponse<Empty> resp =
+            JsonRestServer.<Empty>httpRequest(log, url("/coordinator/task/destroy"), "PUT",
+                request, new TypeReference<Empty>() { }, maxTries);
+        resp.body();
     }
 
     public TasksResponse tasks(TasksRequest request) throws Exception {
@@ -185,6 +191,12 @@ public class CoordinatorClient {
             .dest("stop_task")
             .metavar("TASK_ID")
             .help("Stop a task.");
+        actions.addArgument("--destroy-task")
+            .action(store())
+            .type(String.class)
+            .dest("destroy_task")
+            .metavar("TASK_ID")
+            .help("Destroy a task.");
         actions.addArgument("--shutdown")
             .action(storeTrue())
             .type(Boolean.class)
@@ -222,6 +234,9 @@ public class CoordinatorClient {
         } else if (res.getString("stop_task") != null) {
             client.stopTask(new StopTaskRequest(res.getString("stop_task")));
             System.out.println("Created task.");
+        } else if (res.getString("destroy_task") != null) {
+            client.destroyTask(new DestroyTaskRequest(res.getString("destroy_task")));
+            System.out.println("Destroyed task.");
         } else if (res.getBoolean("shutdown")) {
             client.shutdown();
             System.out.println("Sent shutdown request.");

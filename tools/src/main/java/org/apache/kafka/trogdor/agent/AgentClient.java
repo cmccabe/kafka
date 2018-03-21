@@ -27,12 +27,11 @@ import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.trogdor.common.JsonUtil;
 import org.apache.kafka.trogdor.rest.AgentStatusResponse;
 import org.apache.kafka.trogdor.rest.CreateWorkerRequest;
-import org.apache.kafka.trogdor.rest.CreateWorkerResponse;
+import org.apache.kafka.trogdor.rest.DestroyWorkerRequest;
 import org.apache.kafka.trogdor.rest.Empty;
 import org.apache.kafka.trogdor.rest.JsonRestServer;
 import org.apache.kafka.trogdor.rest.JsonRestServer.HttpResponse;
 import org.apache.kafka.trogdor.rest.StopWorkerRequest;
-import org.apache.kafka.trogdor.rest.StopWorkerResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -116,20 +115,28 @@ public class AgentClient {
         return resp.body();
     }
 
-    public CreateWorkerResponse createWorker(CreateWorkerRequest request) throws Exception {
-        HttpResponse<CreateWorkerResponse> resp =
-            JsonRestServer.<CreateWorkerResponse>httpRequest(
+    public void createWorker(CreateWorkerRequest request) throws Exception {
+        HttpResponse<Empty> resp =
+            JsonRestServer.<Empty>httpRequest(
                 url("/agent/worker/create"), "POST",
-                request, new TypeReference<CreateWorkerResponse>() { }, maxTries);
-        return resp.body();
+                request, new TypeReference<Empty>() { }, maxTries);
+        resp.body();
     }
 
-    public StopWorkerResponse stopWorker(StopWorkerRequest request) throws Exception {
-        HttpResponse<StopWorkerResponse> resp =
-            JsonRestServer.<StopWorkerResponse>httpRequest(url(
+    public void stopWorker(StopWorkerRequest request) throws Exception {
+        HttpResponse<Empty> resp =
+            JsonRestServer.<Empty>httpRequest(url(
                 "/agent/worker/stop"), "PUT",
-                request, new TypeReference<StopWorkerResponse>() { }, maxTries);
-        return resp.body();
+                request, new TypeReference<Empty>() { }, maxTries);
+        resp.body();
+    }
+
+    public void destroyWorker(DestroyWorkerRequest request) throws Exception {
+        HttpResponse<Empty> resp =
+            JsonRestServer.<Empty>httpRequest(url(
+                "/agent/worker/destroy"), "PUT",
+                request, new TypeReference<Empty>() { }, maxTries);
+        resp.body();
     }
 
     public void invokeShutdown() throws Exception {
@@ -166,10 +173,16 @@ public class AgentClient {
             .help("Create a new fault.");
         actions.addArgument("--stop-worker")
             .action(store())
-            .type(String.class)
+            .type(Long.class)
             .dest("stop_worker")
             .metavar("SPEC_JSON")
-            .help("Create a new fault.");
+            .help("Stop a worker ID.");
+        actions.addArgument("--destroy-worker")
+            .action(store())
+            .type(Long.class)
+            .dest("destroy_worker")
+            .metavar("SPEC_JSON")
+            .help("Destroy a worker ID.");
         actions.addArgument("--shutdown")
             .action(storeTrue())
             .type(Boolean.class)
@@ -201,6 +214,12 @@ public class AgentClient {
                 readValue(res.getString("create_worker"),
                     CreateWorkerRequest.class));
             System.out.println("Created fault.");
+        } else if (res.getString("stop_worker") != null) {
+            client.stopWorker(new StopWorkerRequest(res.getLong("stop_worker")));
+            System.out.println("Stopped worker.");
+        } else if (res.getString("destroy_worker") != null) {
+            client.destroyWorker(new DestroyWorkerRequest(res.getLong("destroy_worker")));
+            System.out.println("Destroyed worker.");
         } else if (res.getBoolean("shutdown")) {
             client.invokeShutdown();
             System.out.println("Sent shutdown request.");

@@ -18,10 +18,9 @@ package org.apache.kafka.trogdor.agent;
 
 import org.apache.kafka.trogdor.rest.AgentStatusResponse;
 import org.apache.kafka.trogdor.rest.CreateWorkerRequest;
-import org.apache.kafka.trogdor.rest.CreateWorkerResponse;
+import org.apache.kafka.trogdor.rest.DestroyWorkerRequest;
 import org.apache.kafka.trogdor.rest.Empty;
 import org.apache.kafka.trogdor.rest.StopWorkerRequest;
-import org.apache.kafka.trogdor.rest.StopWorkerResponse;
 
 import javax.servlet.ServletContext;
 import javax.ws.rs.Consumes;
@@ -33,7 +32,17 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import java.util.concurrent.atomic.AtomicReference;
 
-
+/**
+ * The REST resource for the Agent. This describes the RPCs which the agent can accept.
+ *
+ * RPCs should be idempotent.  This is important because if the server's response is
+ * lost, the client will simply retransmit the same request. The server's response must
+ * be the same the second time around.
+ *
+ * We return the empty JSON object {} rather than void for RPCs that have no results.
+ * This ensures that if we want to add more return results later, we can do so in a
+ * compatible way.
+ */
 @Path("/agent")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -55,14 +64,23 @@ public class AgentRestResource {
 
     @POST
     @Path("/worker/create")
-    public CreateWorkerResponse createWorker(CreateWorkerRequest req) throws Throwable {
-        return agent().createWorker(req);
+    public Empty createWorker(CreateWorkerRequest req) throws Throwable {
+        agent().createWorker(req);
+        return Empty.INSTANCE;
     }
 
     @PUT
     @Path("/worker/stop")
-    public StopWorkerResponse stopWorker(StopWorkerRequest req) throws Throwable {
-        return agent().stopWorker(req);
+    public Empty stopWorker(StopWorkerRequest req) throws Throwable {
+        agent().stopWorker(req);
+        return Empty.INSTANCE;
+    }
+
+    @PUT
+    @Path("/worker/destroy")
+    public Empty destroyWorker(DestroyWorkerRequest req) throws Throwable {
+        agent().destroyWorker(req);
+        return Empty.INSTANCE;
     }
 
     @PUT

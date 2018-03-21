@@ -25,6 +25,7 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.trogdor.common.Platform;
 import org.apache.kafka.trogdor.common.ThreadUtils;
+import org.apache.kafka.trogdor.rest.RequestConflictException;
 import org.apache.kafka.trogdor.rest.WorkerDone;
 import org.apache.kafka.trogdor.rest.WorkerRunning;
 import org.apache.kafka.trogdor.rest.WorkerStarting;
@@ -40,6 +41,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
@@ -72,7 +74,7 @@ public final class WorkerManager {
     /**
      * A map of task IDs to Work objects.
      */
-    private final Map<String, Worker> workers;
+    private final Map<Long, Worker> workers;
 
     /**
      * An ExecutorService used to schedule events in the future.
@@ -174,9 +176,14 @@ public final class WorkerManager {
      */
     class Worker {
         /**
+         * The worker ID.
+         */
+        private final long workerId;
+
+        /**
          * The task ID.
          */
-        private final String id;
+        private final String taskId;
 
         /**
          * The task specification.
@@ -217,7 +224,7 @@ public final class WorkerManager {
          * If there is a task timeout scheduled, this is a future which can
          * be used to cancel it.
          */
-        private Future<TaskSpec> timeoutFuture = null;
+        private Future<Void> timeoutFuture = null;
 
         /**
          * A shutdown manager reference which will keep the WorkerManager
@@ -225,16 +232,26 @@ public final class WorkerManager {
          */
         private ShutdownManager.Reference reference;
 
-        Worker(String id, TaskSpec spec, long now) {
-            this.id = id;
+        /**
+         * Whether we should destroy the records of this worker once it stops.
+         */
+        private boolean mustDestroy = false;
+
+        Worker(long workerId, String taskId, TaskSpec spec, long now) {
+            this.workerId = workerId;
+            this.taskId = taskId;
             this.spec = spec;
-            this.taskWorker = spec.newTaskWorker(id);
+            this.taskWorker = spec.newTaskWorker(taskId);
             this.startedMs = now;
             this.reference = shutdownManager.takeReference();
         }
 
-        String id() {
-            return id;
+        long workerId() {
+            return workerId;
+        }
+
+        String taskId() {
+            return taskId;
         }
 
         TaskSpec spec() {
@@ -244,14 +261,14 @@ public final class WorkerManager {
         WorkerState state() {
             switch (state) {
                 case STARTING:
-                    return new WorkerStarting(spec);
+                    return new WorkerStarting(taskId, spec);
                 case RUNNING:
-                    return new WorkerRunning(spec, startedMs, status.get());
+                    return new WorkerRunning(taskId, spec, startedMs, status.get());
                 case CANCELLING:
                 case STOPPING:
-                    return new WorkerStopping(spec, startedMs, status.get());
+                    return new WorkerStopping(taskId, spec, startedMs, status.get());
                 case DONE:
-                    return new WorkerDone(spec, startedMs, doneMs, status.get(), error);
+                    return new WorkerDone(taskId, spec, startedMs, doneMs, status.get(), error);
             }
             throw new RuntimeException("unreachable");
         }
@@ -259,7 +276,7 @@ public final class WorkerManager {
         void transitionToRunning() {
             state = State.RUNNING;
             timeoutFuture = scheduler.schedule(stateChangeExecutor,
-                new StopWorker(id), spec.durationMs());
+                new StopWorker(workerId, false), spec.durationMs());
         }
 
         void transitionToStopping() {
@@ -268,7 +285,7 @@ public final class WorkerManager {
                 timeoutFuture.cancel(false);
                 timeoutFuture = null;
             }
-            workerCleanupExecutor.submit(new CleanupWorker(this));
+            workerCleanupExecutor.submit(new HaltWorker(this));
         }
 
         void transitionToDone() {
@@ -279,15 +296,20 @@ public final class WorkerManager {
                 reference = null;
             }
         }
+
+        @Override
+        public String toString() {
+            return String.format("%s_%d", taskId, workerId);
+        }
     }
 
-    public void createWorker(final String id, TaskSpec spec) throws Exception {
+    public void createWorker(long workerId, String taskId, TaskSpec spec) throws Throwable {
         try (ShutdownManager.Reference ref = shutdownManager.takeReference()) {
             final Worker worker = stateChangeExecutor.
-                submit(new CreateWorker(id, spec, time.milliseconds())).get();
+                submit(new CreateWorker(workerId, taskId, spec, time.milliseconds())).get();
             if (worker == null) {
                 log.info("{}: Ignoring request to create worker {}, because there is already " +
-                    "a worker with that id.", nodeName, id);
+                    "a worker with that id.", nodeName, workerId);
                 return;
             }
             KafkaFutureImpl<String> haltFuture = new KafkaFutureImpl<>();
@@ -297,9 +319,10 @@ public final class WorkerManager {
                     if (errorString == null)
                         errorString = "";
                     if (errorString.isEmpty()) {
-                        log.info("{}: Worker {} is halting.", nodeName, id);
+                        log.info("{}: Worker {} is halting.", nodeName, worker.toString());
                     } else {
-                        log.info("{}: Worker {} is halting with error {}", nodeName, id, errorString);
+                        log.info("{}: Worker {} is halting with error {}",
+                            nodeName, worker.toString(), errorString);
                     }
                     stateChangeExecutor.submit(
                         new HandleWorkerHalting(worker, errorString, false));
@@ -309,11 +332,15 @@ public final class WorkerManager {
             try {
                 worker.taskWorker.start(platform, worker.status, haltFuture);
             } catch (Exception e) {
-                log.info("{}: Worker {} start() exception", nodeName, id, e);
+                log.info("{}: Worker {} start() exception", nodeName, worker.toString(), e);
                 stateChangeExecutor.submit(new HandleWorkerHalting(worker,
                     "worker.start() exception: " + Utils.stackTrace(e), true));
             }
             stateChangeExecutor.submit(new FinishCreatingWorker(worker));
+        } catch (ExecutionException e) {
+            log.info("{}: Error creating worker {} for task {} with spec {}",
+                nodeName, workerId, taskId, e);
+            throw e.getCause();
         }
     }
 
@@ -321,27 +348,41 @@ public final class WorkerManager {
      * Handles a request to create a new worker.  Processed by the state change thread.
      */
     class CreateWorker implements Callable<Worker> {
-        private final String id;
+        private final long workerId;
+        private final String taskId;
         private final TaskSpec spec;
         private final long now;
 
-        CreateWorker(String id, TaskSpec spec, long now) {
-            this.id = id;
+        CreateWorker(long workerId, String taskId, TaskSpec spec, long now) {
+            this.workerId = workerId;
+            this.taskId = taskId;
             this.spec = spec;
             this.now = now;
         }
 
         @Override
         public Worker call() throws Exception {
-            Worker worker = workers.get(id);
-            if (worker != null) {
-                log.info("{}: Task ID {} is already in use.", nodeName, id);
-                return null;
+            try {
+                Worker worker = workers.get(workerId);
+                if (worker != null) {
+                    if (!worker.taskId().equals(taskId)) {
+                        throw new RequestConflictException("There is already a worker ID " + workerId +
+                            " with a different task ID.");
+                    } else if (!worker.spec().equals(spec)) {
+                        throw new RequestConflictException("There is already a worker ID " + workerId +
+                            " with a different task spec.");
+                    } else {
+                        return null;
+                    }
+                }
+                worker = new Worker(workerId, taskId, spec, now);
+                workers.put(workerId, worker);
+                log.info("{}: Created {} with spec {}", nodeName, worker.toString(), spec);
+                return worker;
+            } catch (Exception e) {
+                log.info("{}: unable to CreateWorker", e);
+                throw e;
             }
-            worker = new Worker(id, spec, now);
-            workers.put(id, worker);
-            log.info("{}: Created a new worker for task {} with spec {}", nodeName, id, spec);
-            return worker;
         }
     }
 
@@ -360,12 +401,12 @@ public final class WorkerManager {
             switch (worker.state) {
                 case CANCELLING:
                     log.info("{}: Worker {} was cancelled while it was starting up.  " +
-                        "Transitioning to STOPPING.", nodeName, worker.id);
+                        "Transitioning to STOPPING.", nodeName, worker.toString());
                     worker.transitionToStopping();
                     break;
                 case STARTING:
                     log.info("{}: Worker {} is now RUNNING.  Scheduled to stop in {} ms.",
-                        nodeName, worker.id, worker.spec.durationMs());
+                        nodeName, worker.toString(), worker.spec.durationMs());
                     worker.transitionToRunning();
                     break;
                 default:
@@ -400,29 +441,29 @@ public final class WorkerManager {
                 case STARTING:
                     if (startupHalt) {
                         log.info("{}: Worker {} {} during startup.  Transitioning to DONE.",
-                            nodeName, worker.id, verb);
+                            nodeName, worker.toString(), verb);
                         worker.transitionToDone();
                     } else {
                         log.info("{}: Worker {} {} during startup.  Transitioning to CANCELLING.",
-                            nodeName, worker.id, verb);
+                            nodeName, worker.toString(), verb);
                         worker.state = State.CANCELLING;
                     }
                     break;
                 case CANCELLING:
                     log.info("{}: Cancelling worker {} {}.  ",
-                            nodeName, worker.id, verb);
+                            nodeName, worker.toString(), verb);
                     break;
                 case RUNNING:
                     log.info("{}: Running worker {} {}.  Transitioning to STOPPING.",
-                        nodeName, worker.id, verb);
+                        nodeName, worker.toString(), verb);
                     worker.transitionToStopping();
                     break;
                 case STOPPING:
-                    log.info("{}: Stopping worker {} {}.", nodeName, worker.id, verb);
+                    log.info("{}: Stopping worker {} {}.", nodeName, worker.toString(), verb);
                     break;
                 case DONE:
                     log.info("{}: Can't halt worker {} because it is already DONE.",
-                        nodeName, worker.id);
+                        nodeName, worker.toString());
                     break;
             }
             return null;
@@ -432,7 +473,7 @@ public final class WorkerManager {
     /**
      * Transitions a worker to WorkerDone.  Processed by the state change thread.
      */
-    static class CompleteWorker implements Callable<Void> {
+    class CompleteWorker implements Callable<Void> {
         private final Worker worker;
 
         private final String failure;
@@ -448,60 +489,79 @@ public final class WorkerManager {
                 worker.error = failure;
             }
             worker.transitionToDone();
+            if (worker.mustDestroy) {
+                log.info("{}: destroying worker {} with error {}",
+                    nodeName, worker.toString(), worker.error);
+                workers.remove(worker.workerId);
+            } else {
+                log.info("{}: completed worker {} with error {}",
+                    nodeName, worker.toString(), worker.error);
+            }
             return null;
         }
     }
 
-    public TaskSpec stopWorker(String id) throws Exception {
+    public void stopWorker(long workerId, boolean mustDestroy) throws Throwable {
         try (ShutdownManager.Reference ref = shutdownManager.takeReference()) {
-            TaskSpec taskSpec = stateChangeExecutor.submit(new StopWorker(id)).get();
-            if (taskSpec == null) {
-                throw new KafkaException("No task found with id " + id);
-            }
-            return taskSpec;
+            stateChangeExecutor.submit(new StopWorker(workerId, mustDestroy)).get();
+        } catch (ExecutionException e) {
+            throw e.getCause();
         }
     }
 
     /**
      * Stops a worker.  Processed by the state change thread.
      */
-    class StopWorker implements Callable<TaskSpec> {
-        private final String id;
+    class StopWorker implements Callable<Void> {
+        private final long workerId;
+        private final boolean mustDestroy;
 
-        StopWorker(String id) {
-            this.id = id;
+        StopWorker(long workerId, boolean mustDestroy) {
+            this.workerId = workerId;
+            this.mustDestroy = mustDestroy;
         }
 
         @Override
-        public TaskSpec call() throws Exception {
-            Worker worker = workers.get(id);
+        public Void call() throws Exception {
+            Worker worker = workers.get(workerId);
             if (worker == null) {
+                log.info("{}: Can't stop worker {} because there is no worker with that ID.",
+                    nodeName, workerId);
                 return null;
+            }
+            if (mustDestroy) {
+                worker.mustDestroy = true;
             }
             switch (worker.state) {
                 case STARTING:
                     log.info("{}: Cancelling worker {} during its startup process.",
-                        nodeName, id);
+                        nodeName, worker.toString());
                     worker.state = State.CANCELLING;
                     break;
                 case CANCELLING:
                     log.info("{}: Can't stop worker {}, because it is already being " +
-                        "cancelled.", nodeName, id);
+                        "cancelled.", nodeName, worker.toString());
                     break;
                 case RUNNING:
-                    log.info("{}: Stopping running worker {}.", nodeName, id);
+                    log.info("{}: Stopping running worker {}.", nodeName, worker.toString());
                     worker.transitionToStopping();
                     break;
                 case STOPPING:
                     log.info("{}: Can't stop worker {}, because it is already " +
-                            "stopping.", nodeName, id);
+                            "stopping.", nodeName, worker.toString());
                     break;
                 case DONE:
-                    log.debug("{}: Can't stop worker {}, because it is already done.",
-                        nodeName, id);
+                    if (worker.mustDestroy) {
+                        log.info("{}: destroying worker {} with error {}",
+                            nodeName, worker.toString(), worker.error);
+                        workers.remove(worker.workerId);
+                    } else {
+                        log.debug("{}: Can't stop worker {}, because it is already done.",
+                            nodeName, worker.toString());
+                    }
                     break;
             }
-            return worker.spec();
+            return null;
         }
     }
 
@@ -509,10 +569,10 @@ public final class WorkerManager {
      * Cleans up the resources associated with a worker.  Processed by the worker
      * cleanup thread pool.
      */
-    class CleanupWorker implements Callable<Void> {
+    class HaltWorker implements Callable<Void> {
         private final Worker worker;
 
-        CleanupWorker(Worker worker) {
+        HaltWorker(Worker worker) {
             this.worker = worker;
         }
 
@@ -530,18 +590,18 @@ public final class WorkerManager {
         }
     }
 
-    public TreeMap<String, WorkerState> workerStates() throws Exception {
+    public TreeMap<Long, WorkerState> workerStates() throws Exception {
         try (ShutdownManager.Reference ref = shutdownManager.takeReference()) {
             return stateChangeExecutor.submit(new GetWorkerStates()).get();
         }
     }
 
-    class GetWorkerStates implements Callable<TreeMap<String, WorkerState>> {
+    class GetWorkerStates implements Callable<TreeMap<Long, WorkerState>> {
         @Override
-        public TreeMap<String, WorkerState> call() throws Exception {
-            TreeMap<String, WorkerState> workerMap = new TreeMap<>();
+        public TreeMap<Long, WorkerState> call() throws Exception {
+            TreeMap<Long, WorkerState> workerMap = new TreeMap<>();
             for (Worker worker : workers.values()) {
-                workerMap.put(worker.id(), worker.state());
+                workerMap.put(worker.workerId(), worker.state());
             }
             return workerMap;
         }
@@ -564,7 +624,7 @@ public final class WorkerManager {
         public Void call() throws Exception {
             log.info("{}: Shutting down WorkerManager.", platform.curNode().name());
             for (Worker worker : workers.values()) {
-                stateChangeExecutor.submit(new StopWorker(worker.id));
+                stateChangeExecutor.submit(new StopWorker(worker.workerId(), true));
             }
             shutdownManager.waitForQuiescence();
             workerCleanupExecutor.shutdownNow();

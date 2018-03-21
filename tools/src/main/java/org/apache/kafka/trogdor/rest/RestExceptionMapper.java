@@ -46,6 +46,8 @@ public class RestExceptionMapper implements ExceptionMapper<Throwable> {
             return buildResponse(Response.Status.NOT_IMPLEMENTED, e);
         } else if (e instanceof SerializationException) {
             return buildResponse(Response.Status.BAD_REQUEST, e);
+        } else if (e instanceof RequestConflictException) {
+            return buildResponse(Response.Status.CONFLICT, e);
         } else {
             return buildResponse(Response.Status.INTERNAL_SERVER_ERROR, e);
         }
@@ -58,6 +60,8 @@ public class RestExceptionMapper implements ExceptionMapper<Throwable> {
             throw new ClassNotFoundException(msg);
         } else if (code == Response.Status.BAD_REQUEST.getStatusCode()) {
             throw new SerializationException(msg);
+        } else if (code == Response.Status.CONFLICT.getStatusCode()) {
+            throw new RequestConflictException(msg);
         } else {
             throw new RuntimeException(msg);
         }

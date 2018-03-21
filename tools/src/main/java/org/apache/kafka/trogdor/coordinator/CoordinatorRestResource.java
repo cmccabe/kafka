@@ -19,11 +19,9 @@ package org.apache.kafka.trogdor.coordinator;
 import org.apache.kafka.trogdor.rest.CoordinatorShutdownRequest;
 import org.apache.kafka.trogdor.rest.CoordinatorStatusResponse;
 import org.apache.kafka.trogdor.rest.CreateTaskRequest;
-import org.apache.kafka.trogdor.rest.CreateTaskResponse;
+import org.apache.kafka.trogdor.rest.DestroyTaskRequest;
 import org.apache.kafka.trogdor.rest.Empty;
 import org.apache.kafka.trogdor.rest.StopTaskRequest;
-import org.apache.kafka.trogdor.rest.StopTaskResponse;
-import org.apache.kafka.trogdor.rest.TasksRequest;
 import org.apache.kafka.trogdor.rest.TasksResponse;
 
 import javax.servlet.ServletContext;
@@ -39,7 +37,18 @@ import javax.ws.rs.core.MediaType;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
-
+/**
+ * The REST resource for the Coordinator. This describes the RPCs which the coordinator
+ * can accept.
+ *
+ * RPCs should be idempotent.  This is important because if the server's response is
+ * lost, the client will simply retransmit the same request. The server's response must
+ * be the same the second time around.
+ *
+ * We return the empty JSON object {} rather than void for RPCs that have no results.
+ * This ensures that if we want to add more return results later, we can do so in a
+ * compatible way.
+ */
 @Path("/coordinator")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -61,14 +70,23 @@ public class CoordinatorRestResource {
 
     @POST
     @Path("/task/create")
-    public CreateTaskResponse createTask(CreateTaskRequest request) throws Throwable {
-        return coordinator().createTask(request);
+    public Empty createTask(CreateTaskRequest request) throws Throwable {
+        coordinator().createTask(request);
+        return Empty.INSTANCE;
     }
 
     @PUT
     @Path("/task/stop")
-    public StopTaskResponse stopTask(StopTaskRequest request) throws Throwable {
-        return coordinator().stopTask(request);
+    public Empty stopTask(StopTaskRequest request) throws Throwable {
+        coordinator().stopTask(request);
+        return Empty.INSTANCE;
+    }
+
+    @PUT
+    @Path("/task/destroy")
+    public Empty destroyTask(DestroyTaskRequest request) throws Throwable {
+        coordinator().destroyTask(request);
+        return Empty.INSTANCE;
     }
 
     @GET
