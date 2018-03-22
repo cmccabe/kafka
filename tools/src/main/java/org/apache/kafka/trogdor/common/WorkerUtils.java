@@ -24,6 +24,7 @@ import org.apache.kafka.clients.admin.DescribeTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.KafkaException;
+
 import org.apache.kafka.common.errors.NotEnoughReplicasException;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.errors.TopicExistsException;
@@ -44,6 +45,7 @@ import java.util.concurrent.Future;
  * Utilities for Trogdor TaskWorkers.
  */
 public final class WorkerUtils {
+
     /**
      * Handle an exception in a TaskWorker.
      *
@@ -93,12 +95,12 @@ public final class WorkerUtils {
      *                          number of partitions, the method throws RuntimeException.
      */
     public static void createTopics(
-        Logger log, String bootstrapServers,
+        Logger log, String bootstrapServers, Map<String, String> clientConf,
         Map<String, NewTopic> topics, boolean failOnExisting) throws Throwable {
         // this method wraps the call to createTopics() that takes admin client, so that we can
         // unit test the functionality with MockAdminClient. The exception is caught and
         // re-thrown so that admin client is closed when the method returns.
-        try (AdminClient adminClient = createAdminClient(bootstrapServers)) {
+        try (AdminClient adminClient = createAdminClient(bootstrapServers, clientConf)) {
             createTopics(log, adminClient, topics, failOnExisting);
         } catch (Exception e) {
             log.warn("Failed to create or verify topics {}", topics, e);
@@ -227,10 +229,14 @@ public final class WorkerUtils {
         }
     }
 
-    private static AdminClient createAdminClient(String bootstrapServers) {
+    private static AdminClient createAdminClient(
+        String bootstrapServers, Map<String, String> clientConf) {
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, CREATE_TOPICS_REQUEST_TIMEOUT);
+        for (Map.Entry<String, String> entry : clientConf.entrySet()) {
+            props.setProperty(entry.getKey(), entry.getValue());
+        }
         return AdminClient.create(props);
     }
 }
