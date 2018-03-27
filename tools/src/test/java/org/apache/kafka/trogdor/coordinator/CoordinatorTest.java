@@ -392,10 +392,13 @@ public class CoordinatorTest {
             assertEquals(1, resp1.tasks().size());
 
             time.sleep(2);
+            ObjectNode status1 = new ObjectNode(JsonNodeFactory.instance);
+            status1.set("node01", new TextNode("active"));
+            status1.set("node02", new TextNode("active"));
             new ExpectedTasks().
                 addTask(new ExpectedTaskBuilder("foo").
-                    taskState(new TaskRunning(fooSpec, 2)).
-                    workerState(new WorkerRunning(fooSpec, 2, "")).
+                    taskState(new TaskRunning(fooSpec, 2, status1)).
+                    workerState(new WorkerRunning(fooSpec, 2, new TextNode("active"))).
                     build()).
                 addTask(new ExpectedTaskBuilder("bar").
                     taskState(new TaskPending(barSpec)).
