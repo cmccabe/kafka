@@ -465,8 +465,8 @@ public class CoordinatorTest {
             status1.set("node02", new TextNode("active"));
             new ExpectedTasks().
                 addTask(new ExpectedTaskBuilder("foo").
-                    taskState(new TaskRunning(fooSpec, 2, status1)).
-                    workerState(new WorkerRunning(fooSpec, 2, new TextNode("active"))).
+                    taskState(new TaskRunning(fooSpec, 2, new TextNode("active"))).
+                    workerState(new WorkerRunning("foo", fooSpec, 2, new TextNode("active"))).
                     build()).
                 addTask(new ExpectedTaskBuilder("bar").
                     taskState(new TaskPending(barSpec)).
