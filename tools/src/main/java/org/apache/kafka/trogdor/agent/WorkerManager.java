@@ -37,6 +37,7 @@ import org.apache.kafka.trogdor.task.TaskWorker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
@@ -139,12 +140,15 @@ public final class WorkerManager {
                 return false;
             }
             shutdown = true;
+            if (refCount == 0) {
+                this.notifyAll();
+            }
             return true;
         }
 
         synchronized void waitForQuiescence() throws InterruptedException {
             while ((!shutdown) || (refCount > 0)) {
-                wait();
+                this.wait();
             }
         }
     }
@@ -338,8 +342,13 @@ public final class WorkerManager {
             }
             stateChangeExecutor.submit(new FinishCreatingWorker(worker));
         } catch (ExecutionException e) {
-            log.info("{}: Error creating worker {} for task {} with spec {}",
-                nodeName, workerId, taskId, e);
+            if (e.getCause() instanceof RequestConflictException) {
+                log.info("{}: request conflict while creating worker {} for task {} with spec {}.",
+                    nodeName, workerId, taskId, spec);
+            } else {
+                log.info("{}: Error creating worker {} for task {} with spec {}",
+                    nodeName, workerId, taskId, spec, e);
+            }
             throw e.getCause();
         }
     }
@@ -377,10 +386,11 @@ public final class WorkerManager {
                 }
                 worker = new Worker(workerId, taskId, spec, now);
                 workers.put(workerId, worker);
-                log.info("{}: Created {} with spec {}", nodeName, worker.toString(), spec);
+                log.info("{}: Created worker {} with spec {}", nodeName, worker.toString(), spec);
                 return worker;
             } catch (Exception e) {
-                log.info("{}: unable to CreateWorker", e);
+                log.info("{}: unable to create worker {} for task {}, with spec {}",
+                    nodeName, workerId, taskId, spec, e);
                 throw e;
             }
         }
@@ -622,17 +632,53 @@ public final class WorkerManager {
     class Shutdown implements Callable<Void> {
         @Override
         public Void call() throws Exception {
-            log.info("{}: Shutting down WorkerManager.", platform.curNode().name());
-            for (Worker worker : workers.values()) {
-                stateChangeExecutor.submit(new StopWorker(worker.workerId(), true));
+            log.info("{}: Shutting down WorkerManager.", nodeName);
+            try {
+                stateChangeExecutor.submit(new DestroyAllWorkers()).get();
+                log.info("{}: Waiting for shutdownManager quiescence...", nodeName);
+                shutdownManager.waitForQuiescence();
+                workerCleanupExecutor.shutdownNow();
+                stateChangeExecutor.shutdownNow();
+                log.info("{}: Waiting for workerCleanupExecutor to terminate...", nodeName);
+                workerCleanupExecutor.awaitTermination(1, TimeUnit.DAYS);
+                log.info("{}: Waiting for stateChangeExecutor to terminate...", nodeName);
+                stateChangeExecutor.awaitTermination(1, TimeUnit.DAYS);
+                log.info("{}: Shutting down shutdownExecutor.", nodeName);
+                shutdownExecutor.shutdown();
+            } catch (Exception e) {
+                log.info("{}: Caught exception while shutting down WorkerManager", nodeName, e);
+                throw e;
             }
-            shutdownManager.waitForQuiescence();
-            workerCleanupExecutor.shutdownNow();
-            stateChangeExecutor.shutdownNow();
-            workerCleanupExecutor.awaitTermination(1, TimeUnit.DAYS);
-            stateChangeExecutor.awaitTermination(1, TimeUnit.DAYS);
-            shutdownExecutor.shutdown();
             return null;
         }
     }
+
+    /**
+     * Begins the process of destroying all workers.  Processed by the state change thread.
+     */
+    class DestroyAllWorkers implements Callable<Void> {
+        @Override
+        public Void call() throws Exception {
+            log.info("{}: Destroying all workers.", nodeName);
+
+            // StopWorker may remove elements from the set of worker IDs.  That might generate
+            // a ConcurrentModificationException if we were iterating over the worker ID
+            // set directly.  Therefore, we make a copy of the worker IDs here and iterate
+            // over that instead.
+            //
+            // Note that there is no possible way that more worker IDs can be added while this
+            // callable is running, because the state change executor is single-threaded.
+            ArrayList<Long> workerIds = new ArrayList<>(workers.keySet());
+
+            for (long workerId : workerIds) {
+                try {
+                    new StopWorker(workerId, true).call();
+                } catch (Exception e) {
+                    log.error("Failed to stop worker {}", workerId, e);
+                }
+            }
+            return null;
+        }
+    }
+
 }
