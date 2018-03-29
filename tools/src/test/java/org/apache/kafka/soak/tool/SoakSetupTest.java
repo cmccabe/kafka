@@ -80,7 +80,7 @@ public class SoakSetupTest {
                     new MockCommandResponse(0, ZooKeeperStart.createRunDaemonCommandLine()));
                 cloud.addCommandResponse(nodeName,
                     new MockCommandResponse(0, miniCluster.rsyncToCommandLine(nodeName,
-                        String.format("%s/zookeeper.%d.properties",
+                        String.format("%s/zookeeper-%d.properties",
                             logPath, node.nodeIndex()), RolePaths.ZK_PROPERTIES)));
                 cloud.addCommandResponse(nodeName,
                     new MockCommandResponse(0, miniCluster.rsyncToCommandLine(nodeName,
@@ -102,12 +102,12 @@ public class SoakSetupTest {
                     new MockCommandResponse(0, TrogdorStart.runDaemonCommandLine(COORDINATOR, nodeName)));
                 cloud.addCommandResponse(nodeName,
                     new MockCommandResponse(0, miniCluster.rsyncToCommandLine(nodeName,
-                        String.format("%s/trogdor-%s.%d.conf",
+                        String.format("%s/trogdor-%s-%d.conf",
                             logPath, COORDINATOR.name(), node.nodeIndex()),
                         COORDINATOR.propertiesPath())));
                 cloud.addCommandResponse(nodeName,
                     new MockCommandResponse(0, miniCluster.rsyncToCommandLine(nodeName,
-                        String.format("%s/trogdor-%s-log4j.%d.properties",
+                        String.format("%s/trogdor-%s-log4j-%d.properties",
                             logPath, COORDINATOR.name(), node.nodeIndex()),
                         COORDINATOR.log4jConfPath())));
                 cloud.addCommandResponse(nodeName,

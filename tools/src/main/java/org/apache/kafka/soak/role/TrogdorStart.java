@@ -133,7 +133,7 @@ public class TrogdorStart extends Action  {
         OutputStreamWriter osw = null;
         boolean success = false;
         try {
-            file = new File(cluster.logPath(), String.format("trogdor-%s-log4j.%d.properties",
+            file = new File(cluster.logPath(), String.format("trogdor-%s-log4j-%d.properties",
                 daemonType.name(), node.nodeIndex()));
             fos = new FileOutputStream(file, false);
             osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);

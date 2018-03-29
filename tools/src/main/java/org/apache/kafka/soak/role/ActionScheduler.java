@@ -219,7 +219,7 @@ public final class ActionScheduler implements AutoCloseable {
             if (log.isDebugEnabled()) {
                 log.debug("Scheduling {} action(s):", actions.size());
                 for (Action action : actions) {
-                    log.debug("{}: {}", action.toString(),
+                    log.debug("action {}: requires {}", action.toString(),
                         Utils.join(Arrays.asList(action.requirements()), ", "));
                 }
             }
