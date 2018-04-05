@@ -15,30 +15,26 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.soak.role;
+package org.apache.kafka.soak.tool;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import org.apache.kafka.soak.action.Action;
-import org.apache.kafka.soak.action.BrokerStartAction;
-import org.apache.kafka.soak.action.BrokerStatusAction;
-import org.apache.kafka.soak.action.BrokerStopAction;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.HashSet;
 
-public class BrokerRole implements Role {
-    public static final String KAFKA_CLASS_NAME = "kafka.Kafka";
+/**
+ * A callback which is executed when the soak tool is about to shut down.
+ */
+public abstract class SoakShutdownHook {
+    private final String name;
 
-    @JsonCreator
-    public BrokerRole() {
+    protected SoakShutdownHook(String name) {
+        this.name = name;
     }
 
-    @Override
-    public Collection<Action> createActions(String nodeName) {
-        ArrayList<Action> actions = new ArrayList<>();
-        actions.add(new BrokerStartAction(nodeName));
-        actions.add(new BrokerStatusAction(nodeName));
-        actions.add(new BrokerStopAction(nodeName));
-        return actions;
+    public abstract void run(SoakReturnCode returnCode) throws Throwable;
+
+    public String name() {
+        return name;
     }
-};
+}

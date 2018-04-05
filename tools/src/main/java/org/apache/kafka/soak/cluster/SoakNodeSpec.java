@@ -133,4 +133,13 @@ public class SoakNodeSpec {
     public Map<String, String> conf() {
         return conf;
     }
+
+    public <T extends Role> T role(Class<T> clazz) {
+        for (Role role : roles) {
+            if (clazz.isInstance(role)) {
+                return (T) role;
+            }
+        }
+        return null;
+    }
 }

@@ -18,6 +18,7 @@
 package org.apache.kafka.soak.cluster;
 
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.soak.action.ActionScheduler;
 import org.apache.kafka.soak.cloud.MockCloud;
 import org.apache.kafka.soak.cloud.MockRemoteCommand;
 import org.apache.kafka.soak.common.NullOutputStream;
@@ -29,6 +30,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +44,8 @@ public class MiniSoakCluster implements AutoCloseable {
     public static class Builder {
         private final Map<String, SoakNodeSpec> nodeSpecs = new TreeMap<>();
         private Map<String, String> defaults = new TreeMap<>();
-        private List<String> provided = new ArrayList<>();
         private MockCloud cloud = new MockCloud();
+        private String actionFilter = ActionScheduler.DEFAULT_ACTION_FILTER.toString();
 
         public Builder() {
         }
@@ -66,25 +70,30 @@ public class MiniSoakCluster implements AutoCloseable {
             return this;
         }
 
-        public Builder provided(List<String> provided) {
-            this.provided = provided;
+        public Builder actionFilter(String actionFilter) {
+            this.actionFilter = actionFilter;
             return this;
         }
 
         public MiniSoakCluster build() throws IOException {
-            File tempDirectory = TestUtils.tempDirectory();
             SoakCluster soakCluster = null;
+            File tempDirectory = TestUtils.tempDirectory();
             boolean success = false;
             try {
-                String tempDir = tempDirectory.getAbsolutePath();
-                soakCluster = new SoakCluster("mySoakId",
-                    tempDir,
-                    tempDir,
-                    provided,
-                    defaults,
-                    nodeSpecs,
+                Path outputPath =Paths.get(tempDirectory.getAbsolutePath(), "output");
+                Files.createDirectories(outputPath);
+                SoakEnvironment env = new SoakEnvironment(
+                    Paths.get(tempDirectory.getAbsolutePath(), "testSpec.json").toString(),
+                    "",
+                    "",
+                    360,
+                    actionFilter,
+                    Paths.get(tempDirectory.getAbsolutePath(), "kafka").toString(),
+                    outputPath.toString());
+                soakCluster = new SoakCluster(env,
                     cloud,
-                    new SoakLog(SoakLog.CLUSTER, NullOutputStream.INSTANCE));
+                    new SoakLog(SoakLog.CLUSTER, NullOutputStream.INSTANCE),
+                    new SoakClusterSpec(nodeSpecs, defaults));
                 success = true;
             } finally {
                 if (!success)  {
@@ -101,16 +110,10 @@ public class MiniSoakCluster implements AutoCloseable {
 
     private final MockCloud cloud;
 
-    private final SoakEnvironment soakEnvironment;
-
     private MiniSoakCluster(SoakCluster cluster, File tempDirectory, MockCloud cloud) throws IOException {
         this.cluster = cluster;
         this.tempDirectory = tempDirectory;
         this.cloud = cloud;
-        this.soakEnvironment = new SoakEnvironment.Builder().
-            rootPath(tempDirectory.getAbsolutePath()).
-            kafkaPath(tempDirectory.getAbsolutePath()).
-            build();
     }
 
     public SoakCluster cluster() {
@@ -119,10 +122,6 @@ public class MiniSoakCluster implements AutoCloseable {
 
     public MockCloud cloud() {
         return cloud;
-    }
-
-    public SoakEnvironment soakEnvironment() {
-        return soakEnvironment;
     }
 
     public String[] rsyncToCommandLine(String nodeName, String local, String remote) {

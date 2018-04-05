@@ -17,40 +17,35 @@
 
 package org.apache.kafka.soak.role;
 
+import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import org.apache.kafka.soak.action.Action;
+
+import java.util.Collection;
 
 /**
  * A role which a particular soak cluster node can have.
  *
  * A cluster node may have multiple roles.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.CLASS,
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME,
     include = JsonTypeInfo.As.PROPERTY,
-    property = "class")
+    property = "type")
+@JsonSubTypes(value = {
+    @JsonSubTypes.Type(value = AwsNodeRole.class, name = "awsNode"),
+    @JsonSubTypes.Type(value = BrokerRole.class, name = "broker"),
+    @JsonSubTypes.Type(value = TrogdorAgentRole.class, name = "trogdorAgent"),
+    @JsonSubTypes.Type(value = TrogdorCoordinatorRole.class, name = "trogdorCoordinator"),
+    @JsonSubTypes.Type(value = TasksRole.class, name = "tasks"),
+    @JsonSubTypes.Type(value = UbuntuNodeRole.class, name = "ubuntuNode"),
+    @JsonSubTypes.Type(value = ZooKeeperRole.class, name = "zooKeeper"),
+})
+
 public interface Role {
     /**
-     * Create the setup actions for this node.
+     * Create the actions for this node.
      *
-     * @param bld           The scheduler builder.
      * @param nodeName      The name of this node.
      */
-    void setup(ActionScheduler.Builder bld, String nodeName);
-
-    /**
-     * Create the status collection actions for this node.
-     *
-     * @param bld               The scheduler builder.
-     * @param nodeName          The name of this node.
-     * @param statusCollector   Collects status results.
-     */
-    void status(ActionScheduler.Builder bld, String nodeName,
-                RoleStatusCollector statusCollector);
-
-    /**
-     * Create the stop actions for this node.
-     *
-     * @param bld               The scheduler builder.
-     * @param nodeName          The name of this node.
-     */
-    void stop(ActionScheduler.Builder bld, String nodeName);
+    Collection<Action> createActions(String nodeName);
 };

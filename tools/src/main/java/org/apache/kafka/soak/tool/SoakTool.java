@@ -22,18 +22,19 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.impl.Arguments;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
-import net.sourceforge.argparse4j.inf.Subparser;
-import net.sourceforge.argparse4j.inf.Subparsers;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.soak.action.ActionScheduler;
+import org.apache.kafka.soak.cloud.Ec2Cloud;
+import org.apache.kafka.soak.cluster.SoakCluster;
+import org.apache.kafka.soak.cluster.SoakClusterSpec;
 import org.apache.kafka.soak.common.SoakLog;
-import org.apache.kafka.soak.role.ActionScheduler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.regex.Pattern;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.List;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 
@@ -41,39 +42,6 @@ import static net.sourceforge.argparse4j.impl.Arguments.store;
  * The soak command.
  */
 public final class SoakTool {
-    private static final Logger log = LoggerFactory.getLogger(SoakTool.class);
-
-    private static final String UP_COMMAND = "up";
-    private static final String UP_COMMAND_HELP = "Brings up a soak cluster.";
-    private static final String SETUP_COMMAND = "setup";
-    private static final String SETUP_COMMAND_HELP = "Sets up the soak cluster nodes.";
-    private static final String STATUS_COMMAND = "status";
-    private static final String STATUS_COMMAND_HELP = "Gets the status of a soak cluster.";
-    private static final String SSH_COMMAND = "ssh";
-    private static final String SSH_COMMAND_HELP = "Ssh to a soak cluster node.";
-    private static final String STOP_COMMAND = "stop";
-    private static final String STOP_COMMAND_HELP = "Stops the roles on the soak cluster.";
-    private static final String DOWN_COMMAND = "down";
-    private static final String DOWN_COMMAND_HELP = "Brings down the soak cluster nodes.";
-
-    private static final String COMMAND = "command";
-    private static final String TEST_SPEC = "test_spec";
-    private static final String CLUSTER = "cluster";
-    private static final String TIMEOUT_SECONDS = "timeout_seconds";
-    private static final String ACTION_FILTER = "action_filter";
-    private static final String ACTION_FILTER_HELP =
-        "A regular expression which constrains the actions which are executed.";
-    private static final String NODE_NAME = "node_name";
-    private static final String SSH_COMMANDS = "ssh_commands";
-
-    private static final String SOAK_ROOT_ENV = "SOAK_ROOT";
-    private static final String SOAK_ROOT_DEFAULT = "/tmp/soak";
-    private static final String KAFKA_PATH_ENV = "KAFKA_PATH";
-    private static final String SECURITY_GROUP = "security_group";
-    private static final String SECURITY_GROUP_ENV = "AWS_SOAK_SECURITY_GROUP";
-    private static final String SECURITY_KEYPAIR = "security_keypair";
-    private static final String SECURITY_KEYPAIR_ENV = "AWS_SOAK_SECURITY_KEYPAIR";
-
     public static final ObjectMapper JSON_SERDE;
 
     static {
@@ -84,230 +52,142 @@ public final class SoakTool {
         JSON_SERDE.setSerializationInclusion(JsonInclude.Include.NON_EMPTY);
     }
 
+    private static final String SOAK_TEST_SPEC_PATH = "SOAK_TEST_SPEC_PATH";
+    private static final String SOAK_AWS_SECURITY_GROUP = "SOAK_AWS_SECURITY_GROUP";
+    private static final String SOAK_AWS_SECURITY_KEYPAIR = "SOAK_AWS_SECURITY_KEYPAIR";
+    private static final String SOAK_TIMEOUT_SECONDS = "SOAK_TIMEOUT_SECONDS";
+    private static final String SOAK_ACTION_FILTER = "SOAK_ACTION_FILTER";
+    private static final String SOAK_TARGETS = "SOAK_TARGETS";
+    private static final String SOAK_KAFKA_PATH = "SOAK_KAFKA_PATH";
+    private static final String SOAK_OUTPUT_DIRECTORY = "SOAK_OUTPUT_DIRECTORY";
+    private static final String SOAK_OUTPUT_DIRECTORY_DEFAULT = "/tmp/soak";
+
+    private static String getEnv(String name, String defaultValue) {
+        String val = System.getenv(name);
+        if (val != null) {
+            return val;
+        }
+        return defaultValue;
+    }
+
+    private static Integer getEnvInt(String name, Integer defaultValue) {
+        String val = System.getenv(name);
+        if (val != null) {
+            try {
+                return Integer.valueOf(val);
+            } catch (NumberFormatException e) {
+                throw new RuntimeException("Unable to parse value " + name +
+                        " given for " + name, e);
+            }
+        }
+        return defaultValue;
+    }
+
     public static void main(String[] args) throws Throwable {
         ArgumentParser parser = ArgumentParsers
             .newArgumentParser("soak-tool")
             .defaultHelp(true)
-            .description("The Kafka soak cluster tool.")
-            .epilog("This tool accepts some environment variables:\n" +
-                "  AWS_ACCESS_KEY_ID: the AWS access key to use.\n" +
-                "  AWS_SECRET_KEY: the AWS secret key to use.\n" +
-                "  AWS_REGION: the AWS region to use.\n" +
-                "  " + SECURITY_GROUP_ENV + ": the security group name to use.\n" +
-                "  " + SECURITY_KEYPAIR_ENV + ": the security key pair name to use.\n" +
-                "  " + SOAK_ROOT_ENV + ": the root directory under which to write log \n" +
-                "    files and other output.  Defaults to " + SOAK_ROOT_DEFAULT);
+            .description("The Kafka soak cluster tool.");
+            // .epilog
 
-        Subparsers subparsers = parser.addSubparsers().dest(COMMAND);
-        subparsers.description(
-            UP_COMMAND + ": " + UP_COMMAND_HELP + "\n" +
-            SETUP_COMMAND + ": " + SETUP_COMMAND_HELP + "\n" +
-            STATUS_COMMAND + ": " + STATUS_COMMAND_HELP + "\n" +
-            SSH_COMMAND + ": " + SSH_COMMAND_HELP + "\n" +
-            STOP_COMMAND + ": " + STOP_COMMAND_HELP + "\n" +
-            DOWN_COMMAND + ": " + DOWN_COMMAND_HELP);
-
-        Subparser upParser = subparsers.addParser(UP_COMMAND).
-            description(UP_COMMAND_HELP);
-        upParser.addArgument("-s", "--test-spec")
+        parser.addArgument("-s", "--test-spec")
             .action(store())
-            .required(true)
             .type(String.class)
-            .dest(TEST_SPEC)
-            .metavar(TEST_SPEC)
-            .help("The soak test specification file to use.");
-        upParser.addArgument("--sg")
+            .dest(SOAK_TEST_SPEC_PATH)
+            .metavar(SOAK_TEST_SPEC_PATH)
+            .setDefault(getEnv(SOAK_TEST_SPEC_PATH, ""))
+            .help("The path to the soak cluster test specification file.");
+        parser.addArgument("--sg")
             .action(store())
-            .required(false)
             .type(String.class)
-            .dest(SECURITY_GROUP)
-            .metavar(SECURITY_GROUP)
-            .setDefault(System.getenv(SECURITY_GROUP_ENV))
-            .help("The security group name to use.");
-        upParser.addArgument("--keypair")
+            .dest(SOAK_AWS_SECURITY_GROUP)
+            .metavar(SOAK_AWS_SECURITY_GROUP)
+            .setDefault(getEnv(SOAK_AWS_SECURITY_GROUP, ""))
+            .help("The AWS security group name to use.");
+        parser.addArgument("--keypair")
             .action(store())
-            .required(false)
             .type(String.class)
-            .dest(SECURITY_KEYPAIR)
-            .metavar(SECURITY_KEYPAIR)
-            .setDefault(System.getenv(SECURITY_KEYPAIR_ENV))
-            .help("The keypair name to use.");
-        upParser.addArgument("-c", "--cluster")
+            .dest(SOAK_AWS_SECURITY_KEYPAIR)
+            .metavar(SOAK_AWS_SECURITY_KEYPAIR)
+            .setDefault(getEnv(SOAK_AWS_SECURITY_KEYPAIR, ""))
+            .help("The AWS keypair name to use.");
+        parser.addArgument("-t", "--timeout")
             .action(store())
-            .required(true)
-            .type(String.class)
-            .dest(CLUSTER)
-            .metavar(CLUSTER)
-            .help("The cluster JSON file to output.");
-        upParser.addArgument("-t", "--timeout")
-            .action(store())
-            .required(false)
             .type(Integer.class)
-            .dest(TIMEOUT_SECONDS)
-            .metavar(TIMEOUT_SECONDS)
-            .setDefault(180)
+            .dest(SOAK_TIMEOUT_SECONDS)
+            .metavar(SOAK_TIMEOUT_SECONDS)
+            .setDefault(getEnvInt(SOAK_TIMEOUT_SECONDS, 360))
             .help("The timeout in seconds.");
-
-        Subparser setupParser = subparsers.addParser(SETUP_COMMAND).
-            description(SETUP_COMMAND_HELP);
-        setupParser.addArgument("-c", "--cluster")
-            .action(store())
-            .required(true)
-            .type(String.class)
-            .dest(CLUSTER)
-            .metavar(CLUSTER)
-            .help("The cluster JSON file to use.");
-        setupParser.addArgument("-t", "--timeout")
-            .action(store())
-            .required(false)
-            .type(Integer.class)
-            .dest(TIMEOUT_SECONDS)
-            .metavar(TIMEOUT_SECONDS)
-            .setDefault(180)
-            .help("The timeout in seconds.");
-        setupParser.addArgument("-a", "--action-filter")
+        parser.addArgument("-a", "--action-filter")
             .action(store())
             .required(false)
             .type(String.class)
-            .dest(ACTION_FILTER)
-            .metavar(ACTION_FILTER)
-            .setDefault(ActionScheduler.DEFAULT_ACTION_FILTER.toString())
-            .help(ACTION_FILTER_HELP);
-
-        Subparser statusParser = subparsers.addParser(STATUS_COMMAND).
-            description(STATUS_COMMAND_HELP);
-        statusParser.addArgument("-c", "--cluster")
+            .dest(SOAK_ACTION_FILTER)
+            .metavar(SOAK_ACTION_FILTER)
+            .setDefault(getEnv(SOAK_ACTION_FILTER, ActionScheduler.DEFAULT_ACTION_FILTER.toString()))
+            .help("A regular expression which constrains the actions which are executed.");
+        parser.addArgument("--kafka-path")
             .action(store())
-            .required(true)
             .type(String.class)
-            .dest(CLUSTER)
-            .metavar(CLUSTER)
-            .help("The cluster JSON file to use.");
-        statusParser.addArgument("-t", "--timeout")
+            .dest(SOAK_KAFKA_PATH)
+            .metavar(SOAK_KAFKA_PATH)
+            .setDefault(getEnv(SOAK_KAFKA_PATH, ""))
+            .help("The path to the Kafka directory.");
+        parser.addArgument("-o", "--output-directory")
             .action(store())
-            .required(false)
-            .type(Integer.class)
-            .dest(TIMEOUT_SECONDS)
-            .metavar(TIMEOUT_SECONDS)
-            .setDefault(60)
-            .help("The timeout in seconds.");
-        statusParser.addArgument("-a", "--action-filter")
-            .action(store())
-            .required(false)
             .type(String.class)
-            .dest(ACTION_FILTER)
-            .metavar(ACTION_FILTER)
-            .setDefault(ActionScheduler.DEFAULT_ACTION_FILTER.toString())
-            .help(ACTION_FILTER_HELP);
-
-        Subparser sshParser = subparsers.addParser(SSH_COMMAND).
-            description(SSH_COMMAND_HELP);
-        sshParser.addArgument("-c", "--cluster")
-            .action(store())
-            .required(true)
-            .type(String.class)
-            .dest(CLUSTER)
-            .metavar(CLUSTER)
-            .help("The cluster JSON file to use.");
-        sshParser.addArgument("-n", "--node")
-            .action(Arguments.append())
-            .required(true)
-            .type(String.class)
-            .dest(NODE_NAME)
-            .metavar(NODE_NAME)
-            .help("The node to use, or all to use all nodes.");
-        sshParser.addArgument("command")
+            .dest(SOAK_OUTPUT_DIRECTORY)
+            .metavar(SOAK_OUTPUT_DIRECTORY)
+            .setDefault(getEnv(SOAK_OUTPUT_DIRECTORY, SOAK_OUTPUT_DIRECTORY_DEFAULT))
+            .help("The output path to store logs, cluster files, and other outputs in.");
+        parser.addArgument("target")
             .nargs("*")
             .action(store())
             .required(false)
-            .dest(SSH_COMMANDS)
-            .metavar(SSH_COMMANDS)
-            .help("The ssh command to run.");
-
-        Subparser stopParser = subparsers.addParser(STOP_COMMAND).
-            description(STOP_COMMAND_HELP);
-        stopParser.addArgument("-c", "--cluster")
-            .action(store())
-            .required(true)
-            .type(String.class)
-            .dest(CLUSTER)
-            .metavar(CLUSTER)
-            .help("The cluster JSON file to use.");
-        stopParser.addArgument("-t", "--timeout")
-            .action(store())
-            .required(false)
-            .type(Integer.class)
-            .dest(TIMEOUT_SECONDS)
-            .metavar(TIMEOUT_SECONDS)
-            .setDefault(60)
-            .help("The timeout in seconds.");
-        stopParser.addArgument("-a", "--action-filter")
-            .action(store())
-            .required(false)
-            .type(String.class)
-            .dest(ACTION_FILTER)
-            .metavar(ACTION_FILTER)
-            .setDefault(ActionScheduler.DEFAULT_ACTION_FILTER.toString())
-            .help(ACTION_FILTER_HELP);
-
-        Subparser destroyParser = subparsers.addParser(DOWN_COMMAND).
-            description(DOWN_COMMAND_HELP);
-        destroyParser.addArgument("-c", "--cluster")
-            .action(store())
-            .required(true)
-            .type(String.class)
-            .dest(CLUSTER)
-            .metavar(CLUSTER)
-            .help("The cluster JSON file to use.");
+            .dest(SOAK_TARGETS)
+            .metavar(SOAK_TARGETS)
+            .help("The target action(s) to run.");
 
         try {
-            SoakEnvironment.Builder envBuilder = new SoakEnvironment.Builder().
-                rootPath(System.getenv(SOAK_ROOT_ENV)).
-                kafkaPath(System.getenv(KAFKA_PATH_ENV)).
-                clusterLog(SoakLog.fromStdout(SoakLog.CLUSTER));
-            if (envBuilder.rootPath() == null) {
-                envBuilder.rootPath(SOAK_ROOT_DEFAULT);
-            }
-            if (envBuilder.kafkaPath() == null) {
-                throw new RuntimeException(KAFKA_PATH_ENV + " must be set.");
-            }
-
             Namespace res = parser.parseArgsOrFail(args);
-            String command = res.getString(COMMAND);
-            if (command.equals(UP_COMMAND)) {
-                envBuilder.timeoutSecs(res.getInt(TIMEOUT_SECONDS));
-                envBuilder.keyPair(res.getString(SECURITY_KEYPAIR));
-                if (envBuilder.keyPair() == null) {
-                    throw new RuntimeException("You must supply an AWS security keypair on " +
-                        "the command line, or by setting " + SECURITY_KEYPAIR_ENV);
-                }
-                envBuilder.securityGroup(res.getString(SECURITY_GROUP));
-                if (envBuilder.securityGroup() == null) {
-                    throw new RuntimeException("You must supply an AWS security group on " +
-                        "the command line, or by setting " + SECURITY_GROUP_ENV);
-                }
-                SoakUp.run(res.getString(TEST_SPEC), res.getString(CLUSTER), envBuilder.build());
-            } else if (command.equals(SETUP_COMMAND)) {
-                envBuilder.timeoutSecs(res.getInt(TIMEOUT_SECONDS));
-                envBuilder.actionFilter(Pattern.compile(res.getString(ACTION_FILTER)));
-                SoakSetup.run(res.getString(CLUSTER), envBuilder.build());
-            } else if (command.equals(STATUS_COMMAND)) {
-                envBuilder.timeoutSecs(res.getInt(TIMEOUT_SECONDS));
-                envBuilder.actionFilter(Pattern.compile(res.getString(ACTION_FILTER)));
-                SoakStatus.run(res.getString(CLUSTER), envBuilder.build());
-            } else if (command.equals(SSH_COMMAND)) {
-                SoakClusterCommand.run(res.getString(CLUSTER), envBuilder.build(),
-                    res.<String>getList(NODE_NAME), res.<String>getList(SSH_COMMANDS));
-            } else if (command.equals(STOP_COMMAND)) {
-                envBuilder.timeoutSecs(res.getInt(TIMEOUT_SECONDS));
-                envBuilder.actionFilter(Pattern.compile(res.getString(ACTION_FILTER)));
-                SoakStop.run(res.getString(CLUSTER), envBuilder.build());
-            } else if (command.equals(DOWN_COMMAND)) {
-                SoakDown.run(res.getString(CLUSTER), envBuilder.build());
-            } else {
-                System.out.printf("Invalid command %s.  Type --help for help.", command);
-                System.exit(1);
+            SoakEnvironment env = new SoakEnvironment(
+                    res.getString(SOAK_TEST_SPEC_PATH),
+                    res.getString(SOAK_AWS_SECURITY_GROUP),
+                    res.getString(SOAK_AWS_SECURITY_KEYPAIR),
+                    res.getInt(SOAK_TIMEOUT_SECONDS),
+                    res.getString(SOAK_ACTION_FILTER),
+                    res.getString(SOAK_KAFKA_PATH),
+                    res.getString(SOAK_OUTPUT_DIRECTORY));
+            List<String> targets = res.<String>getList(SOAK_TARGETS);
+            if (env.clusterPath().isEmpty()) {
+                throw new RuntimeException("You must supply a cluster file path with -c.");
             }
+            if (targets.isEmpty()) {
+                parser.printHelp();
+                System.exit(0);
+            }
+            SoakClusterSpec clusterSpec =
+                SoakTool.JSON_SERDE.readValue(new File(env.clusterPath()), SoakClusterSpec.class);
+            Files.createDirectories(Paths.get(env.outputDirectory()));
+            SoakLog clusterLog = SoakLog.fromStdout("cluster");
+
+            SoakReturnCode exitCode = SoakReturnCode.TOOL_FAILED;
+            try (Ec2Cloud cloud = new Ec2Cloud()) {
+                try (SoakCluster cluster = new SoakCluster(env, cloud, clusterLog, clusterSpec)) {
+                    Runtime.getRuntime().addShutdownHook(new Thread() {
+                        @Override
+                        public void run() {
+                            cluster.shutdownManager().shutdown();
+                        }
+                    });
+                    try (ActionScheduler scheduler = cluster.createScheduler(targets)) {
+                        scheduler.await(env.timeoutSecs());
+                    }
+                    cluster.shutdownManager().shutdown();
+                    exitCode = cluster.shutdownManager().returnCode();
+                }
+            }
+            System.exit(exitCode.code());
         } catch (Throwable exception) {
             System.out.printf("Exiting with exception: %s\n", Utils.fullStackTrace(exception));
             System.exit(1);

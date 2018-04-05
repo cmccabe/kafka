@@ -15,30 +15,28 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.soak.role;
+package org.apache.kafka.soak.action;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import org.apache.kafka.soak.action.Action;
-import org.apache.kafka.soak.action.BrokerStartAction;
-import org.apache.kafka.soak.action.BrokerStatusAction;
-import org.apache.kafka.soak.action.BrokerStopAction;
+import org.apache.kafka.soak.cluster.SoakCluster;
+import org.apache.kafka.soak.cluster.SoakNode;
 
-import java.util.ArrayList;
-import java.util.Collection;
+/**
+ * Rsync the Kafka source directory to the cluster node.
+ */
+public final class SaveLogsAction extends Action {
+    public static final String TYPE = "saveLogs";
 
-public class BrokerRole implements Role {
-    public static final String KAFKA_CLASS_NAME = "kafka.Kafka";
-
-    @JsonCreator
-    public BrokerRole() {
+    public SaveLogsAction(String scope) {
+        super(new ActionId(TYPE, scope),
+            new ActionId[] {},
+            new ActionId[] {});
     }
 
     @Override
-    public Collection<Action> createActions(String nodeName) {
-        ArrayList<Action> actions = new ArrayList<>();
-        actions.add(new BrokerStartAction(nodeName));
-        actions.add(new BrokerStatusAction(nodeName));
-        actions.add(new BrokerStopAction(nodeName));
-        return actions;
+    public void call(SoakCluster cluster, SoakNode node) throws Throwable {
+        cluster.cloud().remoteCommand(node).
+            syncFrom(ActionPaths.LOGS_ROOT + "/",
+                cluster.env().outputDirectory() + "/logs/").
+            mustRun();
     }
-};
+}

@@ -19,7 +19,6 @@ package org.apache.kafka.soak.cluster;
 
 import org.apache.kafka.soak.role.BrokerRole;
 import org.apache.kafka.soak.role.Role;
-import org.apache.kafka.soak.role.RoleDependencies;
 import org.apache.kafka.soak.role.TrogdorAgentRole;
 import org.apache.kafka.soak.role.TrogdorCoordinatorRole;
 import org.apache.kafka.soak.role.ZooKeeperRole;
@@ -36,11 +35,6 @@ public class TestFixture {
      */
     public static MiniSoakCluster createRoleTestCluster() throws Exception {
         MiniSoakCluster.Builder builder = new MiniSoakCluster.Builder();
-
-        List<String> provided = Arrays.asList(new String[] {
-            RoleDependencies.LINUX_SETUP + ":all"
-        });
-        builder.provided(provided);
 
         List<Role> roles0 = Arrays.asList(new Role[] {
             new BrokerRole(),

@@ -18,6 +18,14 @@
 package org.apache.kafka.soak.role;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import org.apache.kafka.soak.action.Action;
+import org.apache.kafka.soak.action.TrogdorDaemonType;
+import org.apache.kafka.soak.action.TrogdorStartAction;
+import org.apache.kafka.soak.action.TrogdorStatusAction;
+import org.apache.kafka.soak.action.TrogdorStopAction;
+
+import java.util.ArrayList;
+import java.util.Collection;
 
 public class TrogdorCoordinatorRole implements Role {
     @JsonCreator
@@ -25,19 +33,11 @@ public class TrogdorCoordinatorRole implements Role {
     }
 
     @Override
-    public void setup(ActionScheduler.Builder bld, String nodeName) {
-        bld.addAction(new TrogdorStart(nodeName, TrogdorDaemonType.COORDINATOR));
-    }
-
-    @Override
-    public void status(ActionScheduler.Builder bld, String nodeName,
-                       RoleStatusCollector collector) {
-        bld.addAction(new TrogdorStatus(nodeName, TrogdorDaemonType.COORDINATOR,
-                      collector));
-    }
-
-    @Override
-    public void stop(ActionScheduler.Builder bld, String nodeName) {
-        bld.addAction(new TrogdorStop(nodeName, TrogdorDaemonType.COORDINATOR));
+    public Collection<Action> createActions(String nodeName) {
+        ArrayList<Action> actions = new ArrayList<>();
+        actions.add(new TrogdorStartAction(TrogdorDaemonType.COORDINATOR, nodeName));
+        actions.add(new TrogdorStatusAction(TrogdorDaemonType.COORDINATOR, nodeName));
+        actions.add(new TrogdorStopAction(TrogdorDaemonType.COORDINATOR, nodeName));
+        return actions;
     }
 };

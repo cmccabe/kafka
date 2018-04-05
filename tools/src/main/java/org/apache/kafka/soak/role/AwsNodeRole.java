@@ -18,26 +18,52 @@
 package org.apache.kafka.soak.role;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.kafka.soak.action.Action;
-import org.apache.kafka.soak.action.TrogdorDaemonType;
-import org.apache.kafka.soak.action.TrogdorStartAction;
-import org.apache.kafka.soak.action.TrogdorStatusAction;
-import org.apache.kafka.soak.action.TrogdorStopAction;
+import org.apache.kafka.soak.action.AwsDestroyAction;
+import org.apache.kafka.soak.action.AwsInitAction;
 
 import java.util.ArrayList;
 import java.util.Collection;
 
-public class TrogdorAgentRole implements Role {
+public class AwsNodeRole implements Role {
+    private final String imageId;
+    private final String instanceType;
+    private final String sshIdentityFile;
+    private final String sshUser;
+
     @JsonCreator
-    public TrogdorAgentRole() {
+    public AwsNodeRole(@JsonProperty("imageId") String imageId,
+                       @JsonProperty("instanceType") String instanceType,
+                       @JsonProperty("sshIdentityFile") String sshIdentityFile,
+                       @JsonProperty("sshUser") String sshUser) {
+        this.imageId = imageId;
+        this.instanceType = instanceType;
+        this.sshIdentityFile = sshIdentityFile;
+        this.sshUser = sshUser;
+    }
+
+    public String imageId() {
+        return imageId;
+    }
+
+    public String instanceType() {
+        return instanceType;
+    }
+
+    public String sshIdentityFile() {
+        return sshIdentityFile;
+    }
+
+    public String sshUser() {
+        return sshUser;
     }
 
     @Override
     public Collection<Action> createActions(String nodeName) {
         ArrayList<Action> actions = new ArrayList<>();
-        actions.add(new TrogdorStartAction(TrogdorDaemonType.AGENT, nodeName));
-        actions.add(new TrogdorStatusAction(TrogdorDaemonType.AGENT, nodeName));
-        actions.add(new TrogdorStopAction(TrogdorDaemonType.AGENT, nodeName));
+        actions.add(new AwsInitAction(nodeName, this));
+        actions.add(new AwsDestroyAction(nodeName));
         return actions;
     }
 };

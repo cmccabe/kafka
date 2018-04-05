@@ -18,10 +18,12 @@
 package org.apache.kafka.soak.common;
 
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.soak.cloud.SoakRemoteCommand;
 import org.apache.kafka.soak.cluster.SoakCluster;
 import org.apache.kafka.soak.cluster.SoakNode;
-import org.apache.kafka.soak.role.RoleState;
-import org.apache.kafka.soak.role.RoleStatus;
+import org.apache.kafka.soak.tool.SoakReturnCode;
+import org.apache.kafka.trogdor.coordinator.Coordinator;
+import org.apache.kafka.trogdor.coordinator.CoordinatorClient;
 
 import java.io.File;
 import java.io.IOException;
@@ -94,7 +96,7 @@ public final class SoakUtil {
      * @return                  The role status.
      * @throws Exception
      */
-    public static final RoleStatus getJavaProcessStatus(SoakCluster cluster,
+    public static final SoakReturnCode getJavaProcessStatus(SoakCluster cluster,
             SoakNode node, String processPattern) throws Exception {
         StringBuilder stringBuilder = new StringBuilder();
         int retVal = cluster.cloud().remoteCommand(node).
@@ -102,19 +104,20 @@ public final class SoakUtil {
             args("-n", "--", "jcmd", "|", "grep", processPattern).
             run();
         if (retVal == 255) {
-            return new RoleStatus(RoleState.WAITING,
-                "Unable to determine if " + processPattern + " is running.");
+            cluster.clusterLog().error("Unable to determine if " +
+                processPattern + " is running.");
+            return SoakReturnCode.TOOL_FAILED;
         } else if (retVal == 1) {
-            return new RoleStatus(RoleState.FAILED,
-                processPattern + " is not running.");
+            cluster.clusterLog().error(processPattern + " is not running.");
+            return SoakReturnCode.CLUSTER_FAILED;
         }
         String pidString = stringBuilder.toString();
         int firstSpace = pidString.indexOf(" ");
         if (firstSpace != -1) {
             pidString = pidString.substring(0, firstSpace - 1);
         }
-        return new RoleStatus(RoleState.SUCCESS,
-            processPattern + " is running as pid " + pidString);
+        cluster.clusterLog().info(processPattern + " is running as pid " + pidString);
+        return SoakReturnCode.SUCCESS;
     }
 
     /**
@@ -162,5 +165,26 @@ public final class SoakUtil {
             }
         }
         return results;
+    }
+
+    public interface CoordinatorFunction<T> {
+        T apply(CoordinatorClient client) throws Exception;
+    }
+
+    /**
+     * Create a coordinator client and open an ssh tunnel, so that we can invoke
+     * the Trogdor coordinator.
+     */
+    public static <T> T invokeCoordinator(final SoakCluster cluster, final SoakNode node,
+                                          CoordinatorFunction<T> func) throws Exception {
+        try (SoakRemoteCommand.Tunnel tunnel =
+                 new SoakRemoteCommand.Tunnel(node, Coordinator.DEFAULT_PORT)) {
+            CoordinatorClient coordinatorClient = new CoordinatorClient.Builder().
+                maxTries(3).
+                target("localhost", tunnel.localPort()).
+                log(node.log()).
+                build();
+            return func.apply(coordinatorClient);
+        }
     }
 };

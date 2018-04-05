@@ -19,25 +19,20 @@ package org.apache.kafka.soak.role;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import org.apache.kafka.soak.action.Action;
-import org.apache.kafka.soak.action.TrogdorDaemonType;
-import org.apache.kafka.soak.action.TrogdorStartAction;
-import org.apache.kafka.soak.action.TrogdorStatusAction;
-import org.apache.kafka.soak.action.TrogdorStopAction;
+import org.apache.kafka.soak.action.UbuntuSetupAction;
 
 import java.util.ArrayList;
 import java.util.Collection;
 
-public class TrogdorAgentRole implements Role {
+public class UbuntuNodeRole implements Role {
     @JsonCreator
-    public TrogdorAgentRole() {
+    public UbuntuNodeRole() {
     }
 
     @Override
     public Collection<Action> createActions(String nodeName) {
         ArrayList<Action> actions = new ArrayList<>();
-        actions.add(new TrogdorStartAction(TrogdorDaemonType.AGENT, nodeName));
-        actions.add(new TrogdorStatusAction(TrogdorDaemonType.AGENT, nodeName));
-        actions.add(new TrogdorStopAction(TrogdorDaemonType.AGENT, nodeName));
+        actions.add(new UbuntuSetupAction(nodeName));
         return actions;
     }
 };

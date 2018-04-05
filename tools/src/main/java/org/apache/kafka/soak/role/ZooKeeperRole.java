@@ -18,6 +18,13 @@
 package org.apache.kafka.soak.role;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import org.apache.kafka.soak.action.Action;
+import org.apache.kafka.soak.action.ZooKeeperStartAction;
+import org.apache.kafka.soak.action.ZooKeeperStatusAction;
+import org.apache.kafka.soak.action.ZooKeeperStopAction;
+
+import java.util.ArrayList;
+import java.util.Collection;
 
 public class ZooKeeperRole implements Role {
     public static final String ZOOKEEPER_CLASS_NAME =
@@ -28,18 +35,11 @@ public class ZooKeeperRole implements Role {
     }
 
     @Override
-    public void setup(ActionScheduler.Builder bld, String nodeName) {
-        bld.addAction(new ZooKeeperStart(nodeName));
-    }
-
-    @Override
-    public void status(ActionScheduler.Builder bld, String nodeName,
-                       RoleStatusCollector statusCollector) {
-        bld.addAction(new ZooKeeperStatus(nodeName, statusCollector));
-    }
-
-    @Override
-    public void stop(ActionScheduler.Builder bld, String nodeName) {
-        bld.addAction(new ZooKeeperStop(nodeName));
+    public Collection<Action> createActions(String nodeName) {
+        ArrayList<Action> actions = new ArrayList<>();
+        actions.add(new ZooKeeperStartAction(nodeName));
+        actions.add(new ZooKeeperStatusAction(nodeName));
+        actions.add(new ZooKeeperStopAction(nodeName));
+        return actions;
     }
 };

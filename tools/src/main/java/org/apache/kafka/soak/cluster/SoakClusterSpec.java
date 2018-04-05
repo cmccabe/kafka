@@ -27,28 +27,16 @@ import java.util.Map;
 import java.util.TreeMap;
 
 public class SoakClusterSpec {
-    private final String soakId;
     private final Map<String, SoakNodeSpec> nodes;
     private final Map<String, String> defaults;
-    private final List<String> provided;
 
     @JsonCreator
-    public SoakClusterSpec(@JsonProperty("soakId") String soakId,
-                           @JsonProperty("nodes") Map<String, SoakNodeSpec> nodes,
-                           @JsonProperty("defaults") Map<String, String> defaults,
-                           @JsonProperty("provided") List<String> provided) {
-        this.soakId = soakId == null ? "" : soakId;
+    public SoakClusterSpec(@JsonProperty("nodes") Map<String, SoakNodeSpec> nodes,
+                           @JsonProperty("defaults") Map<String, String> defaults) {
         this.nodes = Collections.unmodifiableMap(
             (nodes == null) ? new TreeMap<String, SoakNodeSpec>() : new TreeMap<>(nodes));
         this.defaults = Collections.unmodifiableMap(
             (defaults == null) ? new TreeMap<String, String>() : new TreeMap<>(defaults));
-        this.provided = Collections.unmodifiableList(
-            (provided == null) ? new ArrayList<String>() : new ArrayList<>(provided));
-    }
-
-    @JsonProperty
-    public String soakId() {
-        return soakId;
     }
 
     @JsonProperty
@@ -59,10 +47,5 @@ public class SoakClusterSpec {
     @JsonProperty
     public Map<String, String> defaults() {
         return defaults;
-    }
-
-    @JsonProperty
-    public List<String> provided() {
-        return provided;
     }
 }

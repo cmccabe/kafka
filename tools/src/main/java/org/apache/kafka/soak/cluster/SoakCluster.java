@@ -18,80 +18,59 @@
 package org.apache.kafka.soak.cluster;
 
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.soak.action.Action;
+import org.apache.kafka.soak.action.ActionScheduler;
 import org.apache.kafka.soak.cloud.Cloud;
 import org.apache.kafka.soak.common.SoakLog;
 import org.apache.kafka.soak.common.SoakUtil;
+import org.apache.kafka.soak.role.BrokerRole;
 import org.apache.kafka.soak.role.Role;
+import org.apache.kafka.soak.role.ZooKeeperRole;
 import org.apache.kafka.soak.tool.SoakEnvironment;
+import org.apache.kafka.soak.tool.SoakShutdownManager;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 
 /**
  * The SoakCluster.
  */
 public final class SoakCluster implements AutoCloseable {
-    private String soakId;
-    private final String rootPath;
-    private final String logPath;
-    private final String kafkaPath;
-    private final List<String> provided;
-    private final TreeMap<String, String> defaults;
+    private final SoakEnvironment env;
     private final Cloud cloud;
     private final SoakLog clusterLog;
+    private final HashMap<String, String> defaults;
     private final Map<String, SoakNode> nodes;
+    private final SoakShutdownManager shutdownManager;
 
-    public SoakCluster(SoakClusterSpec spec, SoakEnvironment env, Cloud cloud) throws IOException {
-        this(spec.soakId(), env.rootPath(), env.kafkaPath(), spec.provided(), spec.defaults(),
-            spec.nodes(), cloud, env.clusterLog());
-    }
-
-    public SoakCluster(String soakId,
-                       String rootPath,
-                       String kafkaPath,
-                       List<String> provided,
-                       Map<String, String> defaults,
-                       Map<String, SoakNodeSpec> nodeSpecs,
-                       Cloud cloud,
-                       SoakLog clusterLog) throws IOException {
-        this.soakId = soakId;
-        this.rootPath = rootPath;
-        this.logPath = Paths.get(rootPath, soakId).toString();
-        Files.createDirectories(Paths.get(this.logPath));
-        this.kafkaPath = kafkaPath;
-        this.provided = provided;
-        this.defaults = new TreeMap<>(defaults);
+    public SoakCluster(SoakEnvironment env, Cloud cloud, SoakLog clusterLog,
+                       SoakClusterSpec spec) throws IOException {
+        this.env = env;
         this.cloud = cloud;
         this.clusterLog = clusterLog;
         TreeMap<String, SoakNode> nodes = new TreeMap<>();
         int nodeIndex = 0;
-        for (Map.Entry<String, SoakNodeSpec> entry : nodeSpecs.entrySet()) {
+        for (Map.Entry<String, SoakNodeSpec> entry : spec.nodes().entrySet()) {
             String nodeName = entry.getKey();
             SoakNodeSpec nodeSpec = entry.getValue();
-            SoakLog soakLog = SoakLog.fromFile(logPath, nodeName);
+            SoakLog soakLog = SoakLog.fromFile(env.outputDirectory(), nodeName);
             SoakNode node = new SoakNode(nodeIndex, nodeName, soakLog,
-                    SoakUtil.mergeConfig(nodeSpec.conf(), defaults), nodeSpec);
+                    SoakUtil.mergeConfig(nodeSpec.conf(), spec.defaults()), nodeSpec);
             nodes.put(nodeName, node);
             nodeIndex++;
         }
+        this.defaults = new HashMap<>(spec.defaults());
         this.nodes = nodes;
-    }
-
-    public synchronized String soakId() {
-        return soakId;
-    }
-
-    public synchronized void soakId(String soakId) {
-        this.soakId = soakId;
+        this.shutdownManager = new SoakShutdownManager(clusterLog);
     }
 
     public SoakLog clusterLog() {
@@ -108,18 +87,6 @@ public final class SoakCluster implements AutoCloseable {
             foundNodes.add(nodes.get(name));
         }
         return foundNodes;
-    }
-
-    public String rootPath() {
-        return rootPath;
-    }
-
-    public String logPath() {
-        return logPath;
-    }
-
-    public String kafkaPath() {
-        return kafkaPath;
     }
 
     /**
@@ -145,6 +112,28 @@ public final class SoakCluster implements AutoCloseable {
             index++;
         }
         return results;
+    }
+
+    public String getBootstrapServers() {
+        StringBuilder bld = new StringBuilder();
+        String prefix = "";
+        for (String nodeName : nodesWithRole(BrokerRole.class).values()) {
+            bld.append(prefix);
+            prefix = ",";
+            bld.append(nodes().get(nodeName).spec().privateDns()).append(":9092");
+        }
+        return bld.toString();
+    }
+
+   public String getZooKeeperConnectString() {
+        StringBuilder bld = new StringBuilder();
+        String prefix = "";
+        for (String nodeName : nodesWithRole(ZooKeeperRole.class).values()) {
+            bld.append(prefix);
+            prefix = ",";
+            bld.append(nodes().get(nodeName).spec().privateDns()).append(":2181");
+        }
+        return bld.toString();
     }
 
     public Collection<String> getSoakNodesByNamesOrIndices(List<String> args) {
@@ -192,8 +181,8 @@ public final class SoakCluster implements AutoCloseable {
         }
     }
 
-    public List<String> provided() {
-        return provided;
+    public SoakEnvironment env() {
+        return env;
     }
 
     public Cloud cloud() {
@@ -205,6 +194,26 @@ public final class SoakCluster implements AutoCloseable {
         for (Map.Entry<String, SoakNode> entry : nodes.entrySet()) {
             nodeSpecs.put(entry.getKey(), entry.getValue().spec());
         }
-        return new SoakClusterSpec(soakId, nodeSpecs, defaults, provided);
+        return new SoakClusterSpec(nodeSpecs, defaults);
+    }
+
+    public ActionScheduler createScheduler(List<String> targets) throws Exception {
+        ActionScheduler.Builder builder = new ActionScheduler.Builder(this);
+        builder.actionFilter(Pattern.compile(env.actionFilter()));
+        for (String target : targets) {
+            builder.addRoot(target);
+        }
+        for (SoakNode node : nodes.values()) {
+            for (Role role : node.spec().roles()) {
+                for (Action action : role.createActions(node.nodeName())) {
+                    builder.addAction(action);
+                }
+            }
+        }
+        return builder.build();
+    }
+
+    public SoakShutdownManager shutdownManager() {
+        return shutdownManager;
     }
 }

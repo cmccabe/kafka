@@ -15,30 +15,28 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.soak.role;
+package org.apache.kafka.soak.action;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import org.apache.kafka.soak.action.Action;
-import org.apache.kafka.soak.action.BrokerStartAction;
-import org.apache.kafka.soak.action.BrokerStatusAction;
-import org.apache.kafka.soak.action.BrokerStopAction;
+import org.apache.kafka.soak.cluster.SoakCluster;
+import org.apache.kafka.soak.cluster.SoakNode;
+import org.apache.kafka.soak.common.SoakUtil;
+import org.apache.kafka.soak.role.ZooKeeperRole;
 
-import java.util.ArrayList;
-import java.util.Collection;
+/**
+ * Gets the status of ZooKeeper.
+ */
+public final class ZooKeeperStatusAction extends Action {
+    public static String TYPE = "zooKeeperStatus";
 
-public class BrokerRole implements Role {
-    public static final String KAFKA_CLASS_NAME = "kafka.Kafka";
-
-    @JsonCreator
-    public BrokerRole() {
+    public ZooKeeperStatusAction(String scope) {
+        super(new ActionId(TYPE, scope),
+            new ActionId[] {},
+            new ActionId[] {});
     }
 
     @Override
-    public Collection<Action> createActions(String nodeName) {
-        ArrayList<Action> actions = new ArrayList<>();
-        actions.add(new BrokerStartAction(nodeName));
-        actions.add(new BrokerStatusAction(nodeName));
-        actions.add(new BrokerStopAction(nodeName));
-        return actions;
+    public void call(SoakCluster cluster, SoakNode node) throws Throwable {
+        cluster.shutdownManager().changeReturnCode(
+            SoakUtil.getJavaProcessStatus(cluster, node, ZooKeeperRole.ZOOKEEPER_CLASS_NAME));
     }
-};
+}

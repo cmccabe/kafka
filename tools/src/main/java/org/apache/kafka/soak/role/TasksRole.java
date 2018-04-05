@@ -18,26 +18,39 @@
 package org.apache.kafka.soak.role;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.kafka.soak.action.Action;
-import org.apache.kafka.soak.action.TrogdorDaemonType;
-import org.apache.kafka.soak.action.TrogdorStartAction;
-import org.apache.kafka.soak.action.TrogdorStatusAction;
-import org.apache.kafka.soak.action.TrogdorStopAction;
+import org.apache.kafka.soak.action.TaskStartAction;
+import org.apache.kafka.soak.action.TaskStatusAction;
+import org.apache.kafka.soak.action.TaskStopAction;
+import org.apache.kafka.trogdor.task.TaskSpec;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.TreeMap;
 
-public class TrogdorAgentRole implements Role {
+/**
+ * A role which runs tasks inside Trogdor.
+ */
+public class TasksRole implements Role {
+    private final TreeMap<String, TaskSpec> taskSpecs;
+
     @JsonCreator
-    public TrogdorAgentRole() {
+    public TasksRole(@JsonProperty("taskSpecs") TreeMap<String, TaskSpec> taskSpecs) {
+        this.taskSpecs = taskSpecs == null ? new TreeMap<String, TaskSpec>() : taskSpecs;
+    }
+
+    @JsonProperty
+    public TreeMap<String, TaskSpec> taskSpecs() {
+        return taskSpecs;
     }
 
     @Override
     public Collection<Action> createActions(String nodeName) {
         ArrayList<Action> actions = new ArrayList<>();
-        actions.add(new TrogdorStartAction(TrogdorDaemonType.AGENT, nodeName));
-        actions.add(new TrogdorStatusAction(TrogdorDaemonType.AGENT, nodeName));
-        actions.add(new TrogdorStopAction(TrogdorDaemonType.AGENT, nodeName));
+        actions.add(new TaskStartAction(nodeName, taskSpecs));
+        actions.add(new TaskStatusAction(nodeName, taskSpecs.keySet()));
+        actions.add(new TaskStopAction(nodeName, taskSpecs.keySet()));
         return actions;
     }
-};
+}

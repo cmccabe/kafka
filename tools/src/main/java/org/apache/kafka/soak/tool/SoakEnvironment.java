@@ -17,151 +17,64 @@
 
 package org.apache.kafka.soak.tool;
 
-import org.apache.kafka.soak.common.NullOutputStream;
-import org.apache.kafka.soak.common.SoakLog;
-import org.apache.kafka.soak.role.ActionScheduler;
-
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.regex.Pattern;
 
 public final class SoakEnvironment {
-    public static class Builder {
-        private SoakLog clusterLog = new SoakLog(SoakLog.CLUSTER, NullOutputStream.INSTANCE);
-        private String rootPath = null;
-        private String kafkaPath = null;
-        private int timeoutSecs = 360;
-        private String keyPair = "";
-        private String securityGroup = "";
-        private Pattern actionFilter = ActionScheduler.DEFAULT_ACTION_FILTER;
-
-        public Builder() {
-        }
-
-        public Builder clusterLog(SoakLog clusterLog) {
-            this.clusterLog = clusterLog;
-            return this;
-        }
-
-        public SoakLog clusterLog() {
-            return this.clusterLog;
-        }
-
-        public Builder rootPath(String rootPath) {
-            this.rootPath = rootPath;
-            return this;
-        }
-
-        public String rootPath() {
-            return this.rootPath;
-        }
-
-        public Builder kafkaPath(String kafkaPath) {
-            this.kafkaPath = kafkaPath;
-            return this;
-        }
-
-        public String kafkaPath() {
-            return this.kafkaPath;
-        }
-
-        public Builder timeoutSecs(int timeoutSecs) {
-            this.timeoutSecs = timeoutSecs;
-            return this;
-        }
-
-        public int timeoutSecs() {
-            return this.timeoutSecs;
-        }
-
-        public Builder keyPair(String keyPair) {
-            this.keyPair = keyPair;
-            return this;
-        }
-
-        public String keyPair() {
-            return keyPair;
-        }
-
-        public Builder securityGroup(String securityGroup) {
-            this.securityGroup = securityGroup;
-            return this;
-        }
-
-        public String securityGroup() {
-            return securityGroup;
-        }
-
-        public Builder actionFilter(Pattern actionFilter) {
-            this.actionFilter = actionFilter;
-            return this;
-        }
-
-        public Pattern actionFilter() {
-            return actionFilter;
-        }
-
-        public SoakEnvironment build() throws IOException {
-            if (rootPath == null) {
-                throw new RuntimeException("Must initialize rootPath");
-            }
-            if (kafkaPath == null) {
-                throw new RuntimeException("Must initialize KafkaPath");
-            }
-            return new SoakEnvironment(clusterLog, rootPath, kafkaPath, timeoutSecs,
-                keyPair, securityGroup, actionFilter);
-        }
-    }
-
-    private final SoakLog clusterLog;
-    private final String rootPath;
-    private final String kafkaPath;
+    private final String testSpecPath;
+    private final String awsSecurityGroup;
+    private final String awsSecurityKeyPair;
     private final int timeoutSecs;
-    private final String keyPair;
-    private final String securityGroup;
-    private final Pattern actionFilter;
+    private final String actionFilter;
+    private final String kafkaPath;
+    private final String outputDirectory;
 
-    private SoakEnvironment(SoakLog clusterLog, String rootPath, String kafkaPath,
-            int timeoutSecs, String keyPair, String securityGroup, Pattern actionFilter) {
-        this.clusterLog = clusterLog;
-        this.rootPath = rootPath;
-        this.kafkaPath = kafkaPath;
+    public SoakEnvironment(String testSpecPath, String awsSecurityGroup, String awsSecurityKeyPair,
+                           int timeoutSecs, String actionFilter, String kafkaPath, String outputDirectory) {
+        this.testSpecPath = toAbsolutePath(testSpecPath);
+        this.awsSecurityGroup = awsSecurityGroup;
+        this.awsSecurityKeyPair = awsSecurityKeyPair;
         this.timeoutSecs = timeoutSecs;
-        this.keyPair = keyPair;
-        this.securityGroup = securityGroup;
         this.actionFilter = actionFilter;
+        this.kafkaPath = toAbsolutePath(kafkaPath);
+        this.outputDirectory = toAbsolutePath(outputDirectory);
     }
 
-    public SoakLog clusterLog() {
-        return clusterLog;
+    private String toAbsolutePath(String path) {
+        if (path == null) {
+            path = "";
+        }
+        return Paths.get(path).toAbsolutePath().toString();
     }
 
-    public String rootPath() {
-        return rootPath;
+    public String testSpecPath() {
+        return testSpecPath;
     }
 
-    public String kafkaPath() {
-        return kafkaPath;
+    public String clusterPath() {
+        return Paths.get(outputDirectory,   "cluster.json").toString();
+    }
+
+    public String awsSecurityGroup() {
+        return awsSecurityGroup;
+    }
+
+    public String awsSecurityKeyPair() {
+        return awsSecurityKeyPair;
     }
 
     public int timeoutSecs() {
         return timeoutSecs;
     }
 
-    public long timeoutMs() {
-        return 1000L * timeoutSecs;
-    }
-
-    public String keyPair() {
-        return keyPair;
-    }
-
-    public String securityGroup() {
-        return securityGroup;
-    }
-
-    public Pattern actionFilter() {
+    public String actionFilter() {
         return actionFilter;
+    }
+
+    public String kafkaPath() {
+        return kafkaPath;
+    }
+
+    public String outputDirectory() {
+        return outputDirectory;
     }
 };
