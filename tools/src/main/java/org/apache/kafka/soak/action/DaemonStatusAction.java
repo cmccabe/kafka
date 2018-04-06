@@ -21,7 +21,7 @@ package org.apache.kafka.soak.action;
  * Gets the status of daemons in the cluster.
  */
 public final class DaemonStatusAction extends Action {
-    public static String TYPE = "daemonStatus";
+    public final static String TYPE = "daemonStatus";
 
     public DaemonStatusAction(String scope) {
         super(new ActionId(TYPE, scope),

@@ -24,7 +24,7 @@ import org.apache.kafka.soak.cluster.SoakNode;
  * Install some necessary components on Ubuntu.
  */
 public final class UbuntuSetupAction extends Action {
-    public static String TYPE = "ubuntuSetup";
+    public final static String TYPE = "ubuntuSetup";
 
     public UbuntuSetupAction(String scope) {
         super(new ActionId(TYPE, scope),
@@ -34,11 +34,11 @@ public final class UbuntuSetupAction extends Action {
 
     @Override
     public void call(SoakCluster cluster, SoakNode node) throws Throwable {
-        node.log().printf("*** %s: Beginning UbuntuSetup...\n", node.nodeName());
+        node.log().printf("*** %s: Beginning UbuntuSetup...%n", node.nodeName());
         cluster.cloud().remoteCommand(node).args("-n", "--",
             "sudo", "apt-get", "update", "-y", "&&",
             "sudo", "apt-get", "install", "-y", "iptables", "rsync", "wget", "curl",
             "coreutils", "cmake", "pkg-config", "libfuse-dev", "openjdk-7-jdk").mustRun();
-        node.log().printf("*** %s: Finished UbuntuSetup.\n", node.nodeName());
+        node.log().printf("*** %s: Finished UbuntuSetup.%n", node.nodeName());
     }
 };

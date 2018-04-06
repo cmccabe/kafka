@@ -21,7 +21,7 @@ package org.apache.kafka.soak.action;
  * Stops the daemons on a node.
  */
 public final class DaemonStopAction extends Action {
-    public static String TYPE = "daemonStop";
+    public final static String TYPE = "daemonStop";
 
     public DaemonStopAction(String scope) {
         super(new ActionId(TYPE, scope),

@@ -67,7 +67,7 @@ public final class SoakUtil {
             try {
                 Files.delete(file.toPath());
             } catch (IOException e) {
-                soakLog.printf("*** Unable to delete file %s: %s\n", file.getAbsolutePath(), e);
+                soakLog.printf("*** Unable to delete file %s: %s%n", file.getAbsolutePath(), e);
             }
         }
     }

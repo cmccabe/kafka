@@ -20,7 +20,8 @@ package org.apache.kafka.soak.tool;
 import java.nio.file.Paths;
 
 public final class SoakEnvironment {
-    private final String testSpecPath;
+    private final String clusterInputPath;
+    private final String clusterOutputPath;
     private final String awsSecurityGroup;
     private final String awsSecurityKeyPair;
     private final int timeoutSecs;
@@ -28,9 +29,12 @@ public final class SoakEnvironment {
     private final String kafkaPath;
     private final String outputDirectory;
 
-    public SoakEnvironment(String testSpecPath, String awsSecurityGroup, String awsSecurityKeyPair,
-                           int timeoutSecs, String actionFilter, String kafkaPath, String outputDirectory) {
-        this.testSpecPath = toAbsolutePath(testSpecPath);
+    public SoakEnvironment(String clusterInputPath, String clusterOutputPath,
+                           String awsSecurityGroup, String awsSecurityKeyPair,
+                           int timeoutSecs, String actionFilter, String kafkaPath,
+                           String outputDirectory) {
+        this.clusterInputPath = toAbsolutePath(clusterInputPath);
+        this.clusterOutputPath = toAbsolutePath(clusterOutputPath);
         this.awsSecurityGroup = awsSecurityGroup;
         this.awsSecurityKeyPair = awsSecurityKeyPair;
         this.timeoutSecs = timeoutSecs;
@@ -46,12 +50,12 @@ public final class SoakEnvironment {
         return Paths.get(path).toAbsolutePath().toString();
     }
 
-    public String testSpecPath() {
-        return testSpecPath;
+    public String clusterInputPath() {
+        return clusterInputPath;
     }
 
-    public String clusterPath() {
-        return Paths.get(outputDirectory,   "cluster.json").toString();
+    public String clusterOutputPath() {
+        return clusterOutputPath;
     }
 
     public String awsSecurityGroup() {

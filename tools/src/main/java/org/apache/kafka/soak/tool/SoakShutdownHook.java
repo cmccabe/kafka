@@ -17,11 +17,6 @@
 
 package org.apache.kafka.soak.tool;
 
-import org.slf4j.Logger;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-
 /**
  * A callback which is executed when the soak tool is about to shut down.
  */

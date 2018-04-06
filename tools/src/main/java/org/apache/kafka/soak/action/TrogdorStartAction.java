@@ -96,23 +96,23 @@ public class TrogdorStartAction extends Action  {
                 String.format("trogdor-%s-%d.conf", daemonType.name(), node.nodeIndex()));
             fos = new FileOutputStream(file, false);
             osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-            osw.write("{\n");
-            osw.write("  \"platform\": \"org.apache.kafka.trogdor.basic.BasicPlatform\",\n");
-            osw.write("  \"nodes\": {\n");
-            String prefix = "\n";
+            osw.write("{%n");
+            osw.write("  \"platform\": \"org.apache.kafka.trogdor.basic.BasicPlatform\",%n");
+            osw.write("  \"nodes\": {%n");
+            String prefix = "%n";
             for (Map.Entry<String, SoakNode> entry : cluster.nodes().entrySet()) {
                 String nodeName = entry.getKey();
                 SoakNode soakNode = entry.getValue();
-                osw.write(String.format("%s    \"%s\": {\n", prefix, nodeName));
-                prefix = ",\n";
-                osw.write(String.format("      \"hostname\": \"%s\",\n",
+                osw.write(String.format("%s    \"%s\": {%n", prefix, nodeName));
+                prefix = ",%n";
+                osw.write(String.format("      \"hostname\": \"%s\",%n",
                     soakNode.spec().privateDns()));
-                osw.write("      \"trogdor.agent.port\": 8888\n");
+                osw.write("      \"trogdor.agent.port\": 8888%n");
                 osw.write("    }");
             }
-            osw.write("\n");
-            osw.write("  }\n");
-            osw.write("}\n");
+            osw.write("%n");
+            osw.write("  }%n");
+            osw.write("}%n");
             success = true;
             return file;
         } finally {
@@ -135,15 +135,15 @@ public class TrogdorStartAction extends Action  {
                     daemonType.name(), node.nodeIndex()));
             fos = new FileOutputStream(file, false);
             osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-            osw.write("log4j.rootLogger=WARN, kafkaAppender\n");
-            osw.write("log4j.appender.kafkaAppender=org.apache.log4j.DailyRollingFileAppender\n");
-            osw.write("log4j.appender.kafkaAppender.DatePattern='.'yyyy-MM-dd-HH\n");
-            osw.write(String.format("log4j.appender.kafkaAppender.File=%s\n",
+            osw.write("log4j.rootLogger=WARN, kafkaAppender%n");
+            osw.write("log4j.appender.kafkaAppender=org.apache.log4j.DailyRollingFileAppender%n");
+            osw.write("log4j.appender.kafkaAppender.DatePattern='.'yyyy-MM-dd-HH%n");
+            osw.write(String.format("log4j.appender.kafkaAppender.File=%s%n",
                 daemonType.logPath()));
-            osw.write("log4j.appender.kafkaAppender.layout=org.apache.log4j.PatternLayout\n");
-            osw.write("log4j.appender.kafkaAppender.layout.ConversionPattern=[%d] %p %m (%c)%n\n");
-            osw.write("log4j.logger.org.apache.kafka=DEBUG\n");
-            osw.write("\n");
+            osw.write("log4j.appender.kafkaAppender.layout=org.apache.log4j.PatternLayout%n");
+            osw.write("log4j.appender.kafkaAppender.layout.ConversionPattern=[%d] %p %m (%c)%n%n");
+            osw.write("log4j.logger.org.apache.kafka=DEBUG%n");
+            osw.write("%n");
             success = true;
             return file;
         } finally {

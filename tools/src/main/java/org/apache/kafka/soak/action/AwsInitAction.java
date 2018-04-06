@@ -19,7 +19,6 @@ package org.apache.kafka.soak.action;
 
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.soak.cluster.SoakCluster;
-import org.apache.kafka.soak.cluster.SoakClusterSpec;
 import org.apache.kafka.soak.cluster.SoakNode;
 import org.apache.kafka.soak.cluster.SoakNodeSpec;
 import org.apache.kafka.soak.common.SoakConfig;
@@ -39,11 +38,11 @@ import java.util.TreeMap;
  * Initiates a new AWS node.
  */
 public final class AwsInitAction extends Action {
-    private static final int DNS_POLL_DELAY_MS = 200;
+    public final static String TYPE = "awsInit";
 
-    private static final int SSH_POLL_DELAY_MS = 200;
+    private final static int DNS_POLL_DELAY_MS = 200;
 
-    public static String TYPE = "awsInit";
+    private final static int SSH_POLL_DELAY_MS = 200;
 
     private final AwsNodeRole role;
 
@@ -56,11 +55,8 @@ public final class AwsInitAction extends Action {
 
     @Override
     public void call(final SoakCluster cluster, final SoakNode node) throws Throwable {
-        SoakClusterSpec clusterSpec =
-            SoakTool.JSON_SERDE.readValue(new File(cluster.env().testSpecPath()),
-                SoakClusterSpec.class);
-        if (new File(cluster.env().clusterPath()).exists()) {
-            throw new RuntimeException("Output cluster path " + cluster.env().clusterPath() +
+        if (new File(cluster.env().clusterOutputPath()).exists()) {
+            throw new RuntimeException("Output cluster path " + cluster.env().clusterOutputPath() +
                 " already exists.");
         }
 
@@ -92,7 +88,7 @@ public final class AwsInitAction extends Action {
         } while (!checkInstanceSsh(cluster, node));
 
         // Write out the new cluster file.
-        SoakTool.JSON_SERDE.writeValue(new File(cluster.env().clusterPath()), cluster.toSpec());
+        SoakTool.JSON_SERDE.writeValue(new File(cluster.env().clusterOutputPath()), cluster.toSpec());
     }
 
     private boolean checkInstanceDns(SoakCluster cluster, SoakNode node) throws Throwable {
@@ -103,7 +99,7 @@ public final class AwsInitAction extends Action {
             privateDns = "";
         }
         if (privateDns.isEmpty()) {
-            node.log().printf("*** Waiting for private DNS name for %s...\n", instanceId);
+            node.log().printf("*** Waiting for private DNS name for %s...%n", instanceId);
             return false;
         }
         String publicDns = result.get(SoakConfig.PUBLIC_DNS);
@@ -111,10 +107,10 @@ public final class AwsInitAction extends Action {
             publicDns = "";
         }
         if (publicDns.isEmpty()) {
-            node.log().printf("*** Waiting for public DNS name for %s...\n", instanceId);
+            node.log().printf("*** Waiting for public DNS name for %s...%n", instanceId);
             return false;
         }
-        node.log().printf("*** Got privateDnsName = %s, publicDnsName = %s\n", privateDns, publicDns);
+        node.log().printf("*** Got privateDnsName = %s, publicDnsName = %s%n", privateDns, publicDns);
         node.setSpec(new SoakNodeSpec.Builder(node.spec()).
             publicDns(publicDns).
             privateDns(privateDns).
@@ -126,11 +122,11 @@ public final class AwsInitAction extends Action {
         try {
             cluster.cloud().remoteCommand(node).args("-n", "--", "echo").mustRun();
         } catch (Exception e) {
-            node.log().printf("*** Unable to ssh to %s: %s\n",
+            node.log().printf("*** Unable to ssh to %s: %s%n",
                 node.nodeName(), e.getMessage());
             return false;
         }
-        SoakLog.printToAll(String.format("*** Successfully brought up %s\n", node.nodeName()),
+        SoakLog.printToAll(String.format("*** Successfully brought up %s%n", node.nodeName()),
             node.log(), cluster.clusterLog());
         return true;
     }
@@ -138,7 +134,7 @@ public final class AwsInitAction extends Action {
     /**
      * Destroys an AWS instance on shutdown.
      */
-    public final class DestroyAwsInstancesShutdownHook extends SoakShutdownHook {
+    public static final class DestroyAwsInstancesShutdownHook extends SoakShutdownHook {
         private final SoakCluster cluster;
 
         DestroyAwsInstancesShutdownHook(SoakCluster cluster) {
@@ -149,7 +145,7 @@ public final class AwsInitAction extends Action {
         @Override
         public void run(SoakReturnCode returnCode) throws Throwable {
             if (returnCode == SoakReturnCode.SUCCESS) {
-                String path = cluster.env().clusterPath();
+                String path = cluster.env().clusterOutputPath();
                 try {
                     SoakTool.JSON_SERDE.writeValue(new File(path), cluster.toSpec());
                     cluster.clusterLog().info("*** Wrote new cluster file to " + path);

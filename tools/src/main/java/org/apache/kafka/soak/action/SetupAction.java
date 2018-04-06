@@ -17,14 +17,11 @@
 
 package org.apache.kafka.soak.action;
 
-import org.apache.kafka.soak.cluster.SoakCluster;
-import org.apache.kafka.soak.cluster.SoakNode;
-
 /**
  * Sets up a new node.
  */
 public final class SetupAction extends Action {
-    public static String TYPE = "setup";
+    public final static String TYPE = "setup";
 
     public SetupAction(String scope) {
         super(new ActionId(TYPE, scope),

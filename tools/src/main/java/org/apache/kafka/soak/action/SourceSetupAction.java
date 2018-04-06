@@ -24,7 +24,7 @@ import org.apache.kafka.soak.cluster.SoakNode;
  * Rsyncs the Kafka source directory to the cluster node.
  */
 public final class SourceSetupAction extends Action {
-    public static String TYPE = "sourceSetup";
+    public final static String TYPE = "sourceSetup";
 
     public SourceSetupAction(String scope) {
         super(new ActionId(TYPE, scope),

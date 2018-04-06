@@ -26,7 +26,7 @@ import org.apache.kafka.soak.role.ZooKeeperRole;
  * Gets the status of ZooKeeper.
  */
 public final class ZooKeeperStatusAction extends Action {
-    public static String TYPE = "zooKeeperStatus";
+    public final static String TYPE = "zooKeeperStatus";
 
     public ZooKeeperStatusAction(String scope) {
         super(new ActionId(TYPE, scope),

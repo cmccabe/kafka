@@ -21,7 +21,7 @@ package org.apache.kafka.soak.action;
  * Starts processes on a new node.
  */
 public final class StartAction extends Action {
-    public static String TYPE = "start";
+    public final static String TYPE = "start";
 
     public StartAction(String scope) {
         super(new ActionId(TYPE, scope),

@@ -125,7 +125,7 @@ public final class SoakCluster implements AutoCloseable {
         return bld.toString();
     }
 
-   public String getZooKeeperConnectString() {
+    public String getZooKeeperConnectString() {
         StringBuilder bld = new StringBuilder();
         String prefix = "";
         for (String nodeName : nodesWithRole(ZooKeeperRole.class).values()) {

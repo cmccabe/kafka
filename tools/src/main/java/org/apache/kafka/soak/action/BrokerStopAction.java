@@ -26,7 +26,7 @@ import org.apache.kafka.soak.role.BrokerRole;
  * Stop the broker.
  */
 public final class BrokerStopAction extends Action {
-    public static String TYPE = "brokerStop";
+    public final static String TYPE = "brokerStop";
 
     public BrokerStopAction(String scope) {
         super(new ActionId(TYPE, scope),

@@ -33,8 +33,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -80,10 +78,11 @@ public class MiniSoakCluster implements AutoCloseable {
             File tempDirectory = TestUtils.tempDirectory();
             boolean success = false;
             try {
-                Path outputPath =Paths.get(tempDirectory.getAbsolutePath(), "output");
+                Path outputPath = Paths.get(tempDirectory.getAbsolutePath(), "output");
                 Files.createDirectories(outputPath);
                 SoakEnvironment env = new SoakEnvironment(
-                    Paths.get(tempDirectory.getAbsolutePath(), "testSpec.json").toString(),
+                    Paths.get(tempDirectory.getAbsolutePath(), "input_cluster.json").toString(),
+                    Paths.get(tempDirectory.getAbsolutePath(), "output_cluster.json").toString(),
                     "",
                     "",
                     360,

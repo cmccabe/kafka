@@ -26,7 +26,7 @@ import org.apache.kafka.soak.role.BrokerRole;
  * Gets the status of the broker.
  */
 public final class BrokerStatusAction extends Action {
-    public static String TYPE = "brokerStatus";
+    public final static String TYPE = "brokerStatus";
 
     public BrokerStatusAction(String scope) {
         super(new ActionId(TYPE, scope),

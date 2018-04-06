@@ -35,7 +35,7 @@ import java.util.Collection;
 import java.util.Collections;
 
 public class TaskStatusAction extends Action  {
-    public static String TYPE = "tasksStatus";
+    public final static String TYPE = "tasksStatus";
 
     private final Collection<String> taskIds;
 

@@ -21,7 +21,7 @@ package org.apache.kafka.soak.action;
  * Destroys a node.
  */
 public final class DestroyAction extends Action {
-    public static String TYPE = "destroy";
+    public final static String TYPE = "destroy";
 
     public DestroyAction(String scope) {
         super(new ActionId(TYPE, scope),

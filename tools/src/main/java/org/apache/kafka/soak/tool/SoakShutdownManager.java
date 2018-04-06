@@ -38,7 +38,7 @@ public class SoakShutdownManager {
         this.hooks = new HashMap<>();
     }
 
-    public void addHookIfMissing(SoakShutdownHook hook) {
+    public synchronized  void addHookIfMissing(SoakShutdownHook hook) {
         if (hooks == null) {
             throw new RuntimeException("Shutdown has already occurred; " +
                 "can't add any more shutdown hooks.");

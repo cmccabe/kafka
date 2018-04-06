@@ -33,7 +33,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 public class TaskStartAction extends Action  {
-    public static String TYPE = "tasksStart";
+    public final static String TYPE = "tasksStart";
 
     private final Map<String, TaskSpec> taskSpecs;
 

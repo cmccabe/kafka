@@ -17,14 +17,11 @@
 
 package org.apache.kafka.soak.action;
 
-import org.apache.kafka.soak.cluster.SoakCluster;
-import org.apache.kafka.soak.cluster.SoakNode;
-
 /**
  * Install some necessary components on Linux.
  */
 public final class LinuxSetupAction extends Action {
-    public static String TYPE = "linuxSetup";
+    public final static String TYPE = "linuxSetup";
 
     public LinuxSetupAction(String scope) {
         super(new ActionId(TYPE, scope),

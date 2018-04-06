@@ -38,7 +38,7 @@ import static org.apache.kafka.soak.action.ActionPaths.KAFKA_LOGS;
  * Starts the Kafka broker.
  */
 public final class BrokerStartAction extends Action {
-    public static String TYPE = "brokerStart";
+    public final static String TYPE = "brokerStart";
 
     private static final String DEFAULT_JVM_PERFORMANCE_OPTS =
         "-Xmx6g -Xms6g -XX:MetaspaceSize=96m -XX:+UseG1GC " +
@@ -106,21 +106,21 @@ public final class BrokerStartAction extends Action {
                 node.nodeIndex()));
             fos = new FileOutputStream(file, false);
             osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-            osw.write(String.format("broker.id=%d\n", getBrokerId(cluster, node)));
-            osw.write("listeners=PLAINTEXT://:9092\n");
-            osw.write(String.format("advertised.host.name=%s\n",
+            osw.write(String.format("broker.id=%d%n", getBrokerId(cluster, node)));
+            osw.write("listeners=PLAINTEXT://:9092%n");
+            osw.write(String.format("advertised.host.name=%s%n",
                 cluster.nodes().get(node.nodeName()).spec().privateDns()));
-            osw.write("num.network.threads=3\n");
-            osw.write("num.io.threads=8\n");
-            osw.write("socket.send.buffer.bytes=102400\n");
-            osw.write("socket.receive.buffer.bytes=102400\n");
-            osw.write("socket.request.max.bytes=104857600\n");
-            osw.write(String.format("log.dirs=%s\n", ActionPaths.KAFKA_OPLOGS));
-            osw.write("num.partitions=3\n");
-            osw.write("num.recovery.threads.per.data.dir=1\n");
-            osw.write("log.retention.bytes=104857600\n");
-            osw.write(String.format("zookeeper.connect=%s\n", cluster.getZooKeeperConnectString()));
-            osw.write("zookeeper.connection.timeout.ms=6000\n");
+            osw.write("num.network.threads=3%n");
+            osw.write("num.io.threads=8%n");
+            osw.write("socket.send.buffer.bytes=102400%n");
+            osw.write("socket.receive.buffer.bytes=102400%n");
+            osw.write("socket.request.max.bytes=104857600%n");
+            osw.write(String.format("log.dirs=%s%n", ActionPaths.KAFKA_OPLOGS));
+            osw.write("num.partitions=3%n");
+            osw.write("num.recovery.threads.per.data.dir=1%n");
+            osw.write("log.retention.bytes=104857600%n");
+            osw.write(String.format("zookeeper.connect=%s%n", cluster.getZooKeeperConnectString()));
+            osw.write("zookeeper.connection.timeout.ms=6000%n");
             success = true;
             return file;
         } finally {
@@ -142,33 +142,33 @@ public final class BrokerStartAction extends Action {
                 node.nodeIndex()));
             fos = new FileOutputStream(file, false);
             osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-            osw.write("log4j.rootLogger=INFO, kafkaAppender\n");
-            osw.write("\n");
+            osw.write("log4j.rootLogger=INFO, kafkaAppender%n");
+            osw.write("%n");
             writeDailyRollingFileAppender(osw, "kafkaAppender", "server.log");
             writeDailyRollingFileAppender(osw, "stateChangeAppender", "state-change.log");
             writeDailyRollingFileAppender(osw, "requestAppender", "kafka-request.log");
             writeDailyRollingFileAppender(osw, "cleanerAppender", "log-cleaner.log");
             writeDailyRollingFileAppender(osw, "controllerAppender", "controller.log");
             writeDailyRollingFileAppender(osw, "authorizerAppender", "kafka-authorizer.log");
-            osw.write("log4j.logger.org.I0Itec.zkclient.ZkClient=INFO\n");
-            osw.write("log4j.logger.org.apache.zookeeper=INFO\n");
-            osw.write("\n");
-            osw.write("log4j.logger.kafka=INFO\n");
-            osw.write("log4j.logger.org.apache.kafka=INFO\n");
-            osw.write("\n");
-            osw.write("log4j.logger.kafka.request.logger=WARN, requestAppender\n");
-            osw.write("\n");
-            osw.write("log4j.logger.kafka.controller=TRACE, controllerAppender\n");
-            osw.write("log4j.additivity.kafka.controller=false\n");
-            osw.write("\n");
-            osw.write("log4j.logger.kafka.log.LogCleaner=INFO, cleanerAppender\n");
-            osw.write("log4j.additivity.kafka.log.LogCleaner=false\n");
-            osw.write("\n");
-            osw.write("log4j.logger.state.change.logger=TRACE, stateChangeAppender\n");
-            osw.write("log4j.additivity.state.change.logger=false\n");
-            osw.write("\n");
-            osw.write("log4j.logger.kafka.authorizer.logger=INFO, authorizerAppender\n");
-            osw.write("log4j.additivity.kafka.authorizer.logger=false\n");
+            osw.write("log4j.logger.org.I0Itec.zkclient.ZkClient=INFO%n");
+            osw.write("log4j.logger.org.apache.zookeeper=INFO%n");
+            osw.write("%n");
+            osw.write("log4j.logger.kafka=INFO%n");
+            osw.write("log4j.logger.org.apache.kafka=INFO%n");
+            osw.write("%n");
+            osw.write("log4j.logger.kafka.request.logger=WARN, requestAppender%n");
+            osw.write("%n");
+            osw.write("log4j.logger.kafka.controller=TRACE, controllerAppender%n");
+            osw.write("log4j.additivity.kafka.controller=false%n");
+            osw.write("%n");
+            osw.write("log4j.logger.kafka.log.LogCleaner=INFO, cleanerAppender%n");
+            osw.write("log4j.additivity.kafka.log.LogCleaner=false%n");
+            osw.write("%n");
+            osw.write("log4j.logger.state.change.logger=TRACE, stateChangeAppender%n");
+            osw.write("log4j.additivity.state.change.logger=false%n");
+            osw.write("%n");
+            osw.write("log4j.logger.kafka.authorizer.logger=INFO, authorizerAppender%n");
+            osw.write("log4j.additivity.kafka.authorizer.logger=false%n");
             success = true;
             return file;
         } finally {
@@ -182,13 +182,13 @@ public final class BrokerStartAction extends Action {
 
     static void writeDailyRollingFileAppender(OutputStreamWriter osw, String appender,
                                               String logName) throws IOException {
-        osw.write(String.format("log4j.appender.%s=org.apache.log4j.DailyRollingFileAppender\n", appender));
-        osw.write(String.format("log4j.appender.%s.DatePattern='.'yyyy-MM-dd-HH\n", appender));
-        osw.write(String.format("log4j.appender.%s.File=%s/%s\n", appender, KAFKA_LOGS, logName));
-        osw.write(String.format("log4j.appender.%s.layout=org.apache.log4j.PatternLayout\n", appender));
+        osw.write(String.format("log4j.appender.%s=org.apache.log4j.DailyRollingFileAppender%n", appender));
+        osw.write(String.format("log4j.appender.%s.DatePattern='.'yyyy-MM-dd-HH%n", appender));
+        osw.write(String.format("log4j.appender.%s.File=%s/%s%n", appender, KAFKA_LOGS, logName));
+        osw.write(String.format("log4j.appender.%s.layout=org.apache.log4j.PatternLayout%n", appender));
         osw.write(String.format("log4j.appender.%s.", appender) +
-            "layout.ConversionPattern=[%d] %p %m (%c)%n\n");
-        osw.write("\n");
+            "layout.ConversionPattern=[%d] %p %m (%c)%n%n");
+        osw.write("%n");
     }
 
     private int getBrokerId(SoakCluster cluster, SoakNode node) {

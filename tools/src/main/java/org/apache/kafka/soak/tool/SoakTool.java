@@ -52,7 +52,8 @@ public final class SoakTool {
         JSON_SERDE.setSerializationInclusion(JsonInclude.Include.NON_EMPTY);
     }
 
-    private static final String SOAK_TEST_SPEC_PATH = "SOAK_TEST_SPEC_PATH";
+    private static final String SOAK_CLUSTER_INPUT_PATH = "SOAK_CLUSTER_INPUT_PATH";
+    private static final String SOAK_CLUSTER_OUTPUT_PATH = "SOAK_CLUSTER_OUTPUT_PATH";
     private static final String SOAK_AWS_SECURITY_GROUP = "SOAK_AWS_SECURITY_GROUP";
     private static final String SOAK_AWS_SECURITY_KEYPAIR = "SOAK_AWS_SECURITY_KEYPAIR";
     private static final String SOAK_TIMEOUT_SECONDS = "SOAK_TIMEOUT_SECONDS";
@@ -90,13 +91,20 @@ public final class SoakTool {
             .description("The Kafka soak cluster tool.");
             // .epilog
 
-        parser.addArgument("-s", "--test-spec")
+        parser.addArgument("-c", "--cluster-input")
             .action(store())
             .type(String.class)
-            .dest(SOAK_TEST_SPEC_PATH)
-            .metavar(SOAK_TEST_SPEC_PATH)
-            .setDefault(getEnv(SOAK_TEST_SPEC_PATH, ""))
-            .help("The path to the soak cluster test specification file.");
+            .dest(SOAK_CLUSTER_INPUT_PATH)
+            .metavar(SOAK_CLUSTER_INPUT_PATH)
+            .setDefault(getEnv(SOAK_CLUSTER_INPUT_PATH, ""))
+            .help("The path to the soak cluster file to read.");
+        parser.addArgument("-r", "--cluster-output")
+            .action(store())
+            .type(String.class)
+            .dest(SOAK_CLUSTER_OUTPUT_PATH)
+            .metavar(SOAK_CLUSTER_OUTPUT_PATH)
+            .setDefault(getEnv(SOAK_CLUSTER_OUTPUT_PATH, ""))
+            .help("The path to use when writing a new soak cluster file.");
         parser.addArgument("--sg")
             .action(store())
             .type(String.class)
@@ -150,8 +158,14 @@ public final class SoakTool {
 
         try {
             Namespace res = parser.parseArgsOrFail(args);
+            String clusterOutputPath = res.getString(SOAK_CLUSTER_OUTPUT_PATH);
+            if (clusterOutputPath.isEmpty()) {
+                clusterOutputPath = Paths.get(res.getString(SOAK_OUTPUT_DIRECTORY),
+                    "cluster.json").toAbsolutePath().toString();
+            }
             SoakEnvironment env = new SoakEnvironment(
-                    res.getString(SOAK_TEST_SPEC_PATH),
+                    res.getString(SOAK_CLUSTER_INPUT_PATH),
+                    clusterOutputPath,
                     res.getString(SOAK_AWS_SECURITY_GROUP),
                     res.getString(SOAK_AWS_SECURITY_KEYPAIR),
                     res.getInt(SOAK_TIMEOUT_SECONDS),
@@ -159,15 +173,15 @@ public final class SoakTool {
                     res.getString(SOAK_KAFKA_PATH),
                     res.getString(SOAK_OUTPUT_DIRECTORY));
             List<String> targets = res.<String>getList(SOAK_TARGETS);
-            if (env.clusterPath().isEmpty()) {
-                throw new RuntimeException("You must supply a cluster file path with -c.");
-            }
             if (targets.isEmpty()) {
                 parser.printHelp();
                 System.exit(0);
             }
+            if (env.clusterInputPath().isEmpty()) {
+                throw new RuntimeException("You must supply a cluster file input path with -c.");
+            }
             SoakClusterSpec clusterSpec =
-                SoakTool.JSON_SERDE.readValue(new File(env.clusterPath()), SoakClusterSpec.class);
+                SoakTool.JSON_SERDE.readValue(new File(env.clusterInputPath()), SoakClusterSpec.class);
             Files.createDirectories(Paths.get(env.outputDirectory()));
             SoakLog clusterLog = SoakLog.fromStdout("cluster");
 
@@ -189,7 +203,7 @@ public final class SoakTool {
             }
             System.exit(exitCode.code());
         } catch (Throwable exception) {
-            System.out.printf("Exiting with exception: %s\n", Utils.fullStackTrace(exception));
+            System.out.printf("Exiting with exception: %s%n", Utils.fullStackTrace(exception));
             System.exit(1);
         }
     }

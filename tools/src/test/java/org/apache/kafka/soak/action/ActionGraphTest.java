@@ -43,22 +43,22 @@ public class ActionGraphTest {
             addAction(new TestAction(
                 new ActionId("foo", "node0"),
                 new ActionId[] {},
-                new ActionId[] { new ActionId("bar", ActionId.SCOPE_ALL) }
+                new ActionId[] {new ActionId("bar", ActionId.SCOPE_ALL)}
             )).
             addAction(new TestAction(
                 new ActionId("foo", "node1"),
                 new ActionId[] {},
-                new ActionId[] { new ActionId("bar", ActionId.SCOPE_ALL) }
+                new ActionId[] {new ActionId("bar", ActionId.SCOPE_ALL)}
             )).
             addAction(new TestAction(
                 new ActionId("foo", "node2"),
                 new ActionId[] {},
-                new ActionId[] { new ActionId("bar", ActionId.SCOPE_ALL) }
+                new ActionId[] {new ActionId("bar", ActionId.SCOPE_ALL)}
             )).
             addAction(new TestAction(
                 new ActionId("bar", "node0"),
-                new ActionId[] { new ActionId("foo", ActionId.SCOPE_ALL) },
-                new ActionId[] { new ActionId("baz", ActionId.SCOPE_ALL) }
+                new ActionId[] {new ActionId("foo", ActionId.SCOPE_ALL)},
+                new ActionId[] {new ActionId("baz", ActionId.SCOPE_ALL)}
             ));
     }
 

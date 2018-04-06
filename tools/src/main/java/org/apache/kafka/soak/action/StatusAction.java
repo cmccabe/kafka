@@ -21,7 +21,7 @@ package org.apache.kafka.soak.action;
  * Gets the cluster status.
  */
 public final class StatusAction extends Action {
-    public static String TYPE = "status";
+    public final static String TYPE = "status";
 
     public StatusAction(String scope) {
         super(new ActionId(TYPE, scope),

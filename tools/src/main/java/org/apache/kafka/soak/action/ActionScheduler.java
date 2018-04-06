@@ -34,7 +34,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -118,7 +117,7 @@ public final class ActionScheduler implements AutoCloseable {
         }
     }
 
-    private final class SchedulerNodeTask implements Callable<Void> {
+    private final class SchedulerNodeTask implements Runnable {
         private final SchedulerNode node;
         private final ActionId id;
 
@@ -128,7 +127,7 @@ public final class ActionScheduler implements AutoCloseable {
         }
 
         @Override
-        public Void call() throws Exception {
+        public void run() {
             final ActionData actionData = actionTree.actionMap().get(id);
             final Action action = actionData.action();
             try {
@@ -138,12 +137,12 @@ public final class ActionScheduler implements AutoCloseable {
                     node.description = action.id().toString();
                     soakNode = cluster.nodes().get(node.nodeName);
                     if (actionFilter.matcher(action.toString()).matches()) {
-                        SoakLog.printToAll(String.format("*** Running %s\n", action.toString()),
+                        SoakLog.printToAll(String.format("*** Running %s%n", action.toString()),
                             cluster.clusterLog(), soakNode.log());
                         shouldCall = true;
                     } else {
                         SoakLog.printToAll(String.format("*** Skipping %s because it doesn't " +
-                                "match pattern: %s\n", action.id().toString(), actionFilter.toString()),
+                                "match pattern: %s%n", action.id().toString(), actionFilter.toString()),
                             cluster.clusterLog(), soakNode.log());
                         shouldCall = false;
                     }
@@ -152,7 +151,7 @@ public final class ActionScheduler implements AutoCloseable {
                     action.call(cluster, soakNode);
                 }
                 boolean done = false;
-                SoakLog.printToAll(String.format("*** WATERMELON Finished Running %s\n", action.toString()),
+                SoakLog.printToAll(String.format("*** WATERMELON Finished Running %s%n", action.toString()),
                     cluster.clusterLog(), soakNode.log());
                 synchronized (ActionScheduler.this) {
                     node.description = "";
@@ -174,7 +173,6 @@ public final class ActionScheduler implements AutoCloseable {
                 node.executorService.shutdownNow();
                 throw e;
             }
-            return null;
         }
     }
 
@@ -236,7 +234,7 @@ public final class ActionScheduler implements AutoCloseable {
     private synchronized void runIfPossible(ActionId id) {
         SchedulerNode node = nodes.get(id.scope());
         if (node == null) {
-            throw new RuntimeException("Action " + id + " references non-existent node " + node.nodeName);
+            throw new RuntimeException("Action " + id + " references non-existent node " + id.scope());
         }
         if (!node.pending.contains(id)) {
             return;
@@ -258,7 +256,7 @@ public final class ActionScheduler implements AutoCloseable {
         }
         SchedulerNode node = nodes.get(id.scope());
         if (node == null) {
-            throw new RuntimeException("Action " + id + " references non-existent node " + node.nodeName);
+            throw new RuntimeException("Action " + id + " references non-existent node " + id.scope());
         }
         return node.pending.contains(id);
     }

@@ -39,8 +39,7 @@ import java.util.Collection;
     @JsonSubTypes.Type(value = TasksRole.class, name = "tasks"),
     @JsonSubTypes.Type(value = UbuntuNodeRole.class, name = "ubuntuNode"),
     @JsonSubTypes.Type(value = ZooKeeperRole.class, name = "zooKeeper"),
-})
-
+    })
 public interface Role {
     /**
      * Create the actions for this node.

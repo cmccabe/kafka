@@ -26,7 +26,7 @@ import org.apache.kafka.soak.role.ZooKeeperRole;
  * Stop zookeeper.
  */
 public final class ZooKeeperStopAction extends Action {
-    public static String TYPE = "zooKeeperStop";
+    public final static String TYPE = "zooKeeperStop";
 
     public ZooKeeperStopAction(String scope) {
         super(new ActionId(TYPE, scope),

@@ -25,7 +25,7 @@ import org.apache.kafka.soak.tool.SoakWriteClusterFileHook;
  * Destroys a node.
  */
 public final class AwsDestroyAction extends Action {
-    public static String TYPE = "awsDestroy";
+    public final static String TYPE = "awsDestroy";
 
     public AwsDestroyAction(String scope) {
         super(new ActionId(TYPE, scope),

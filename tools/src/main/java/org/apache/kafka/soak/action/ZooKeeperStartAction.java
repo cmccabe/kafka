@@ -31,7 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Callable;
 
 public class ZooKeeperStartAction extends Action  {
-    public static String TYPE = "zooKeeperStart";
+    public final static String TYPE = "zooKeeperStart";
 
     public ZooKeeperStartAction(String scope) {
         super(new ActionId(TYPE, scope),
@@ -88,9 +88,9 @@ public class ZooKeeperStartAction extends Action  {
                 String.format("zookeeper-%d.properties", node.nodeIndex()));
             fos = new FileOutputStream(file, false);
             osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-            osw.write(String.format("dataDir=%s\n", ActionPaths.ZK_OPLOGS));
-            osw.write("clientPort=2181\n");
-            osw.write("maxClientCnxns=0\n");
+            osw.write(String.format("dataDir=%s%n", ActionPaths.ZK_OPLOGS));
+            osw.write("clientPort=2181%n");
+            osw.write("maxClientCnxns=0%n");
             success = true;
             return file;
         } finally {
@@ -112,15 +112,15 @@ public class ZooKeeperStartAction extends Action  {
                 String.format("zookeeper-log4j-%d.properties", node.nodeIndex()));
             fos = new FileOutputStream(file, false);
             osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-            osw.write("log4j.rootLogger=INFO, kafkaAppender\n");
-            osw.write("log4j.appender.kafkaAppender=org.apache.log4j.DailyRollingFileAppender\n");
-            osw.write("log4j.appender.kafkaAppender.DatePattern='.'yyyy-MM-dd-HH\n");
-            osw.write(String.format("log4j.appender.kafkaAppender.File=%s/server.log\n", ActionPaths.ZK_LOGS));
-            osw.write("log4j.appender.kafkaAppender.layout=org.apache.log4j.PatternLayout\n");
-            osw.write("log4j.appender.kafkaAppender.layout.ConversionPattern=[%d] %p %m (%c)%n\n");
-            osw.write("\n");
-            osw.write("log4j.logger.org.I0Itec.zkclient.ZkClient=INFO\n");
-            osw.write("log4j.logger.org.apache.zookeeper=INFO\n");
+            osw.write("log4j.rootLogger=INFO, kafkaAppender%n");
+            osw.write("log4j.appender.kafkaAppender=org.apache.log4j.DailyRollingFileAppender%n");
+            osw.write("log4j.appender.kafkaAppender.DatePattern='.'yyyy-MM-dd-HH%n");
+            osw.write(String.format("log4j.appender.kafkaAppender.File=%s/server.log%n", ActionPaths.ZK_LOGS));
+            osw.write("log4j.appender.kafkaAppender.layout=org.apache.log4j.PatternLayout%n");
+            osw.write("log4j.appender.kafkaAppender.layout.ConversionPattern=[%d] %p %m (%c)%n%n");
+            osw.write("%n");
+            osw.write("log4j.logger.org.I0Itec.zkclient.ZkClient=INFO%n");
+            osw.write("log4j.logger.org.apache.zookeeper=INFO%n");
             success = true;
             return file;
         } finally {

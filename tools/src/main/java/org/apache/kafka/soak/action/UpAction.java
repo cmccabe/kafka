@@ -24,7 +24,7 @@ import org.apache.kafka.soak.cluster.SoakNode;
  * Brings up the cluster.
  */
 public final class UpAction extends Action {
-    public static String TYPE = "up";
+    public final static String TYPE = "up";
 
     public UpAction(String scope) {
         super(new ActionId(TYPE, scope),

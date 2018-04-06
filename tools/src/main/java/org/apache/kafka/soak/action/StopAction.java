@@ -21,7 +21,7 @@ package org.apache.kafka.soak.action;
  * Stops a node.
  */
 public final class StopAction extends Action {
-    public static String TYPE = "stop";
+    public final static String TYPE = "stop";
 
     public StopAction(String scope) {
         super(new ActionId(TYPE, scope),

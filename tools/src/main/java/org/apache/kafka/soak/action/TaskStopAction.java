@@ -32,7 +32,7 @@ import java.util.Collection;
 import java.util.concurrent.Callable;
 
 public class TaskStopAction extends Action  {
-    public static String TYPE = "tasksStop";
+    public final static String TYPE = "tasksStop";
 
     private final Collection<String> taskIds;
 
@@ -48,7 +48,7 @@ public class TaskStopAction extends Action  {
         if (SoakUtil.getJavaProcessStatus(cluster, node,
                 TrogdorDaemonType.COORDINATOR.className()) != SoakReturnCode.SUCCESS) {
             node.log().printf("*** Ignoring TaskStopAction because the Trogdor " +
-                "coordinator process does not appear to be running.\n");
+                "coordinator process does not appear to be running.%n");
             return;
         }
 

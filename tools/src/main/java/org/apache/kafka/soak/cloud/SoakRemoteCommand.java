@@ -68,7 +68,7 @@ public class SoakRemoteCommand implements RemoteCommand {
                 }
             } catch (EOFException e) {
             } catch (IOException e) {
-                soakLog.printf("IOException: %s\n", e.getMessage());
+                soakLog.printf("IOException: %s%n", e.getMessage());
             }
         }
     }
@@ -113,7 +113,7 @@ public class SoakRemoteCommand implements RemoteCommand {
             commandLine.add("&&");
             commandLine.add("sleep");
             commandLine.add("100000");
-            node.log().printf("** %s: CREATING SSH TUNNEL: %s\n",
+            node.log().printf("** %s: CREATING SSH TUNNEL: %s%n",
                 node.nodeName(), joinCommandLineArgs(commandLine));
             ProcessBuilder builder = new ProcessBuilder(commandLine);
             InputStreamReader isr = null;
@@ -135,7 +135,7 @@ public class SoakRemoteCommand implements RemoteCommand {
                     curProcess.waitFor();
                 }
             }
-            node.log().printf("** %s: TUNNEL ESTABLISHED: %s\n",
+            node.log().printf("** %s: TUNNEL ESTABLISHED: %s%n",
                 node.nodeName(), joinCommandLineArgs(commandLine));
             return curProcess;
         }
@@ -271,7 +271,7 @@ public class SoakRemoteCommand implements RemoteCommand {
         Thread outputRedirectorThread = null;
         int retCode;
         try {
-            node.log().printf("** %s: RUNNING %s\n", node.nodeName(), joinCommandLineArgs(commandLine));
+            node.log().printf("** %s: RUNNING %s%n", node.nodeName(), joinCommandLineArgs(commandLine));
             process = builder.start();
             OutputRedirector outputRedirector =
                 new OutputRedirector(process.getInputStream(), stringBuilder, node.log());
@@ -279,7 +279,7 @@ public class SoakRemoteCommand implements RemoteCommand {
             outputRedirectorThread.start();
             retCode = process.waitFor();
             outputRedirectorThread.join();
-            node.log().printf(String.format("** %s: FINISHED %s with RESULT %d\n",
+            node.log().printf(String.format("** %s: FINISHED %s with RESULT %d%n",
                 node.nodeName(), joinCommandLineArgs(commandLine), retCode));
         } finally {
             if (process != null) {

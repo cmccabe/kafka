@@ -21,7 +21,7 @@ package org.apache.kafka.soak.action;
  * Starts the daemon processes on a new node.
  */
 public final class DaemonStartAction extends Action {
-    public static String TYPE = "daemonStart";
+    public final static String TYPE = "daemonStart";
 
     public DaemonStartAction(String scope) {
         super(new ActionId(TYPE, scope),

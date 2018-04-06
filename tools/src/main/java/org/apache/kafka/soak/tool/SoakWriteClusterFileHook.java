@@ -32,7 +32,7 @@ public class SoakWriteClusterFileHook extends SoakShutdownHook {
     @Override
     public void run(SoakReturnCode returnCode) throws Throwable {
         if (returnCode == SoakReturnCode.SUCCESS) {
-            String path = cluster.env().clusterPath();
+            String path = cluster.env().clusterOutputPath();
             SoakTool.JSON_SERDE.writeValue(new File(path), cluster.toSpec());
             cluster.clusterLog().info("*** Wrote new cluster file to " + path);
         }

@@ -21,7 +21,7 @@ package org.apache.kafka.soak.action;
  * Initiates a new node.
  */
 public final class InitAction extends Action {
-    public static String TYPE = "init";
+    public final static String TYPE = "init";
 
     public InitAction(String scope) {
         super(new ActionId(TYPE, scope),
