@@ -225,10 +225,10 @@ public final class WorkerManager {
          */
         private ShutdownManager.Reference reference;
 
-        Worker(String id, TaskSpec spec, long now) {
+        Worker(String id, TaskSpec spec, long now, TaskWorker taskWorker) throws Exception {
             this.id = id;
             this.spec = spec;
-            this.taskWorker = spec.newTaskWorker(id);
+            this.taskWorker = taskWorker;
             this.startedMs = now;
             this.reference = shutdownManager.takeReference();
         }
@@ -338,7 +338,13 @@ public final class WorkerManager {
                 log.info("{}: Task ID {} is already in use.", nodeName, id);
                 return null;
             }
-            worker = new Worker(id, spec, now);
+            TaskWorker taskWorker = null;
+            try {
+                taskWorker = spec.newTaskWorker(id);
+            } catch (Exception e)  {
+                log.info("{}: Unable to create worker for {}", nodeName, id, e);
+            }
+            worker = new Worker(id, spec, now, taskWorker);
             workers.put(id, worker);
             log.info("{}: Created a new worker for task {} with spec {}", nodeName, id, spec);
             return worker;

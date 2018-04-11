@@ -86,7 +86,7 @@ public abstract class TaskSpec {
      *
      * @param id        The worker id.
      */
-    public abstract TaskWorker newTaskWorker(String id);
+    public abstract TaskWorker newTaskWorker(String id) throws Exception;
 
     @Override
     public final boolean equals(Object o) {

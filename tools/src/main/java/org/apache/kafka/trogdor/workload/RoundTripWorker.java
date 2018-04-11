@@ -105,7 +105,7 @@ public class RoundTripWorker implements TaskWorker {
         }
         log.info("{}: Activating RoundTripWorker.", id);
         this.executor = Executors.newCachedThreadPool(
-            ThreadUtils.createThreadFactory("RoundTripWorker%d", false));
+            ThreadUtils.createThreadFactory("RoundTripWorker%d", false, spec.classLoader()));
         this.doneFuture = doneFuture;
         this.producer = null;
         this.consumer = null;
@@ -188,6 +188,7 @@ public class RoundTripWorker implements TaskWorker {
             WorkerUtils.addConfigsToProperties(props, spec.commonClientConf(), spec.producerConf());
             producer = new KafkaProducer<>(props, new ByteArraySerializer(),
                 new ByteArraySerializer());
+            log.info("NOW: KafkaProducer was loaded by " + producer.getClass().getClassLoader());
             int perPeriod = WorkerUtils.
                 perSecToPerPeriod(spec.targetMessagesPerSec(), THROTTLE_PERIOD_MS);
             this.throttle = new Throttle(perPeriod, THROTTLE_PERIOD_MS);

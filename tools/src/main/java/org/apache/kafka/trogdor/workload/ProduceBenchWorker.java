@@ -89,7 +89,7 @@ public class ProduceBenchWorker implements TaskWorker {
         }
         log.info("{}: Activating ProduceBenchWorker with {}", id, spec);
         this.executor = Executors.newScheduledThreadPool(1,
-            ThreadUtils.createThreadFactory("ProduceBenchWorkerThread%d", false));
+            ThreadUtils.createThreadFactory("ProduceBenchWorkerThread%d", false, spec.classLoader()));
         this.status = status;
         this.doneFuture = doneFuture;
         executor.submit(new Prepare());

@@ -20,6 +20,7 @@ package org.apache.kafka.trogdor.workload;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.kafka.trogdor.common.Topology;
+import org.apache.kafka.trogdor.rest.TrogdorClassLoaderSpec;
 import org.apache.kafka.trogdor.task.TaskController;
 import org.apache.kafka.trogdor.task.TaskSpec;
 import org.apache.kafka.trogdor.task.TaskWorker;
@@ -51,6 +52,7 @@ public class ProduceBenchSpec extends TaskSpec {
     private final String topicPrefix;
     private final int numPartitions;
     private final short replicationFactor;
+    private final TrogdorClassLoaderSpec classLoader;
 
     @JsonCreator
     public ProduceBenchSpec(@JsonProperty("startMs") long startMs,
@@ -68,7 +70,8 @@ public class ProduceBenchSpec extends TaskSpec {
                          @JsonProperty("activeTopics") int activeTopics,
                          @JsonProperty("topicPrefix") String topicPrefix,
                          @JsonProperty("partitionsPerTopic") int partitionsPerTopic,
-                         @JsonProperty("replicationFactor") short replicationFactor) {
+                         @JsonProperty("replicationFactor") short replicationFactor,
+                         @JsonProperty("classLoader") TrogdorClassLoaderSpec classLoader) {
         super(startMs, durationMs);
         this.producerNode = (producerNode == null) ? "" : producerNode;
         this.bootstrapServers = (bootstrapServers == null) ? "" : bootstrapServers;
@@ -88,6 +91,8 @@ public class ProduceBenchSpec extends TaskSpec {
                              ? DEFAULT_NUM_PARTITIONS : partitionsPerTopic;
         this.replicationFactor = (replicationFactor == 0)
                                  ? DEFAULT_REPLICATION_FACTOR : replicationFactor;
+        this.classLoader = (classLoader == null) ?
+            new TrogdorClassLoaderSpec(null) : classLoader;
     }
 
     @JsonProperty
@@ -158,6 +163,11 @@ public class ProduceBenchSpec extends TaskSpec {
     @JsonProperty
     public short replicationFactor() {
         return replicationFactor;
+    }
+
+    @JsonProperty
+    public TrogdorClassLoaderSpec classLoader() {
+        return classLoader;
     }
 
     @Override

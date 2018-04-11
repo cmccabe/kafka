@@ -17,6 +17,10 @@
 
 package org.apache.kafka.trogdor.common;
 
+import org.apache.kafka.trogdor.rest.TrogdorClassLoaderSpec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -24,6 +28,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * Utilities for working with threads.
  */
 public class ThreadUtils {
+    private static final Logger log = LoggerFactory.getLogger(ThreadUtils.class);
+
+    public static ThreadFactory createThreadFactory(final String pattern,
+                                                    final boolean daemon) {
+        return createThreadFactory(pattern, daemon, new TrogdorClassLoaderSpec(null));
+    }
+
     /**
      * Create a new ThreadFactory.
      *
@@ -34,7 +45,8 @@ public class ThreadUtils {
      * @return              The new ThreadFactory.
      */
     public static ThreadFactory createThreadFactory(final String pattern,
-                                                    final boolean daemon) {
+                                                    final boolean daemon,
+                                                    final TrogdorClassLoaderSpec classLoaderSpec) {
         return new ThreadFactory() {
             private final AtomicLong threadEpoch = new AtomicLong(0);
 
@@ -47,6 +59,10 @@ public class ThreadUtils {
                     threadName = pattern;
                 }
                 Thread thread = new Thread(r, threadName);
+                ClassLoader classLoader = classLoaderSpec.classLoader();
+                thread.setContextClassLoader(classLoader);
+                log.info("Created thread {} with classLoader = {}, daemon = {}",
+                    threadName, classLoader, daemon);
                 thread.setDaemon(daemon);
                 return thread;
             }

@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import org.apache.kafka.trogdor.common.Topology;
+import org.apache.kafka.trogdor.rest.TrogdorClassLoaderSpec;
 import org.apache.kafka.trogdor.task.TaskController;
 import org.apache.kafka.trogdor.task.TaskSpec;
 import org.apache.kafka.trogdor.task.TaskWorker;
@@ -44,6 +45,7 @@ public class ConsumeBenchSpec extends TaskSpec {
     private final String topicRegex;
     private final int startPartition;
     private final int endPartition;
+    private final TrogdorClassLoaderSpec classLoader;
 
 
     @JsonCreator
@@ -58,7 +60,8 @@ public class ConsumeBenchSpec extends TaskSpec {
                             @JsonProperty("adminClientConf") Map<String, String> adminClientConf,
                             @JsonProperty("topicRegex") String topicRegex,
                             @JsonProperty("startPartition") int startPartition,
-                            @JsonProperty("endPartition") int endPartition) {
+                            @JsonProperty("endPartition") int endPartition,
+                            @JsonProperty("classLoader") TrogdorClassLoaderSpec classLoader) {
         super(startMs, durationMs);
         this.consumerNode = (consumerNode == null) ? "" : consumerNode;
         this.bootstrapServers = (bootstrapServers == null) ? "" : bootstrapServers;
@@ -70,6 +73,7 @@ public class ConsumeBenchSpec extends TaskSpec {
         this.topicRegex = topicRegex;
         this.startPartition = startPartition;
         this.endPartition = endPartition;
+        this.classLoader = classLoader == null ? new TrogdorClassLoaderSpec(null) : classLoader;
     }
 
     @JsonProperty
@@ -120,6 +124,11 @@ public class ConsumeBenchSpec extends TaskSpec {
     @JsonProperty
     public int endPartition() {
         return endPartition;
+    }
+
+    @JsonProperty
+    public TrogdorClassLoaderSpec classLoader() {
+        return classLoader;
     }
 
     @Override

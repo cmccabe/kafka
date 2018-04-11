@@ -74,7 +74,8 @@ public class ConsumeBenchWorker implements TaskWorker {
         }
         log.info("{}: Activating ConsumeBenchWorker with {}", id, spec);
         this.executor = Executors.newScheduledThreadPool(
-            2, ThreadUtils.createThreadFactory("ConsumeBenchWorkerThread%d", false));
+            2, ThreadUtils.createThreadFactory("ConsumeBenchWorkerThread%d",
+                false, spec.classLoader()));
         this.status = status;
         this.doneFuture = doneFuture;
         executor.submit(new Prepare());

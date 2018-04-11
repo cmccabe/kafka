@@ -20,6 +20,7 @@ package org.apache.kafka.trogdor.workload;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.kafka.trogdor.common.Topology;
+import org.apache.kafka.trogdor.rest.TrogdorClassLoaderSpec;
 import org.apache.kafka.trogdor.task.TaskController;
 import org.apache.kafka.trogdor.task.TaskSpec;
 import org.apache.kafka.trogdor.task.TaskWorker;
@@ -30,6 +31,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.Callable;
 
 /**
  * The specification for a workload that sends messages to a broker and then
@@ -46,6 +48,7 @@ public class RoundTripWorkloadSpec extends TaskSpec {
     private final Map<String, String> producerConf;
     private final Map<String, String> consumerConf;
     private final Map<String, String> adminClientConf;
+    private final TrogdorClassLoaderSpec classLoader;
 
     @JsonCreator
     public RoundTripWorkloadSpec(@JsonProperty("startMs") long startMs,
@@ -59,7 +62,8 @@ public class RoundTripWorkloadSpec extends TaskSpec {
              @JsonProperty("targetMessagesPerSec") int targetMessagesPerSec,
              @JsonProperty("partitionAssignments") NavigableMap<Integer, List<Integer>> partitionAssignments,
              @JsonProperty("valueGenerator") PayloadGenerator valueGenerator,
-             @JsonProperty("maxMessages") int maxMessages) {
+             @JsonProperty("maxMessages") int maxMessages,
+             @JsonProperty("classLoader") TrogdorClassLoaderSpec classLoader) {
         super(startMs, durationMs);
         this.clientNode = clientNode == null ? "" : clientNode;
         this.bootstrapServers = bootstrapServers == null ? "" : bootstrapServers;
@@ -73,6 +77,8 @@ public class RoundTripWorkloadSpec extends TaskSpec {
         this.adminClientConf = configOrEmptyMap(adminClientConf);
         this.producerConf = configOrEmptyMap(producerConf);
         this.consumerConf = configOrEmptyMap(consumerConf);
+        this.classLoader = (classLoader == null) ?
+            new TrogdorClassLoaderSpec(null) : classLoader;
     }
 
     @JsonProperty
@@ -125,6 +131,11 @@ public class RoundTripWorkloadSpec extends TaskSpec {
         return consumerConf;
     }
 
+    @JsonProperty
+    public TrogdorClassLoaderSpec classLoader() {
+        return classLoader;
+    }
+
     @Override
     public TaskController newController(String id) {
         return new TaskController() {
@@ -136,7 +147,13 @@ public class RoundTripWorkloadSpec extends TaskSpec {
     }
 
     @Override
-    public TaskWorker newTaskWorker(String id) {
-        return new RoundTripWorker(id, this);
+    public TaskWorker newTaskWorker(final String id) throws Exception {
+        final RoundTripWorkloadSpec that = this;
+        return classLoader.doWithClassLoader(new Callable<TaskWorker>() {
+            @Override
+            public TaskWorker call() throws Exception {
+                return new RoundTripWorker(id, that);
+            }
+        });
     }
 }
