@@ -252,7 +252,11 @@ public class MockClient implements KafkaClient {
                                                         + ", asked topics: " + metadata.topics());
                 }
                 this.unavailableTopics = metadataUpdate.unavailableTopics;
-                metadata.update(metadataUpdate.cluster, metadataUpdate.unavailableTopics, time.milliseconds());
+                if (metadataUpdate.authException != null) {
+                    metadata.failedUpdate(time.milliseconds(), metadataUpdate.authException);
+                } else {
+                    metadata.update(metadataUpdate.cluster, metadataUpdate.unavailableTopics, time.milliseconds());
+                }
             }
         }
 
@@ -403,13 +407,17 @@ public class MockClient implements KafkaClient {
     }
 
     public void prepareMetadataUpdate(Cluster cluster, Set<String> unavailableTopics) {
-        metadataUpdates.add(new MetadataUpdate(cluster, unavailableTopics, false));
+        metadataUpdates.add(new MetadataUpdate(cluster, unavailableTopics, false, null));
     }
 
-    public void prepareMetadataUpdate(Cluster cluster,
-                                      Set<String> unavailableTopics,
-                                      boolean expectMatchMetadataTopics) {
-        metadataUpdates.add(new MetadataUpdate(cluster, unavailableTopics, expectMatchMetadataTopics));
+    public void prepareMetadataUpdate(Cluster cluster, Set<String> unavailableTopics,
+                                      boolean expectMatchRefreshTopics) {
+        metadataUpdates.add(new MetadataUpdate(cluster, unavailableTopics, expectMatchRefreshTopics, null));
+    }
+
+    public void prepareMetadataUpdate(Cluster cluster, Set<String> unavailableTopics,
+            boolean expectMatchRefreshTopics, AuthenticationException authException) {
+        metadataUpdates.add(new MetadataUpdate(cluster, unavailableTopics, expectMatchRefreshTopics, authException));
     }
 
     public void setNode(Node node) {
@@ -500,10 +508,14 @@ public class MockClient implements KafkaClient {
         final Cluster cluster;
         final Set<String> unavailableTopics;
         final boolean expectMatchRefreshTopics;
-        MetadataUpdate(Cluster cluster, Set<String> unavailableTopics, boolean expectMatchRefreshTopics) {
+        final AuthenticationException authException;
+
+        MetadataUpdate(Cluster cluster, Set<String> unavailableTopics,
+                       boolean expectMatchRefreshTopics, AuthenticationException authException) {
             this.cluster = cluster;
             this.unavailableTopics = unavailableTopics;
             this.expectMatchRefreshTopics = expectMatchRefreshTopics;
+            this.authException = authException;
         }
     }
 

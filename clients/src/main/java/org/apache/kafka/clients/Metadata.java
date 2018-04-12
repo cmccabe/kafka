@@ -277,6 +277,7 @@ public final class Metadata {
     public synchronized void failedUpdate(long now, AuthenticationException authenticationException) {
         this.lastRefreshMs = now;
         this.authenticationException = authenticationException;
+        this.version += 1;
         if (authenticationException != null)
             this.notifyAll();
     }

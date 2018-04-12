@@ -43,9 +43,9 @@ import org.apache.kafka.common.acl.AclBindingFilter;
 import org.apache.kafka.common.annotation.InterfaceStability;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
-import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.BrokerNotAvailableException;
 import org.apache.kafka.common.errors.DisconnectException;
+import org.apache.kafka.common.errors.InvalidMetadataException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.RetriableException;
@@ -136,6 +136,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -687,6 +688,9 @@ public class KafkaAdminClient extends AdminClient {
         }
     }
 
+    private final static InvalidMetadataException INVALID_METADATA_EXCEPTION =
+        new InvalidMetadataException();
+
     private final class AdminClientRunnable implements Runnable {
         /**
          * Pending calls. Protected by the object monitor.
@@ -695,29 +699,63 @@ public class KafkaAdminClient extends AdminClient {
         private List<Call> newCalls = new LinkedList<>();
 
         /**
-         * Check if the AdminClient metadata is ready.
-         * We need to know who the controller is, and have a non-empty view of the cluster.
-         *
-         * @param prevMetadataVersion       The previous metadata version which wasn't usable.
-         * @return                          null if the metadata is usable; the current metadata
-         *                                  version otherwise
+         * True if we should request new metadata.
          */
-        private Integer checkMetadataReady(Integer prevMetadataVersion) {
-            if (prevMetadataVersion != null) {
-                if (prevMetadataVersion == metadata.version())
-                    return prevMetadataVersion;
+        private final AtomicBoolean shouldRequestMetadata = new AtomicBoolean(true);
+
+        /**
+         * The last version of the metadata which we've seen.
+         * Only accessed from the worker thread.
+         */
+        private int lastSeenMetadataVersion = 0;
+
+        /**
+         * The lowest version of the metadata which is valid.
+         * Only accessed from the worker thread.
+         */
+        private int lowestValidMetadataVersion = 0;
+
+        /**
+         * The exception which we got while fetching metadata, or null if there was none.
+         * Only accessed from the worker thread.
+         */
+        private ApiException metadataAuthException = null;
+
+        /**
+         * Check if the AdminClient metadata is usable.
+         *
+         * @return                  null, if the metadata is usable.
+         *                          StaleMetadataException, if the metadata is not current.
+         *                          AuthenticationException, if there was an authentication issue
+         *                          while fetching the metadata.
+         */
+        private ApiException checkMetadata() {
+            // If someone has requested a metadata update, or if the current metadata is
+            // just the bootstrap cluster, request a new metadata update.
+            if (shouldRequestMetadata.getAndSet(false) ||
+                    metadata.fetch().isBootstrapConfigured()) {
+                if (lowestValidMetadataVersion == lastSeenMetadataVersion) {
+                    lastSeenMetadataVersion = metadata.requestUpdate();
+                    lowestValidMetadataVersion = lastSeenMetadataVersion + 1;
+                    log.debug("Requesting new metadata version {}.", lowestValidMetadataVersion);
+                }
             }
-            Cluster cluster = metadata.fetch();
-            if (cluster.nodes().isEmpty()) {
-                log.trace("Metadata is not ready yet. No cluster nodes found.");
-                return metadata.requestUpdate();
+            int version = metadata.version();
+            if (version > lastSeenMetadataVersion) {
+                metadataAuthException = metadata.getAndClearAuthenticationException();
+                if (metadataAuthException != null) {
+                    log.warn("Metadata update {} had a metadata authentication exception", version,
+                        metadataAuthException);
+                } else {
+                    log.debug("Received new metadata version {}.", version);
+                }
+                lastSeenMetadataVersion = version;
             }
-            if (cluster.controller() == null) {
-                log.trace("Metadata is not ready yet. No controller found.");
-                return metadata.requestUpdate();
+            if (version < lowestValidMetadataVersion) {
+                return INVALID_METADATA_EXCEPTION;
             }
-            if (prevMetadataVersion != null) {
-                log.trace("Metadata is now ready.");
+            if (metadataAuthException != null) {
+                return metadataAuthException;
             }
             return null;
         }
@@ -740,7 +778,7 @@ public class KafkaAdminClient extends AdminClient {
          * @param processor     The timeout processor.
          * @param callsToSend   A map of nodes to the calls they need to handle.
          */
-        private void timeoutCallsToSend(TimeoutProcessor processor, Map<Node, List<Call>> callsToSend) {
+        private int timeoutCallsToSend(TimeoutProcessor processor, Map<Node, List<Call>> callsToSend) {
             int numTimedOut = 0;
             for (List<Call> callList : callsToSend.values()) {
                 numTimedOut += processor.handleTimeouts(callList,
@@ -748,6 +786,7 @@ public class KafkaAdminClient extends AdminClient {
             }
             if (numTimedOut > 0)
                 log.debug("Timed out {} call(s) with assigned nodes.", numTimedOut);
+            return numTimedOut;
         }
 
         /**
@@ -878,37 +917,6 @@ public class KafkaAdminClient extends AdminClient {
         }
 
         /**
-         * If an authentication exception is encountered with connection to any broker,
-         * fail all pending requests.
-         */
-        private void handleAuthenticationException(long now, Map<Node, List<Call>> callsToSend) {
-            AuthenticationException authenticationException = metadata.getAndClearAuthenticationException();
-            if (authenticationException == null) {
-                for (Node node : callsToSend.keySet()) {
-                    authenticationException = client.authenticationException(node);
-                    if (authenticationException != null)
-                        break;
-                }
-            }
-            if (authenticationException != null) {
-                synchronized (this) {
-                    failCalls(now, newCalls, authenticationException);
-                }
-                for (List<Call> calls : callsToSend.values()) {
-                    failCalls(now, calls, authenticationException);
-                }
-                callsToSend.clear();
-            }
-        }
-
-        private void failCalls(long now, List<Call> calls, AuthenticationException authenticationException) {
-            for (Call call : calls) {
-                call.fail(now, authenticationException);
-            }
-            calls.clear();
-        }
-
-        /**
          * Handle responses from the server.
          *
          * @param now                   The current time in milliseconds.
@@ -978,27 +986,40 @@ public class KafkaAdminClient extends AdminClient {
             return false;
         }
 
+        private void failPendingCalls(long now, Map<Node, List<Call>> callsToSend, Throwable t) {
+            synchronized (this) {
+                for (Call call : newCalls) {
+                    call.fail(now, t);
+                }
+                newCalls.clear();
+            }
+            for (List<Call> calls : callsToSend.values()) {
+                for (Call call : calls) {
+                    call.fail(now, t);
+                }
+            }
+            callsToSend.clear();
+        }
+
         @Override
         public void run() {
             /*
              * Maps nodes to calls that we want to send.
+             * Only accessed from this thread.
              */
             Map<Node, List<Call>> callsToSend = new HashMap<>();
 
             /*
              * Maps node ID strings to calls that have been sent.
+             * Only accessed from this thread.
              */
             Map<String, List<Call>> callsInFlight = new HashMap<>();
 
             /*
              * Maps correlation IDs to calls that have been sent.
+             * Only accessed from this thread.
              */
             Map<Integer, Call> correlationIdToCalls = new HashMap<>();
-
-            /*
-             * The previous metadata version which wasn't usable, or null if there is none.
-             */
-            Integer prevMetadataVersion = null;
 
             long now = time.milliseconds();
             log.trace("Thread starting");
@@ -1020,12 +1041,16 @@ public class KafkaAdminClient extends AdminClient {
                     pollTimeout = Math.min(pollTimeout, curHardShutdownTimeMs - now);
                 }
 
-                // Handle new calls and metadata update requests.
-                prevMetadataVersion = checkMetadataReady(prevMetadataVersion);
-                if (prevMetadataVersion == null) {
+                // Check our cluster metadata.
+                ApiException e = checkMetadata();
+                if (e == null) {
+                    // Handle new calls.
                     chooseNodesForNewCalls(now, callsToSend);
                     pollTimeout = Math.min(pollTimeout,
                         sendEligibleCalls(now, callsToSend, correlationIdToCalls, callsInFlight));
+                } else if (!(e instanceof RetriableException)) {
+                    // If there was a non-retriable exception fetching metadata, fail all pending calls.
+                    failPendingCalls(now, callsToSend, e);
                 }
 
                 // Wait for network responses.
@@ -1035,7 +1060,6 @@ public class KafkaAdminClient extends AdminClient {
 
                 // Update the current time and handle the latest responses.
                 now = time.milliseconds();
-                handleAuthenticationException(now, callsToSend);
                 handleResponses(now, responses, callsInFlight, correlationIdToCalls);
             }
             int numTimedOut = 0;
@@ -1045,6 +1069,7 @@ public class KafkaAdminClient extends AdminClient {
                         "The AdminClient thread has exited.");
                 newCalls = null;
             }
+            numTimedOut += timeoutCallsToSend(timeoutProcessor, callsToSend);
             numTimedOut += timeoutProcessor.handleTimeouts(correlationIdToCalls.values(),
                     "The AdminClient thread has exited.");
             if (numTimedOut > 0) {
@@ -1139,6 +1164,13 @@ public class KafkaAdminClient extends AdminClient {
             @Override
             public void handleResponse(AbstractResponse abstractResponse) {
                 CreateTopicsResponse response = (CreateTopicsResponse) abstractResponse;
+                // Check for controller change
+                for (ApiError error : response.errors().values()) {
+                    if (error.error() == Errors.NOT_CONTROLLER) {
+                        runnable.shouldRequestMetadata.set(true);
+                        throw error.exception();
+                    }
+                }
                 // Handle server responses for particular topics.
                 for (Map.Entry<String, ApiError> entry : response.errors().entrySet()) {
                     KafkaFutureImpl<Void> future = topicFutures.get(entry.getKey());
@@ -1202,6 +1234,13 @@ public class KafkaAdminClient extends AdminClient {
             @Override
             void handleResponse(AbstractResponse abstractResponse) {
                 DeleteTopicsResponse response = (DeleteTopicsResponse) abstractResponse;
+                // Check for controller change
+                for (Errors error : response.errors().values()) {
+                    if (error == Errors.NOT_CONTROLLER) {
+                        runnable.shouldRequestMetadata.set(true);
+                        throw error.exception();
+                    }
+                }
                 // Handle server responses for particular topics.
                 for (Map.Entry<String, Errors> entry : response.errors().entrySet()) {
                     KafkaFutureImpl<Void> future = topicFutures.get(entry.getKey());
@@ -1302,6 +1341,13 @@ public class KafkaAdminClient extends AdminClient {
             @Override
             void handleResponse(AbstractResponse abstractResponse) {
                 MetadataResponse response = (MetadataResponse) abstractResponse;
+                // Check for controller change
+                for (Errors error : response.errors().values()) {
+                    if (error == Errors.NOT_CONTROLLER) {
+                        runnable.shouldRequestMetadata.set(true);
+                        throw error.exception();
+                    }
+                }
                 // Handle server responses for particular topics.
                 Cluster cluster = response.cluster();
                 Map<String, Errors> errors = response.errors();
@@ -1971,6 +2017,13 @@ public class KafkaAdminClient extends AdminClient {
             @Override
             public void handleResponse(AbstractResponse abstractResponse) {
                 CreatePartitionsResponse response = (CreatePartitionsResponse) abstractResponse;
+                // Check for controller change
+                for (ApiError error : response.errors().values()) {
+                    if (error.error() == Errors.NOT_CONTROLLER) {
+                        runnable.shouldRequestMetadata.set(true);
+                        throw error.exception();
+                    }
+                }
                 for (Map.Entry<String, ApiError> result : response.errors().entrySet()) {
                     KafkaFutureImpl<Void> future = futures.get(result.getKey());
                     if (result.getValue().isSuccess()) {

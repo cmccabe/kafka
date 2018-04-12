@@ -167,15 +167,18 @@ public class KafkaAdminClientTest {
                 KafkaAdminClient.generateClientId(newConfMap(AdminClientConfig.CLIENT_ID_CONFIG, "myCustomId")));
     }
 
-    private static AdminClientUnitTestEnv mockClientEnv(String... configVals) {
+    private static Cluster mockCluster(int controllerIndex) {
         HashMap<Integer, Node> nodes = new HashMap<>();
         nodes.put(0, new Node(0, "localhost", 8121));
         nodes.put(1, new Node(1, "localhost", 8122));
         nodes.put(2, new Node(2, "localhost", 8123));
-        Cluster cluster = new Cluster("mockClusterId", nodes.values(),
+        return new Cluster("mockClusterId", nodes.values(),
                 Collections.<PartitionInfo>emptySet(), Collections.<String>emptySet(),
                 Collections.<String>emptySet(), nodes.get(0));
-        return new AdminClientUnitTestEnv(cluster, configVals);
+    }
+
+    private static AdminClientUnitTestEnv mockClientEnv(String... configVals) {
+        return new AdminClientUnitTestEnv(mockCluster(0), configVals);
     }
 
     @Test
@@ -213,6 +216,24 @@ public class KafkaAdminClientTest {
         }
     }
 
+    /**
+     * Test that we propagate exceptions encountered when fetching metadata.
+     */
+    @Test
+    public void testPropagatedMetadataFetchException() throws Exception {
+        try (AdminClientUnitTestEnv env = mockClientEnv(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "10")) {
+            env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
+            env.kafkaClient().prepareMetadataUpdate(env.cluster(), Collections.<String>emptySet(), false,
+                new AuthenticationException("Unable to authenticate"));
+            env.kafkaClient().setNode(env.cluster().nodeById(0));
+            env.kafkaClient().prepareResponse(new CreateTopicsResponse(Collections.singletonMap("myTopic", new ApiError(Errors.NONE, ""))));
+            KafkaFuture<Void> future = env.adminClient().createTopics(
+                Collections.singleton(new NewTopic("myTopic", Collections.singletonMap(Integer.valueOf(0), asList(new Integer[]{0, 1, 2})))),
+                new CreateTopicsOptions().timeoutMs(1000)).all();
+            assertFutureError(future, AuthenticationException.class);
+        }
+    }
+
     @Test
     public void testCreateTopics() throws Exception {
         try (AdminClientUnitTestEnv env = mockClientEnv()) {
@@ -223,6 +244,26 @@ public class KafkaAdminClientTest {
             KafkaFuture<Void> future = env.adminClient().createTopics(
                     Collections.singleton(new NewTopic("myTopic", Collections.singletonMap(Integer.valueOf(0), asList(new Integer[]{0, 1, 2})))),
                     new CreateTopicsOptions().timeoutMs(10000)).all();
+            future.get();
+        }
+    }
+
+    @Test
+    public void testCreateTopicsHandleNotControllerException() throws Exception {
+        try (AdminClientUnitTestEnv env = mockClientEnv()) {
+            env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
+            env.kafkaClient().prepareMetadataUpdate(env.cluster(), Collections.<String>emptySet());
+            env.kafkaClient().prepareMetadataUpdate(mockCluster(1), Collections.<String>emptySet());
+            env.kafkaClient().setNode(env.cluster().nodeById(0));
+            env.kafkaClient().prepareResponseFrom(new CreateTopicsResponse(
+                Collections.singletonMap("myTopic", new ApiError(Errors.NOT_CONTROLLER, ""))),
+                env.cluster().nodeById(0));
+            env.kafkaClient().prepareResponseFrom(new CreateTopicsResponse(
+                    Collections.singletonMap("myTopic", new ApiError(Errors.NONE, ""))),
+                env.cluster().nodeById(1));
+            KafkaFuture<Void> future = env.adminClient().createTopics(
+                Collections.singleton(new NewTopic("myTopic", Collections.singletonMap(Integer.valueOf(0), asList(new Integer[]{0, 1, 2})))),
+                new CreateTopicsOptions().timeoutMs(10000)).all();
             future.get();
         }
     }
