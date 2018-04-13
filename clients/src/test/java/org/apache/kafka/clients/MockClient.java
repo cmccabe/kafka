@@ -73,6 +73,7 @@ public class MockClient implements KafkaClient {
 
     }
 
+    private int correlation;
     private final Time time;
     private final Metadata metadata;
     private Set<String> unavailableTopics;
@@ -90,6 +91,8 @@ public class MockClient implements KafkaClient {
     private volatile NodeApiVersions nodeApiVersions = NodeApiVersions.create();
     private volatile int numBlockingWakeups = 0;
     private final AtomicInteger totalRequestCount = new AtomicInteger(0);
+    private volatile AuthenticationException metadataException = null;
+
     public MockClient(Time time) {
         this(time, null);
     }
@@ -241,9 +244,9 @@ public class MockClient implements KafkaClient {
         if (metadata != null && metadata.updateRequested()) {
             MetadataUpdate metadataUpdate = metadataUpdates.poll();
             if (cluster != null)
-                metadata.update(cluster, this.unavailableTopics, time.milliseconds());
+                updateMetadata(cluster);
             if (metadataUpdate == null)
-                metadata.update(metadata.fetch(), this.unavailableTopics, time.milliseconds());
+                updateMetadata(metadata.fetch());
             else {
                 if (metadataUpdate.expectMatchRefreshTopics
                     && !metadata.topics().equals(metadataUpdate.cluster.topics())) {
@@ -252,11 +255,7 @@ public class MockClient implements KafkaClient {
                                                         + ", asked topics: " + metadata.topics());
                 }
                 this.unavailableTopics = metadataUpdate.unavailableTopics;
-                if (metadataUpdate.authException != null) {
-                    metadata.failedUpdate(time.milliseconds(), metadataUpdate.authException);
-                } else {
-                    metadata.update(metadataUpdate.cluster, metadataUpdate.unavailableTopics, time.milliseconds());
-                }
+                updateMetadata(metadataUpdate.cluster);
             }
         }
 
@@ -266,6 +265,15 @@ public class MockClient implements KafkaClient {
         }
 
         return copy;
+    }
+
+    private void updateMetadata(Cluster cluster) {
+        AuthenticationException exception = metadataException;
+        if (exception != null) {
+            metadata.failedUpdate(time.milliseconds(), exception);
+        } else {
+            metadata.update(cluster, this.unavailableTopics, time.milliseconds());
+        }
     }
 
     public Queue<ClientRequest> requests() {
@@ -407,17 +415,13 @@ public class MockClient implements KafkaClient {
     }
 
     public void prepareMetadataUpdate(Cluster cluster, Set<String> unavailableTopics) {
-        metadataUpdates.add(new MetadataUpdate(cluster, unavailableTopics, false, null));
+        metadataUpdates.add(new MetadataUpdate(cluster, unavailableTopics, false));
     }
 
-    public void prepareMetadataUpdate(Cluster cluster, Set<String> unavailableTopics,
-                                      boolean expectMatchRefreshTopics) {
-        metadataUpdates.add(new MetadataUpdate(cluster, unavailableTopics, expectMatchRefreshTopics, null));
-    }
-
-    public void prepareMetadataUpdate(Cluster cluster, Set<String> unavailableTopics,
-            boolean expectMatchRefreshTopics, AuthenticationException authException) {
-        metadataUpdates.add(new MetadataUpdate(cluster, unavailableTopics, expectMatchRefreshTopics, authException));
+    public void prepareMetadataUpdate(Cluster cluster,
+                                      Set<String> unavailableTopics,
+                                      boolean expectMatchMetadataTopics) {
+        metadataUpdates.add(new MetadataUpdate(cluster, unavailableTopics, expectMatchMetadataTopics));
     }
 
     public void setNode(Node node) {
@@ -472,7 +476,7 @@ public class MockClient implements KafkaClient {
     public ClientRequest newClientRequest(String nodeId, AbstractRequest.Builder<?> requestBuilder, long createdTimeMs,
                                           boolean expectResponse, RequestCompletionHandler callback) {
         totalRequestCount.incrementAndGet();
-        return new ClientRequest(nodeId, requestBuilder, 0, "mockClientId", createdTimeMs,
+        return new ClientRequest(nodeId, requestBuilder, correlation++, "mockClientId", createdTimeMs,
                 expectResponse, callback);
     }
 
@@ -508,15 +512,15 @@ public class MockClient implements KafkaClient {
         final Cluster cluster;
         final Set<String> unavailableTopics;
         final boolean expectMatchRefreshTopics;
-        final AuthenticationException authException;
-
-        MetadataUpdate(Cluster cluster, Set<String> unavailableTopics,
-                       boolean expectMatchRefreshTopics, AuthenticationException authException) {
+        MetadataUpdate(Cluster cluster, Set<String> unavailableTopics, boolean expectMatchRefreshTopics) {
             this.cluster = cluster;
             this.unavailableTopics = unavailableTopics;
             this.expectMatchRefreshTopics = expectMatchRefreshTopics;
-            this.authException = authException;
         }
+    }
+
+    public void setMetadataException(AuthenticationException metadataException) {
+        this.metadataException = metadataException;
     }
 
     // visible for testing

@@ -45,9 +45,9 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.BrokerNotAvailableException;
 import org.apache.kafka.common.errors.DisconnectException;
-import org.apache.kafka.common.errors.InvalidMetadataException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.errors.NetworkException;
 import org.apache.kafka.common.errors.RetriableException;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.errors.UnknownServerException;
@@ -688,8 +688,8 @@ public class KafkaAdminClient extends AdminClient {
         }
     }
 
-    private final static InvalidMetadataException INVALID_METADATA_EXCEPTION =
-        new InvalidMetadataException();
+    private final static NetworkException INVALID_METADATA_EXCEPTION =
+        new NetworkException();
 
     private final class AdminClientRunnable implements Runnable {
         /**
@@ -729,7 +729,7 @@ public class KafkaAdminClient extends AdminClient {
          *                          AuthenticationException, if there was an authentication issue
          *                          while fetching the metadata.
          */
-        private ApiException checkMetadata() {
+        private ApiException checkMetadataError() {
             // If someone has requested a metadata update, or if the current metadata is
             // just the bootstrap cluster, request a new metadata update.
             if (shouldRequestMetadata.getAndSet(false) ||
@@ -1042,7 +1042,7 @@ public class KafkaAdminClient extends AdminClient {
                 }
 
                 // Check our cluster metadata.
-                ApiException e = checkMetadata();
+                ApiException e = checkMetadataError();
                 if (e == null) {
                     // Handle new calls.
                     chooseNodesForNewCalls(now, callsToSend);
@@ -1125,6 +1125,10 @@ public class KafkaAdminClient extends AdminClient {
                 enqueue(call, now);
             }
         }
+
+        void requestMetadataUpdate() {
+            shouldRequestMetadata.set(true);
+        }
     }
 
     /**
@@ -1167,7 +1171,7 @@ public class KafkaAdminClient extends AdminClient {
                 // Check for controller change
                 for (ApiError error : response.errors().values()) {
                     if (error.error() == Errors.NOT_CONTROLLER) {
-                        runnable.shouldRequestMetadata.set(true);
+                        runnable.requestMetadataUpdate();
                         throw error.exception();
                     }
                 }
@@ -1237,7 +1241,7 @@ public class KafkaAdminClient extends AdminClient {
                 // Check for controller change
                 for (Errors error : response.errors().values()) {
                     if (error == Errors.NOT_CONTROLLER) {
-                        runnable.shouldRequestMetadata.set(true);
+                        runnable.requestMetadataUpdate();
                         throw error.exception();
                     }
                 }
@@ -1341,13 +1345,6 @@ public class KafkaAdminClient extends AdminClient {
             @Override
             void handleResponse(AbstractResponse abstractResponse) {
                 MetadataResponse response = (MetadataResponse) abstractResponse;
-                // Check for controller change
-                for (Errors error : response.errors().values()) {
-                    if (error == Errors.NOT_CONTROLLER) {
-                        runnable.shouldRequestMetadata.set(true);
-                        throw error.exception();
-                    }
-                }
                 // Handle server responses for particular topics.
                 Cluster cluster = response.cluster();
                 Map<String, Errors> errors = response.errors();
@@ -2020,7 +2017,7 @@ public class KafkaAdminClient extends AdminClient {
                 // Check for controller change
                 for (ApiError error : response.errors().values()) {
                     if (error.error() == Errors.NOT_CONTROLLER) {
-                        runnable.shouldRequestMetadata.set(true);
+                        runnable.requestMetadataUpdate();
                         throw error.exception();
                     }
                 }

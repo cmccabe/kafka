@@ -34,6 +34,7 @@ import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.acl.AclPermissionType;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
+import org.apache.kafka.common.errors.BrokerNotAvailableException;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.errors.NotLeaderForPartitionException;
@@ -63,6 +64,7 @@ import org.apache.kafka.common.resource.Resource;
 import org.apache.kafka.common.resource.ResourceFilter;
 import org.apache.kafka.common.resource.ResourceType;
 import org.apache.kafka.common.utils.MockTime;
+import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.test.TestCondition;
 import org.apache.kafka.test.TestUtils;
 import org.junit.Ignore;
@@ -174,7 +176,7 @@ public class KafkaAdminClientTest {
         nodes.put(2, new Node(2, "localhost", 8123));
         return new Cluster("mockClusterId", nodes.values(),
                 Collections.<PartitionInfo>emptySet(), Collections.<String>emptySet(),
-                Collections.<String>emptySet(), nodes.get(0));
+                Collections.<String>emptySet(), nodes.get(controllerIndex));
     }
 
     private static AdminClientUnitTestEnv mockClientEnv(String... configVals) {
@@ -212,7 +214,7 @@ public class KafkaAdminClientTest {
             KafkaFuture<Void> future = env.adminClient().createTopics(
                     Collections.singleton(new NewTopic("myTopic", Collections.singletonMap(Integer.valueOf(0), asList(new Integer[]{0, 1, 2})))),
                     new CreateTopicsOptions().timeoutMs(1000)).all();
-            assertFutureError(future, TimeoutException.class);
+            assertFutureError(future, BrokerNotAvailableException.class);
         }
     }
 
@@ -223,8 +225,7 @@ public class KafkaAdminClientTest {
     public void testPropagatedMetadataFetchException() throws Exception {
         try (AdminClientUnitTestEnv env = mockClientEnv(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "10")) {
             env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
-            env.kafkaClient().prepareMetadataUpdate(env.cluster(), Collections.<String>emptySet(), false,
-                new AuthenticationException("Unable to authenticate"));
+            env.kafkaClient().setMetadataException(new AuthenticationException("Unable to authenticate"));
             env.kafkaClient().setNode(env.cluster().nodeById(0));
             env.kafkaClient().prepareResponse(new CreateTopicsResponse(Collections.singletonMap("myTopic", new ApiError(Errors.NONE, ""))));
             KafkaFuture<Void> future = env.adminClient().createTopics(
@@ -252,7 +253,7 @@ public class KafkaAdminClientTest {
     public void testCreateTopicsHandleNotControllerException() throws Exception {
         try (AdminClientUnitTestEnv env = mockClientEnv()) {
             env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
-            env.kafkaClient().prepareMetadataUpdate(env.cluster(), Collections.<String>emptySet());
+            env.kafkaClient().prepareMetadataUpdate(mockCluster(0), Collections.<String>emptySet());
             env.kafkaClient().prepareMetadataUpdate(mockCluster(1), Collections.<String>emptySet());
             env.kafkaClient().setNode(env.cluster().nodeById(0));
             env.kafkaClient().prepareResponseFrom(new CreateTopicsResponse(
@@ -305,33 +306,25 @@ public class KafkaAdminClientTest {
     }
 
     @Test
-    public void testAdminClientApisWithinBlackoutPeriodAfterAuthenticationFailure() throws Exception {
+    public void testAdminClientApisAuthenticationFailure() throws Exception {
         AdminClientUnitTestEnv env = mockClientEnv();
         Node node = env.cluster().controller();
         env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
         env.kafkaClient().setNode(node);
-        env.kafkaClient().authenticationFailed(node, 300);
-
+        env.kafkaClient().setMetadataException(new AuthenticationException("Unable to authenticate"));
         callAdminClientApisAndExpectAnAuthenticationError(env);
-
-        // wait less than the blackout period, the connection should fail and the authentication error should remain
-        env.time().sleep(30);
-        assertTrue(env.kafkaClient().connectionFailed(node));
-        callAdminClientApisAndExpectAnAuthenticationError(env);
-
         env.close();
     }
 
     private void callAdminClientApisAndExpectAnAuthenticationError(AdminClientUnitTestEnv env) throws InterruptedException {
-        env.kafkaClient().prepareMetadataUpdate(env.cluster(), Collections.<String>emptySet());
-
         try {
             env.adminClient().createTopics(
                     Collections.singleton(new NewTopic("myTopic", Collections.singletonMap(Integer.valueOf(0), asList(new Integer[]{0, 1, 2})))),
                     new CreateTopicsOptions().timeoutMs(10000)).all().get();
             fail("Expected an authentication error.");
         } catch (ExecutionException e) {
-            assertTrue("Expected only an authentication error.", e.getCause() instanceof AuthenticationException);
+            assertTrue("Expected an authentication error, but got " + Utils.stackTrace(e),
+                e.getCause() instanceof AuthenticationException);
         }
 
         try {
@@ -341,35 +334,40 @@ public class KafkaAdminClientTest {
             env.adminClient().createPartitions(counts).all().get();
             fail("Expected an authentication error.");
         } catch (ExecutionException e) {
-            assertTrue("Expected only an authentication error.", e.getCause() instanceof AuthenticationException);
+            assertTrue("Expected an authentication error, but got " + Utils.stackTrace(e),
+                e.getCause() instanceof AuthenticationException);
         }
 
         try {
             env.adminClient().createAcls(asList(ACL1, ACL2)).all().get();
             fail("Expected an authentication error.");
         } catch (ExecutionException e) {
-            assertTrue("Expected only an authentication error.", e.getCause() instanceof AuthenticationException);
+            assertTrue("Expected an authentication error, but got " + Utils.stackTrace(e),
+                e.getCause() instanceof AuthenticationException);
         }
 
         try {
             env.adminClient().describeAcls(FILTER1).values().get();
             fail("Expected an authentication error.");
         } catch (ExecutionException e) {
-            assertTrue("Expected only an authentication error.", e.getCause() instanceof AuthenticationException);
+            assertTrue("Expected an authentication error, but got " + Utils.stackTrace(e),
+                e.getCause() instanceof AuthenticationException);
         }
 
         try {
             env.adminClient().deleteAcls(asList(FILTER1, FILTER2)).all().get();
             fail("Expected an authentication error.");
         } catch (ExecutionException e) {
-            assertTrue("Expected only an authentication error.", e.getCause() instanceof AuthenticationException);
+            assertTrue("Expected an authentication error, but got " + Utils.stackTrace(e),
+                e.getCause() instanceof AuthenticationException);
         }
 
         try {
             env.adminClient().describeConfigs(Collections.singleton(new ConfigResource(ConfigResource.Type.BROKER, "0"))).all().get();
             fail("Expected an authentication error.");
         } catch (ExecutionException e) {
-            assertTrue("Expected only an authentication error.", e.getCause() instanceof AuthenticationException);
+            assertTrue("Expected an authentication error, but got " + Utils.stackTrace(e),
+                e.getCause() instanceof AuthenticationException);
         }
     }
 
