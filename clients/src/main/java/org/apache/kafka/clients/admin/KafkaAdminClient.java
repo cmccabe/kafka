@@ -17,6 +17,11 @@
 
 package org.apache.kafka.clients.admin;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.ClientDnsLookup;
 import org.apache.kafka.clients.ClientRequest;
@@ -254,6 +259,16 @@ public class KafkaAdminClient extends AdminClient {
     private final int maxRetries;
 
     private final long retryBackoffMs;
+
+    static final ObjectMapper JSON_SERDE;
+
+    static {
+        JSON_SERDE = new ObjectMapper();
+        JSON_SERDE.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+        JSON_SERDE.configure(JsonParser.Feature.ALLOW_COMMENTS, true);
+        JSON_SERDE.registerModule(new Jdk8Module());
+        JSON_SERDE.setSerializationInclusion(JsonInclude.Include.NON_ABSENT);
+    }
 
     /**
      * Get or create a list value from a map.
