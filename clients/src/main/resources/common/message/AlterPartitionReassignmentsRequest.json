@@ -19,11 +19,11 @@
   "name": "AlterPartitionReassignmentsRequest",
   "validVersions": "0",
   "fields": [
-    { "name": "Topics", "type": "[]ReassignableTopics", "versions": "0+",
+    { "name": "Topics", "type": "[]ReassignableTopic", "versions": "0+",
       "about": "The topics to reassign.", "fields": [
       { "name": "Name", "type": "string", "versions": "0+",
         "about": "The topic name." },
-      { "name": "Partitions", "type": "[]ReassignablePartitions", "versions": "0+",
+      { "name": "Partitions", "type": "[]ReassignablePartition", "versions": "0+",
         "about": "The partitions to reassign.", "fields": [
         { "name": "PartitionIndex", "type": "int32", "versions": "0+",
           "about": "The partition index." },

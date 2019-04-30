@@ -65,6 +65,7 @@ import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.internals.KafkaFutureImpl;
+import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData.CreatableTopicSet;
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResult;
@@ -2981,6 +2982,31 @@ public class KafkaAdminClient extends AdminClient {
     public AlterPartitionReassignmentsResult alterPartitionReassignments(
             Map<TopicPartition, PartitionReassignment> reassignments,
             AlterPartitionReassignmentsOptions options) {
+//        final Map<TopicPartition, KafkaFutureImpl<Void>> futures = new HashMap<>();
+//
+//        final long now = time.milliseconds();
+//        runnable.call(new Call("alterPartitionReassignments", calcDeadlineMs(now, options.timeoutMs()),
+//                new ControllerNodeProvider()) {
+//
+//            @Override
+//            public AbstractRequest.Builder createRequest(int timeoutMs) {
+//                return new AlterPartitionReassignmentsRequestData().Builder(
+//                        ElectPreferredLeadersRequest.toRequestData(partitions, timeoutMs));
+//            }
+//
+//            @Override
+//            public void handleResponse(AbstractResponse abstractResponse) {
+//                ElectPreferredLeadersResponse response = (ElectPreferredLeadersResponse) abstractResponse;
+//                electionFuture.complete(
+//                        ElectPreferredLeadersRequest.fromResponseData(response.data()));
+//            }
+//
+//            @Override
+//            void handleFailure(Throwable throwable) {
+//                electionFuture.completeExceptionally(throwable);
+//            }
+//        }, now);
+//        return new AlterPartitionReassignmentsResult(electionFuture, partitionSet);
         return null;
     }
 
