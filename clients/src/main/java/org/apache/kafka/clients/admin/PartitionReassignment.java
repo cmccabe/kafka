@@ -19,12 +19,17 @@ package org.apache.kafka.clients.admin;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.apache.kafka.common.annotation.InterfaceStability;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Describes a partition reassignment.
+ */
+@InterfaceStability.Evolving
 public class PartitionReassignment {
     private final String topic;
     private final int partition;

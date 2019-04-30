@@ -875,8 +875,6 @@ public abstract class AdminClient implements AutoCloseable {
      *   if the topic or partition did not exist within the cluster.</li>
      *   <li>{@link org.apache.kafka.common.errors.InvalidTopicException}
      *   if the topic was already queued for deletion.</li>
-     *   <li>{@link org.apache.kafka.common.errors.NotControllerException}
-     *   if the request was sent to a broker that was not the controller for the cluster.</li>
      *   <li>{@link org.apache.kafka.common.errors.TimeoutException}
      *   if the request timed out before the election was complete.</li>
      *   <li>{@link org.apache.kafka.common.errors.LeaderNotAvailableException}
@@ -894,4 +892,66 @@ public abstract class AdminClient implements AutoCloseable {
      * Get the metrics kept by the adminClient
      */
     public abstract Map<MetricName, ? extends Metric> metrics();
+
+    /**
+     * Change the reassignments for one or more partitions.
+     *
+     * This is a convenience method for {@link #alterPartitionReassignments(Collection, AlterPartitionReassignmentsOptions)}
+     * with default options.  See the overload for more details.
+     */
+    public AlterPartitionReassignmentsResult alterPartitionReassignments(
+                Map<TopicPartition, PartitionReassignment> reassignments) {
+        return alterPartitionReassignments(reassignments, new AlterPartitionReassignmentsOptions());
+    }
+
+    /**
+     * Change the reassignments for one or more partitions.
+     *
+     * <p>The following exceptions can be anticipated when calling {@code get()} on the futures obtained from
+     * the returned {@code AlterPartitionReassignmentsResult}:</p>
+     * <ul>
+     *   <li>{@link org.apache.kafka.common.errors.ClusterAuthorizationException}
+     *   If the authenticated user didn't have alter access to the cluster.</li>
+     *   <li>{@link org.apache.kafka.common.errors.UnknownTopicOrPartitionException}
+     *   If the topic or partition does not exist within the cluster.</li>
+     *   <li>{@link org.apache.kafka.common.errors.TimeoutException}
+     *   if the request timed out before the controller could record the new assignments.</li>
+     * </ul>
+     *
+     * @param reassignments   The new reassignments for each topic.  If the value of the map 
+     *                        is null, an existing reassignment will be cancelled.
+     * @param options         The options to use.
+     * @return                The result.
+     */
+    public abstract AlterPartitionReassignmentsResult alterPartitionReassignments(
+                Map<TopicPartition, PartitionReassignment> reassignments,
+                AlterPartitionReassignmentsOptions options);
+
+    /**
+     * List the reassignments which are in progress.
+     *
+     * This is a convenience method for {@link #listPartitionReassignments(ListPartitionReassignmentsOptions)}
+     * with default options.  See the overload for more details.
+     */
+    public ListPartitionReassignmentsResult listPartitionReassignments() {
+        return listPartitionReassignments(new ListPartitionReassignmentsOptions());
+    }
+
+    /**
+     * Change the reassignments for one or more partitions.
+     *
+     * <p>The following exceptions can be anticipated when calling {@code get()} on the futures obtained from
+     * the returned {@code ListPartitionReassignmentsResult}:</p>
+     * <ul>
+     *   <li>{@link org.apache.kafka.common.errors.ClusterAuthorizationException}
+     *   If the authenticated user doesn't have alter access to the cluster.</li>
+     *   <li>{@link org.apache.kafka.common.errors.TimeoutException}
+     *   if the request timed out before the controller could list the current reassignments.</li>
+     * </ul>
+     *
+     * @param options         The options to use.
+     * @return                The result.
+     */
+    public abstract ListPartitionReassignmentsResult listPartitionReassignments(
+                ListPartitionReassignmentsOptions options);
 }

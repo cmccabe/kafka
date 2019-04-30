@@ -19,26 +19,35 @@ package org.apache.kafka.clients.admin;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.apache.kafka.common.annotation.InterfaceStability;
+import org.apache.kafka.common.errors.UnsupportedVersionException;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * Describes some partition reassignments.
+ */
+@InterfaceStability.Evolving
 public class PartitionReassignments {
-    private final int version;
+    private final static int VALID_VERSION = 1;
     private final List<PartitionReassignment> partitions;
 
     @JsonCreator
     public PartitionReassignments(@JsonProperty("version") int version,
-                                  @JsonProperty("partitions") List<PartitionReassignment> partitions) {
-        this.version = version;
+            @JsonProperty("partitions") List<PartitionReassignment> partitions) {
+        if (version != VALID_VERSION) {
+            throw new UnsupportedVersionException("Unsupported PartitionReassignments version " +
+                version + ".  Supported version(s) are: " + VALID_VERSION);
+        }
         this.partitions = (partitions == null) ? Collections.emptyList() :
             Collections.unmodifiableList(new ArrayList<>(partitions));
     }
 
     @JsonProperty
     public int version() {
-        return version;
+        return VALID_VERSION;
     }
 
     @JsonProperty

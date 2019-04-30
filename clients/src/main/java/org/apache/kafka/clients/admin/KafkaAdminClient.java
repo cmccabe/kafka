@@ -2977,4 +2977,15 @@ public class KafkaAdminClient extends AdminClient {
         return new ElectPreferredLeadersResult(electionFuture, partitionSet);
     }
 
+    @Override
+    public AlterPartitionReassignmentsResult alterPartitionReassignments(
+            Map<TopicPartition, PartitionReassignment> reassignments,
+            AlterPartitionReassignmentsOptions options) {
+        return null;
+    }
+
+    @Override
+    public ListPartitionReassignmentsResult listPartitionReassignments(ListPartitionReassignmentsOptions options) {
+        return null;
+    }
 }

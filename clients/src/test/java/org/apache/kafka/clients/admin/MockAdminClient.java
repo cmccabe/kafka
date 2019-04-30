@@ -333,7 +333,21 @@ public class MockAdminClient extends AdminClient {
         throw new UnsupportedOperationException("Not implemented yet");
     }
 
+    @Override
     public ElectPreferredLeadersResult electPreferredLeaders(Collection<TopicPartition> partitions, ElectPreferredLeadersOptions options) {
+        throw new UnsupportedOperationException("Not implemented yet");
+    }
+
+    @Override
+    public AlterPartitionReassignmentsResult alterPartitionReassignments(
+            Map<TopicPartition, PartitionReassignment> reassignments,
+            AlterPartitionReassignmentsOptions options) {
+        throw new UnsupportedOperationException("Not implemented yet");
+    }
+
+    @Override
+    public ListPartitionReassignmentsResult listPartitionReassignments(
+            ListPartitionReassignmentsOptions options) {
         throw new UnsupportedOperationException("Not implemented yet");
     }
 
