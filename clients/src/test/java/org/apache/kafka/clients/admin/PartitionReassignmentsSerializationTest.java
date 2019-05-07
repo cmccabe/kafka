@@ -29,7 +29,6 @@ public class PartitionReassignmentsSerializationTest {
             readValue(text, PartitionReassignments.class);
         String text2 = KafkaAdminClient.JSON_SERDE.
             writerWithDefaultPrettyPrinter().writeValueAsString(object);
-        System.out.printf("WATERMELON%n%s", text2);
         assertEquals(text, text2);
     }
 
@@ -54,7 +53,7 @@ public class PartitionReassignmentsSerializationTest {
         assertEquals("foo", reassignment1.partitions().get(0).topic());
         assertEquals(1, reassignment1.partitions().get(0).partition());
         assertEquals(Arrays.asList(1000, 1001, 1002),
-            reassignment1.partitions().get(0).replicas());
+            reassignment1.partitions().get(0).targetReplicas());
         testStringRoundTrip(text);
     }
 
@@ -80,12 +79,12 @@ public class PartitionReassignmentsSerializationTest {
         assertEquals("bar", reassignment2.partitions().get(0).topic());
         assertEquals(1, reassignment2.partitions().get(0).partition());
         assertEquals(Arrays.asList(1002, 1000, 1001),
-            reassignment2.partitions().get(0).replicas());
+            reassignment2.partitions().get(0).targetReplicas());
         assertFalse(reassignment2.partitions().get(0).logDirs().isPresent());
         assertEquals("baz", reassignment2.partitions().get(1).topic());
         assertEquals(2, reassignment2.partitions().get(1).partition());
         assertEquals(Arrays.asList(1000),
-            reassignment2.partitions().get(1).replicas());
+            reassignment2.partitions().get(1).targetReplicas());
         assertEquals(Arrays.asList("/a/b/c"),
             reassignment2.partitions().get(1).logDirs().get());
         testStringRoundTrip(text);

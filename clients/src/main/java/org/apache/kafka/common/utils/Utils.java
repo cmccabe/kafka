@@ -55,6 +55,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.Function;
@@ -1049,5 +1050,21 @@ public final class Utils {
                 entry -> valueMapper.apply(entry.getValue())
             )
         );
+    }
+
+    public static <T> Optional<List<T>> createImmutableListOptionWithoutNulls(
+            Optional<? extends Collection<T>> input, T emptyValue) {
+        if (input == null) {
+            return Optional.empty();
+        }
+        List<T> output = new ArrayList<T>();
+        for (T t : input.get()) {
+            if (t == null) {
+                output.add(emptyValue);
+            } else {
+                output.add(t);
+            }
+        }
+        return Optional.of(Collections.unmodifiableList(output));
     }
 }

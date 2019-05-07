@@ -66,6 +66,9 @@ import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.internals.KafkaFutureImpl;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
+import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData.ReassignablePartition;
+import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData.ReassignableTopic;
+import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData.ReassignablePartitionResponse;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData.CreatableTopicSet;
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResult;
@@ -74,6 +77,9 @@ import org.apache.kafka.common.message.DeleteTopicsResponseData.DeletableTopicRe
 import org.apache.kafka.common.message.DescribeGroupsRequestData;
 import org.apache.kafka.common.message.DescribeGroupsResponseData.DescribedGroup;
 import org.apache.kafka.common.message.DescribeGroupsResponseData.DescribedGroupMember;
+import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
+import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData.OngoingPartitionReassignment;
+import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData.OngoingTopicReassignment;
 import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsRequestData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsRequestData.AlterableConfigSet;
@@ -91,6 +97,8 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AlterConfigsRequest;
 import org.apache.kafka.common.requests.AlterConfigsResponse;
+import org.apache.kafka.common.requests.AlterPartitionReassignmentsRequest;
+import org.apache.kafka.common.requests.AlterPartitionReassignmentsResponse;
 import org.apache.kafka.common.requests.AlterReplicaLogDirsRequest;
 import org.apache.kafka.common.requests.AlterReplicaLogDirsResponse;
 import org.apache.kafka.common.requests.ApiError;
@@ -135,6 +143,8 @@ import org.apache.kafka.common.requests.IncrementalAlterConfigsRequest;
 import org.apache.kafka.common.requests.IncrementalAlterConfigsResponse;
 import org.apache.kafka.common.requests.ListGroupsRequest;
 import org.apache.kafka.common.requests.ListGroupsResponse;
+import org.apache.kafka.common.requests.ListPartitionReassignmentsRequest;
+import org.apache.kafka.common.requests.ListPartitionReassignmentsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
@@ -166,6 +176,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -2980,38 +2991,182 @@ public class KafkaAdminClient extends AdminClient {
 
     @Override
     public AlterPartitionReassignmentsResult alterPartitionReassignments(
-            Map<TopicPartition, PartitionReassignment> reassignments,
+            Collection<PartitionReassignment> reassignments,
             AlterPartitionReassignmentsOptions options) {
-//        final Map<TopicPartition, KafkaFutureImpl<Void>> futures = new HashMap<>();
-//
-//        final long now = time.milliseconds();
-//        runnable.call(new Call("alterPartitionReassignments", calcDeadlineMs(now, options.timeoutMs()),
-//                new ControllerNodeProvider()) {
-//
-//            @Override
-//            public AbstractRequest.Builder createRequest(int timeoutMs) {
-//                return new AlterPartitionReassignmentsRequestData().Builder(
-//                        ElectPreferredLeadersRequest.toRequestData(partitions, timeoutMs));
-//            }
-//
-//            @Override
-//            public void handleResponse(AbstractResponse abstractResponse) {
-//                ElectPreferredLeadersResponse response = (ElectPreferredLeadersResponse) abstractResponse;
-//                electionFuture.complete(
-//                        ElectPreferredLeadersRequest.fromResponseData(response.data()));
-//            }
-//
-//            @Override
-//            void handleFailure(Throwable throwable) {
-//                electionFuture.completeExceptionally(throwable);
-//            }
-//        }, now);
-//        return new AlterPartitionReassignmentsResult(electionFuture, partitionSet);
-        return null;
+        final Map<TopicPartition, KafkaFutureImpl<Void>> futures = new HashMap<>();
+        final Map<String, Map<Integer, PartitionReassignment>> topicsToReassignments = new TreeMap<>();
+        final Set<TopicPartition> duplicates = new HashSet<>();
+        for (PartitionReassignment reassignment : reassignments) {
+            TopicPartition topicPartition = new TopicPartition(reassignment.topic(), reassignment.partition());
+            if (topicNameIsUnrepresentable(topicPartition.topic())) {
+                KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+                future.completeExceptionally(new InvalidTopicException("The given topic name '" +
+                        topicPartition.topic() + "' cannot be represented in a request."));
+                futures.put(topicPartition, future);
+            } else if (topicPartition.partition() < 0) {
+                KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+                future.completeExceptionally(new InvalidTopicException("The given partition index " +
+                        topicPartition.partition() + " is not valid."));
+                futures.put(topicPartition, future);
+            } else if (!duplicates.contains(topicPartition)) {
+                Map<Integer, PartitionReassignment> partitionReassignments =
+                        topicsToReassignments.get(topicPartition.topic());
+                if (partitionReassignments == null) {
+                    partitionReassignments = new TreeMap<>();
+                }
+                if (partitionReassignments.containsKey(topicPartition.partition())) {
+                    duplicates.add(topicPartition);
+                    futures.get(topicPartition).completeExceptionally(
+                        new InvalidRequestException(topicPartition + " appears " +
+                            "more than once in the reassignments collection."));
+                    partitionReassignments.remove(topicPartition.partition());
+                    if (topicsToReassignments.get(topicPartition.topic()).isEmpty()) {
+                        topicsToReassignments.remove(topicPartition.topic());
+                    }
+                } else {
+                    partitionReassignments.put(topicPartition.partition(), reassignment);
+                    futures.put(topicPartition, new KafkaFutureImpl<>());
+                }
+            }
+        }
+        final long now = time.milliseconds();
+        Call call = new Call("alterPartitionReassignments", calcDeadlineMs(now, options.timeoutMs()),
+                new ControllerNodeProvider()) {
+
+            @Override
+            public AbstractRequest.Builder createRequest(int timeoutMs) {
+                AlterPartitionReassignmentsRequestData data =
+                        new AlterPartitionReassignmentsRequestData();
+                for (Map.Entry<String, Map<Integer, PartitionReassignment>> entry :
+                        topicsToReassignments.entrySet()) {
+                    String topicName = entry.getKey();
+                    Map<Integer, PartitionReassignment> partitionsToReassignments = entry.getValue();
+                    List<ReassignablePartition> reassignablePartitions = new ArrayList<>();
+                    for (Map.Entry<Integer, PartitionReassignment> partitionEntry :
+                            partitionsToReassignments.entrySet()) {
+                        int partitionIndex = partitionEntry.getKey();
+                        PartitionReassignment reassignment = partitionEntry.getValue();
+                        ReassignablePartition reassignablePartition = new ReassignablePartition();
+                        reassignablePartition.setPartitionIndex(partitionIndex);
+                        if (reassignment.targetReplicas().isPresent()) {
+                            reassignablePartition.setReplicas(reassignment.targetReplicas().get());
+                        } else {
+                            reassignablePartition.setReplicas(null);
+                        }
+                        reassignablePartitions.add(reassignablePartition);
+                    }
+                    ReassignableTopic reassignableTopic = new ReassignableTopic().
+                            setName(topicName).
+                            setPartitions(reassignablePartitions);
+                    data.topics().add(reassignableTopic);
+                }
+                data.setTimeoutMs(timeoutMs);
+                return new AlterPartitionReassignmentsRequest.Builder(data);
+            }
+
+            @Override
+            public void handleResponse(AbstractResponse abstractResponse) {
+                AlterPartitionReassignmentsResponse response = (AlterPartitionReassignmentsResponse) abstractResponse;
+                Iterator<ReassignablePartitionResponse> iter = response.data().responses().iterator();
+                Map<TopicPartition, ApiException> errors = new HashMap<>();
+                for (Map.Entry<String, Map<Integer, PartitionReassignment>> entry :
+                        topicsToReassignments.entrySet()) {
+                    String topicName = entry.getKey();
+                    Map<Integer, PartitionReassignment> partitionsToReassignments = entry.getValue();
+                    for (Map.Entry<Integer, PartitionReassignment> partitionEntry :
+                            partitionsToReassignments.entrySet()) {
+                        TopicPartition topicPartition =
+                                new TopicPartition(topicName, partitionEntry.getKey());
+                        if (!iter.hasNext()) {
+                            throw new UnknownServerException("The server did not return enough results.");
+                        }
+                        ReassignablePartitionResponse partitionResponse = iter.next();
+                        Errors error = Errors.forCode(partitionResponse.errorCode());
+                        switch (error) {
+                            case NONE:
+                                errors.put(topicPartition, null);
+                                break;
+                            case NOT_CONTROLLER:
+                                metadataManager.clearController();
+                                metadataManager.requestUpdate();
+                                throw error.exception();
+                            default:
+                                errors.put(topicPartition,
+                                        new ApiError(error, partitionResponse.errorString()).exception());
+                                break;
+                        }
+                    }
+                }
+                if (iter.hasNext()) {
+                    throw new UnknownServerException("The server returned too many results.");
+                }
+                for (Map.Entry<TopicPartition, ApiException> entry : errors.entrySet()) {
+                    futures.get(entry.getKey()).completeExceptionally(entry.getValue());
+                }
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                for (KafkaFutureImpl<Void> future : futures.values()) {
+                    future.completeExceptionally(throwable);
+                }
+            }
+        };
+        if (!topicsToReassignments.isEmpty()) {
+            runnable.call(call, now);
+        }
+        return new AlterPartitionReassignmentsResult(futures);
     }
 
     @Override
     public ListPartitionReassignmentsResult listPartitionReassignments(ListPartitionReassignmentsOptions options) {
-        return null;
+        final KafkaFutureImpl<PartitionReassignments> future = new KafkaFutureImpl<>();
+
+        final long now = time.milliseconds();
+        runnable.call(new Call("listPartitionReassignments", calcDeadlineMs(now, options.timeoutMs()),
+                new ControllerNodeProvider()) {
+
+            @Override
+            public AbstractRequest.Builder createRequest(int timeoutMs) {
+                return new ListPartitionReassignmentsRequest.Builder(
+                        new ListPartitionReassignmentsRequestData().setTimeoutMs(timeoutMs));
+            }
+
+            @Override
+            public void handleResponse(AbstractResponse abstractResponse) {
+                ListPartitionReassignmentsResponse response =
+                        (ListPartitionReassignmentsResponse) abstractResponse;
+                Errors error = Errors.forCode(response.data().errorCode());
+                switch (error) {
+                    case NONE:
+                        break;
+                    case NOT_CONTROLLER:
+                        metadataManager.clearController();
+                        metadataManager.requestUpdate();
+                        throw error.exception();
+                    default:
+                        future.completeExceptionally(
+                                new ApiError(error, response.data().errorMessage()).exception());
+                        return;
+                }
+                List<PartitionReassignment> reassignments = new ArrayList<>();
+                for (OngoingTopicReassignment topic : response.data().topics()) {
+                    for (OngoingPartitionReassignment partition : topic.partitions()) {
+                        reassignments.add(new PartitionReassignment(topic.name(),
+                                partition.partitionId(),
+                                Optional.of(partition.targetBrokers()),
+                                Optional.of(partition.currentBrokers()),
+                                Optional.empty()));
+                    }
+                }
+                future.complete(new PartitionReassignments(reassignments));
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        }, now);
+        return new ListPartitionReassignmentsResult(future);
     }
 }

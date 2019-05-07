@@ -22,13 +22,10 @@ import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData.Re
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData.ReassignableTopic;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData.ReassignablePartitionResponse;
-import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData.ReassignableTopicResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.types.Struct;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
 
 public class AlterPartitionReassignmentsRequest extends AbstractRequest {
     public static class Builder extends AbstractRequest.Builder<AlterPartitionReassignmentsRequest> {
@@ -74,20 +71,13 @@ public class AlterPartitionReassignmentsRequest extends AbstractRequest {
         AlterPartitionReassignmentsResponseData response = new AlterPartitionReassignmentsResponseData();
         response.setThrottleTimeMs(throttleTimeMs);
         ApiError apiError = ApiError.fromThrowable(e);
-        List<ReassignableTopicResponse> topicResponses = new ArrayList<>();
         for (ReassignableTopic topicRequest : data.topics()) {
-            ReassignableTopicResponse topicResponse =
-                    new ReassignableTopicResponse().setName(topicRequest.name());
-            List<ReassignablePartitionResponse> partitionResponses = new ArrayList<>();
             for (ReassignablePartition partitionRequest : topicRequest.partitions()) {
-                partitionResponses.add(new ReassignablePartitionResponse().
+                response.responses().add(new ReassignablePartitionResponse().
                         setErrorCode(apiError.error().code()).
                         setErrorString(apiError.error().message()));
             }
-            topicResponse.setPartitions(partitionResponses);
-            topicResponses.add(topicResponse);
         }
-        response.setTopics(topicResponses);
         return new AlterPartitionReassignmentsResponse(response);
     }
 

@@ -34,6 +34,10 @@ public class PartitionReassignments {
     private final static int VALID_VERSION = 1;
     private final List<PartitionReassignment> partitions;
 
+    public PartitionReassignments(List<PartitionReassignment> partitions) {
+        this(VALID_VERSION, partitions);
+    }
+
     @JsonCreator
     public PartitionReassignments(@JsonProperty("version") int version,
             @JsonProperty("partitions") List<PartitionReassignment> partitions) {

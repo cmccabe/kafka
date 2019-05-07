@@ -900,7 +900,7 @@ public abstract class AdminClient implements AutoCloseable {
      * with default options.  See the overload for more details.
      */
     public AlterPartitionReassignmentsResult alterPartitionReassignments(
-                Map<TopicPartition, PartitionReassignment> reassignments) {
+                Collection<PartitionReassignment> reassignments) {
         return alterPartitionReassignments(reassignments, new AlterPartitionReassignmentsOptions());
     }
 
@@ -918,13 +918,12 @@ public abstract class AdminClient implements AutoCloseable {
      *   if the request timed out before the controller could record the new assignments.</li>
      * </ul>
      *
-     * @param reassignments   The new reassignments for each topic.  If the value of the map 
-     *                        is null, an existing reassignment will be cancelled.
+     * @param reassignments   The reassignments to add, modify, or remove.
      * @param options         The options to use.
      * @return                The result.
      */
     public abstract AlterPartitionReassignmentsResult alterPartitionReassignments(
-                Map<TopicPartition, PartitionReassignment> reassignments,
+                Collection<PartitionReassignment> reassignments,
                 AlterPartitionReassignmentsOptions options);
 
     /**
