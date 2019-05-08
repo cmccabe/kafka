@@ -3013,6 +3013,7 @@ public class KafkaAdminClient extends AdminClient {
                         topicsToReassignments.get(topicPartition.topic());
                 if (partitionReassignments == null) {
                     partitionReassignments = new TreeMap<>();
+                    topicsToReassignments.put(topicPartition.topic(), partitionReassignments);
                 }
                 if (partitionReassignments.containsKey(topicPartition.partition())) {
                     duplicates.add(topicPartition);

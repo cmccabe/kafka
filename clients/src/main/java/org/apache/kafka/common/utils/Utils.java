@@ -1054,7 +1054,7 @@ public final class Utils {
 
     public static <T> Optional<List<T>> createImmutableListOptionWithoutNulls(
             Optional<? extends Collection<T>> input, T emptyValue) {
-        if (input == null) {
+        if (input == null || !input.isPresent()) {
             return Optional.empty();
         }
         List<T> output = new ArrayList<T>();

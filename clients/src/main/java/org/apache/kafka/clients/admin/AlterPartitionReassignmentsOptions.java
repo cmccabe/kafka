@@ -19,10 +19,8 @@ package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.annotation.InterfaceStability;
 
-import java.util.Collection;
-
 /**
- * Options for {@link AdminClient#alterPartitionReassignments(Map, * AlterPartitionReassignmentOptions)}
+ * Options for {@link AdminClient#alterPartitionReassignments(Collection<PartitionReassignment>, AlterPartitionReassignmentsOptions)}
  *
  * The API of this class is evolving.  See {@link AdminClient} for details.
  */

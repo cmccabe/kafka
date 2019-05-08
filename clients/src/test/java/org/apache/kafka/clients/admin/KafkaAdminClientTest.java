@@ -40,6 +40,7 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.ClusterAuthorizationException;
 import org.apache.kafka.common.errors.GroupAuthorizationException;
+import org.apache.kafka.common.errors.InvalidReplicaAssignmentException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
@@ -51,6 +52,8 @@ import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.errors.TopicDeletionDisabledException;
 import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
+import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData.ReassignablePartitionResponse;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResult;
 import org.apache.kafka.common.message.DeleteTopicsResponseData;
@@ -62,6 +65,7 @@ import org.apache.kafka.common.message.ElectPreferredLeadersResponseData.Replica
 import org.apache.kafka.common.message.IncrementalAlterConfigsResponseData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsResponseData.AlterConfigsResourceResult;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AlterPartitionReassignmentsResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.CreateAclsResponse;
 import org.apache.kafka.common.requests.CreateAclsResponse.AclCreationResponse;
@@ -104,6 +108,7 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -1315,4 +1320,65 @@ public class KafkaAdminClientTest {
 
     }
 
+    @Test
+    public void testAlterPartitionReassignments()  throws Exception {
+        try (AdminClientUnitTestEnv env = mockClientEnv()) {
+            env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
+
+            // Test invalid inputs.
+            List<PartitionReassignment> partitionReassignments = Arrays.asList(
+                    new PartitionReassignment("", 1, Optional.of(Arrays.asList(1, 2, 3))),
+                    new PartitionReassignment("abc", -1, Optional.of(Arrays.asList(1, 2, 3))));
+            AlterPartitionReassignmentsResult result = env.adminClient().
+                    alterPartitionReassignments(partitionReassignments);
+            TestUtils.assertFutureError(result.futures().get(new TopicPartition("", 1)),
+                    InvalidTopicException.class);
+            TestUtils.assertFutureError(result.futures().get(new TopicPartition("abc", -1)),
+                    InvalidTopicException.class);
+
+            // Test duplicate inputs.
+            List<PartitionReassignment> partitionReassignments2 = Arrays.asList(
+                    new PartitionReassignment("foobar", 2, Optional.of(Arrays.asList(1, 2, 3))),
+                    new PartitionReassignment("abc", 1, Optional.of(Arrays.asList(1, 2, 3))),
+                    new PartitionReassignment("foobar", 2, Optional.of(Arrays.asList(1, 2, 3))),
+                    new PartitionReassignment("abc", 1, Optional.of(Arrays.asList(1, 2, 3))));
+            AlterPartitionReassignmentsResult result2 = env.adminClient().
+                    alterPartitionReassignments(partitionReassignments2);
+            TestUtils.assertFutureError(result2.futures().get(new TopicPartition("foobar", 2)),
+                    InvalidRequestException.class);
+            TestUtils.assertFutureError(result2.futures().get(new TopicPartition("abc", 1)),
+                    InvalidRequestException.class);
+            assertEquals(2, result2.futures().size());
+
+            // Test a normal request / response.
+            AlterPartitionReassignmentsResponseData responseData =
+                    new AlterPartitionReassignmentsResponseData();
+            responseData.responses().add(new ReassignablePartitionResponse().
+                    setErrorCode(Errors.UNKNOWN_TOPIC_OR_PARTITION.code()).
+                    setErrorString("Topic not found."));
+            responseData.responses().add(new ReassignablePartitionResponse().
+                    setErrorCode(Errors.NONE.code()).
+                    setErrorString(null));
+            responseData.responses().add(new ReassignablePartitionResponse().
+                    setErrorCode(Errors.INVALID_REPLICA_ASSIGNMENT.code()).
+                    setErrorString("Invalid replica assignment."));
+            env.kafkaClient().prepareResponse(new AlterPartitionReassignmentsResponse(responseData));
+            List<PartitionReassignment> partitionReassignments3 = Arrays.asList(
+                    new PartitionReassignment("foobar", 2, Optional.of(Arrays.asList(1, 2, 3))),
+                    new PartitionReassignment("beta", 2, Optional.of(Arrays.asList(1, 2, 3))),
+                    new PartitionReassignment("alpha", 0, Optional.of(Arrays.asList(1, 2, 3))),
+                    new PartitionReassignment("beta", 1, Optional.of(Arrays.asList(1, 2, 3))),
+                    new PartitionReassignment("foobar", 2, Optional.of(Arrays.asList(1, 2, 3))));
+            AlterPartitionReassignmentsResult result3 = env.adminClient().
+                    alterPartitionReassignments(partitionReassignments3);
+            TestUtils.assertFutureError(result3.futures().get(new TopicPartition("alpha", 0)),
+                    UnknownTopicOrPartitionException.class);
+            result3.futures().get(new TopicPartition("beta", 1));
+            TestUtils.assertFutureError(result3.futures().get(new TopicPartition("beta", 2)),
+                    InvalidReplicaAssignmentException.class);
+            TestUtils.assertFutureError(result3.futures().get(new TopicPartition("foobar", 2)),
+                    InvalidRequestException.class);
+            assertEquals(4, result3.futures().size());
+        }
+    }
 }

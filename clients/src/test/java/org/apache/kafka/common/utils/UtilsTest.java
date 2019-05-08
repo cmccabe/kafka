@@ -30,8 +30,10 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -486,5 +488,17 @@ public class UtilsTest {
             fail("Expected exception not thrown");
         } catch (IllegalArgumentException e) {
         }
+    }
+
+    @Test
+    public void testCreateImmutableListOptionWithoutNulls() {
+        assertEquals(Optional.empty(), Utils.
+                createImmutableListOptionWithoutNulls(null, 0L));
+        assertEquals(Optional.empty(), Utils.
+                createImmutableListOptionWithoutNulls(Optional.empty(), 0L));
+        assertEquals(Optional.of(Arrays.asList(1, 2, 3)), Utils.
+                createImmutableListOptionWithoutNulls(Optional.of(Arrays.asList(1, 2, 3)), 0));
+        assertEquals(Optional.of(Arrays.asList(1, -1, 3)), Utils.
+                createImmutableListOptionWithoutNulls(Optional.of(Arrays.asList(1, null, 3)), -1));
     }
 }

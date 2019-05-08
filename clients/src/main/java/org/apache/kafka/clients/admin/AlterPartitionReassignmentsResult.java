@@ -20,18 +20,12 @@ package org.apache.kafka.clients.admin;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.annotation.InterfaceStability;
-import org.apache.kafka.common.errors.ApiException;
-import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.internals.KafkaFutureImpl;
-import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.ApiError;
 
-import java.util.Collection;
 import java.util.Map;
-import java.util.Set;
 
 /**
- * The result of {@link AdminClient#alterPartitionReassignments(Map, * AlterPartitionReassignmentOptions)}
+ * The result of {@link AdminClient#alterPartitionReassignments(Collection<PartitionReassignment>, AlterPartitionReassignmentsOptions)}
  *
  * The API of this class is evolving.  See {@link AdminClient} for details.
  */
