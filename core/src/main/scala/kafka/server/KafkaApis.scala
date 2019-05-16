@@ -46,6 +46,8 @@ import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.internals.Topic.{GROUP_METADATA_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME, isInternal}
+import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData.ReassignablePartition
+import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData.ReassignablePartitionResponse
 import org.apache.kafka.common.message.CreateTopicsRequestData.CreatableTopic
 import org.apache.kafka.common.message.CreateTopicsResponseData.{CreatableTopicResult, CreatableTopicResultSet}
 import org.apache.kafka.common.message._
@@ -154,6 +156,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.DELETE_GROUPS => handleDeleteGroupsRequest(request)
         case ApiKeys.ELECT_PREFERRED_LEADERS => handleElectPreferredReplicaLeader(request)
         case ApiKeys.INCREMENTAL_ALTER_CONFIGS => handleIncrementalAlterConfigsRequest(request)
+        case ApiKeys.ALTER_PARTITION_REASSIGNMENTS => handleAlterPartitionReassignmentsRequest(request)
+        case ApiKeys.LIST_PARTITION_REASSIGNMENTS => handleListPartitionReassignmentsRequest(request)
       }
     } catch {
       case e: FatalExitError => throw e
@@ -2204,6 +2208,53 @@ class KafkaApis(val requestChannel: RequestChannel,
     sendResponseMaybeThrottle(request, requestThrottleMs =>
       new IncrementalAlterConfigsResponse(IncrementalAlterConfigsResponse.toResponseData(requestThrottleMs,
         (authorizedResult ++ unauthorizedResult).asJava)))
+  }
+
+  def handleAlterPartitionReassignmentsRequest(request: RequestChannel.Request): Unit = {
+    authorizeClusterAlter(request)
+    val alterRequest = request.body[AlterPartitionReassignmentsRequest]
+
+    def sendResponseCallback(results: Map[TopicPartition, ApiError]): Unit = {
+      val response = new AlterPartitionReassignmentsResponseData()
+      alterRequest.data().topics().iterator().asScala.foreach(topic => {
+        topic.partitions().iterator().asScala.foreach(partition => {
+          val topicPartition = new TopicPartition(topic.name(), partition.partitionIndex())
+          results.get(topicPartition) match {
+            case None => response.responses().add(new ReassignablePartitionResponse().
+              setErrorCode(Errors.UNKNOWN_SERVER_ERROR.code()).
+              setErrorString("TopicPartition not found in controller results."))
+            case Some(error: ApiError) => response.responses().add(new ReassignablePartitionResponse().
+              setErrorCode(error.error().code()).
+              setErrorString(error.message()))
+          }
+        })
+      })
+      sendResponseMaybeThrottle(request, requestThrottleMs =>
+        new AlterPartitionReassignmentsResponse(response.setThrottleTimeMs(requestThrottleMs)))
+    }
+    val reassignments = mutable.Map[TopicPartition, ReassignablePartition]()
+    alterRequest.data().topics().iterator().asScala.foreach {
+      topic => topic.partitions().iterator().asScala.foreach {
+        partition => reassignments.put(
+          new TopicPartition(topic.name(), partition.partitionIndex()),
+          partition)
+      }
+    }
+    controller.alterPartitionReassignments(reassignments, sendResponseCallback)
+  }
+
+  case class Reassignment(val targetReplicas: Seq[Integer]) {
+  }
+
+  def handleListPartitionReassignmentsRequest(request: RequestChannel.Request): Unit = {
+    authorizeClusterDescribe(request)
+
+    def sendResponseCallback(results: ListPartitionReassignmentsResponseData): Unit = {
+      sendResponseMaybeThrottle(request, requestThrottleMs =>
+        new ListPartitionReassignmentsResponse(results.setThrottleTimeMs(requestThrottleMs)))
+    }
+
+    controller.listPartitionReassignments(sendResponseCallback)
   }
 
   def handleDescribeConfigsRequest(request: RequestChannel.Request): Unit = {

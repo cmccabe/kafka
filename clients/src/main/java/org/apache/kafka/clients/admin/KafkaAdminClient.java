@@ -3121,7 +3121,7 @@ public class KafkaAdminClient extends AdminClient {
 
     @Override
     public ListPartitionReassignmentsResult listPartitionReassignments(ListPartitionReassignmentsOptions options) {
-        final KafkaFutureImpl<PartitionReassignments> future = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<List<PartitionReassignment>> future = new KafkaFutureImpl<>();
 
         final long now = time.milliseconds();
         runnable.call(new Call("listPartitionReassignments", calcDeadlineMs(now, options.timeoutMs()),
@@ -3160,7 +3160,7 @@ public class KafkaAdminClient extends AdminClient {
                                 Optional.empty()));
                     }
                 }
-                future.complete(new PartitionReassignments(reassignments));
+                future.complete(reassignments);
             }
 
             @Override

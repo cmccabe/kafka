@@ -31,14 +31,16 @@ import kafka.zk._
 import kafka.zookeeper.{StateChangeHandler, ZNodeChangeHandler, ZNodeChildChangeHandler}
 import org.apache.kafka.common.{KafkaException, TopicPartition}
 import org.apache.kafka.common.errors.{BrokerNotAvailableException, ControllerMovedException, StaleBrokerEpochException}
+import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData.ReassignablePartition
+import org.apache.kafka.common.message.{AlterPartitionReassignmentsRequestData, ListPartitionReassignmentsResponseData}
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
 import org.apache.kafka.common.requests.{AbstractControlRequest, AbstractResponse, ApiError, LeaderAndIsrResponse, StopReplicaResponse}
 import org.apache.kafka.common.utils.Time
 import org.apache.zookeeper.KeeperException
 import org.apache.zookeeper.KeeperException.Code
-import scala.collection.JavaConverters._
 
+import scala.collection.JavaConverters._
 import scala.collection._
 import scala.util.{Failure, Try}
 
@@ -78,6 +80,9 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
   // have a separate scheduler for the controller to be able to start and stop independently of the kafka server
   // visible for testing
   private[controller] val kafkaScheduler = new KafkaScheduler(1)
+
+  // A separate thread for making callbacks for KafkaApis.
+  private[controller] val apiCallbackScheduler = new KafkaScheduler(1)
 
   // visible for testing
   private[controller] val eventManager = new ControllerEventManager(config.brokerId,
@@ -193,6 +198,7 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
    */
   def shutdown() = {
     eventManager.close()
+    apiCallbackScheduler.shutdown()
     onControllerResignation()
   }
 
@@ -276,6 +282,7 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
     onPreferredReplicaElection(pendingPreferredReplicaElections, ZkTriggered)
     info("Starting the controller scheduler")
     kafkaScheduler.startup()
+    apiCallbackScheduler.startup()
     if (config.autoLeaderRebalanceEnable) {
       scheduleAutoLeaderRebalanceTask(delay = 5, unit = TimeUnit.SECONDS)
     }
@@ -1620,6 +1627,37 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
         }
       }
     }
+  }
+
+  def alterPartitionReassignments(reassignments: mutable.Map[TopicPartition, ReassignablePartition],
+                                  sendResponseCallback: Map[TopicPartition, ApiError] => Unit) = {
+    eventManager.put(new AlterPartitionReassignmentsEvent(reassignments, sendResponseCallback))
+  }
+
+  case class AlterPartitionReassignmentsEvent(reassignments: mutable.Map[TopicPartition, ReassignablePartition],
+                                              sendResponseCallback: Map[TopicPartition, ApiError] => Unit)
+    extends PreemptableControllerEvent {
+
+    private def sendNotControllerErrorResponse(): Unit = {
+      sendResponseCallback(reassignments.map(topicPartition =>
+        new ApiError(Errors.NOT_CONTROLLER, "This broker is not the current controller.")))
+    }
+
+    override def handlePreempt(): Unit = sendNotControllerErrorResponse
+
+    override def handleProcess(): Unit = {
+      if (!isActive) {
+        sendNotControllerErrorResponse()
+      } else {
+
+      }
+    }
+
+    override def state: ControllerState = ???
+  }
+
+  def listPartitionReassignments(sendResponseCallback: ListPartitionReassignmentsResponseData) = {
+
   }
 
   case object ControllerChange extends ControllerEvent {

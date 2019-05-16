@@ -20,6 +20,8 @@ package org.apache.kafka.clients.admin;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
+import java.util.List;
+
 /**
  * The result of {@link AdminClient#listPartitionReassignments(ListPartitionReassignmentOptions)}
  *
@@ -27,16 +29,16 @@ import org.apache.kafka.common.annotation.InterfaceStability;
  */
 @InterfaceStability.Evolving
 public class ListPartitionReassignmentsResult {
-    private final KafkaFuture<PartitionReassignments> future;
+    private final KafkaFuture<List<PartitionReassignment>> reassignments;
 
-    ListPartitionReassignmentsResult(KafkaFuture<PartitionReassignments> future) {
-        this.future = future;
+    ListPartitionReassignmentsResult(KafkaFuture<List<PartitionReassignment>> reassignments) {
+        this.reassignments = reassignments;
     }
 
     /**
      * Return a future which contains all the ongoing partition reassignments.
      */
-    public KafkaFuture<PartitionReassignments> all() {
-        return future;
+    public KafkaFuture<List<PartitionReassignment>> reassignments() {
+        return reassignments;
     }
 }

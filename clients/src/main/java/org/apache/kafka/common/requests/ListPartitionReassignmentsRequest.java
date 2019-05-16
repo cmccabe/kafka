@@ -30,7 +30,7 @@ public class ListPartitionReassignmentsRequest extends AbstractRequest {
         private final ListPartitionReassignmentsRequestData data;
 
         public Builder(ListPartitionReassignmentsRequestData data) {
-            super(ApiKeys.ALTER_PARTITION_REASSIGNMENTS);
+            super(ApiKeys.LIST_PARTITION_REASSIGNMENTS);
             this.data = data;
         }
 
