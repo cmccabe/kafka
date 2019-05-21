@@ -32,6 +32,7 @@ import kafka.zookeeper.{StateChangeHandler, ZNodeChangeHandler, ZNodeChildChange
 import org.apache.kafka.common.{KafkaException, TopicPartition}
 import org.apache.kafka.common.errors.{BrokerNotAvailableException, ControllerMovedException, StaleBrokerEpochException}
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData.ReassignablePartition
+import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData.OngoingPartitionReassignment
 import org.apache.kafka.common.message.{AlterPartitionReassignmentsRequestData, ListPartitionReassignmentsResponseData}
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
@@ -1653,11 +1654,34 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
       }
     }
 
-    override def state: ControllerState = ???
+    override def state: ControllerState = ControllerState.AlterPartitionAssignments
   }
 
-  def listPartitionReassignments(sendResponseCallback: ListPartitionReassignmentsResponseData) = {
+  def listPartitionReassignments(
+        sendResponseCallback: Try[Map[TopicPartition, OngoingPartitionReassignment]] => Unit) = {
+    eventManager.put(new ListPartitionReassignmentsEvent(sendResponseCallback))
+  }
 
+  case class ListPartitionReassignmentsEvent(
+        sendResponseCallback: Try[Map[TopicPartition, OngoingPartitionReassignment]] => Unit)
+    extends PreemptableControllerEvent {
+
+    private def sendNotControllerErrorResponse(): Unit = {
+      sendResponseCallback(Failure(new ApiError(Errors.NOT_CONTROLLER,
+        "This broker is not the current controller.").exception()))
+    }
+
+    override def handlePreempt(): Unit = sendNotControllerErrorResponse
+
+    override def handleProcess(): Unit = {
+      if (!isActive) {
+        sendNotControllerErrorResponse()
+      } else {
+
+      }
+    }
+
+    override def state: ControllerState = ControllerState.ListPartitionReassignments
   }
 
   case object ControllerChange extends ControllerEvent {

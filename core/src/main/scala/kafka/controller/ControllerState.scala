@@ -98,7 +98,16 @@ object ControllerState {
     def value = 14
   }
 
+  case object AlterPartitionAssignments extends ControllerState {
+    def value = 15
+  }
+
+  case object ListPartitionReassignments extends ControllerState {
+    def value = 16
+  }
+
   val values: Seq[ControllerState] = Seq(Idle, ControllerChange, BrokerChange, TopicChange, TopicDeletion,
     PartitionReassignment, AutoLeaderBalance, ManualLeaderBalance, ControlledShutdown, IsrChange, LeaderAndIsrResponseReceived,
-    LogDirChange, ControllerShutdown, UncleanLeaderElectionEnable, TopicUncleanLeaderElectionEnable)
+    LogDirChange, ControllerShutdown, UncleanLeaderElectionEnable, TopicUncleanLeaderElectionEnable,
+    AlterPartitionAssignments, ListPartitionReassignments)
 }

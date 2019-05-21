@@ -22,7 +22,7 @@
   // Version 2 adds broker epoch and reorganizes the partitions by topic.
   //
   // Version 3 adds TargetReplicas.
-  "validVersions": "0-2",
+  "validVersions": "0-3",
   "fields": [
     { "name": "ControllerId", "type": "int32", "versions": "0+",
       "about": "The current controller ID." },
