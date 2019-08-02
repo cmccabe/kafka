@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.common.protocol;
 
+import org.apache.kafka.common.message.ApiMessageType;
 import org.apache.kafka.common.message.ControlledShutdownRequestData;
 import org.apache.kafka.common.message.ControlledShutdownResponseData;
 import org.apache.kafka.common.message.CreateDelegationTokenRequestData;
@@ -122,6 +123,8 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.apache.kafka.common.protocol.types.Type.BYTES;
+import static org.apache.kafka.common.protocol.types.Type.COMPACT_BYTES;
+import static org.apache.kafka.common.protocol.types.Type.COMPACT_NULLABLE_BYTES;
 import static org.apache.kafka.common.protocol.types.Type.NULLABLE_BYTES;
 import static org.apache.kafka.common.protocol.types.Type.RECORDS;
 
@@ -336,11 +339,7 @@ public enum ApiKeys {
     }
 
     public short headerVersion(short apiVersion) {
-        if ((this == CONTROLLED_SHUTDOWN) && (apiVersion == 0)) {
-            return 0;
-        } else {
-            return 1;
-        }
+        return ApiMessageType.fromApiKey(id).headerVersion(apiVersion);
     }
 
     private static String toHtml() {
@@ -373,7 +372,8 @@ public enum ApiKeys {
         Schema.Visitor detector = new Schema.Visitor() {
             @Override
             public void visit(Type field) {
-                if (field == BYTES || field == NULLABLE_BYTES || field == RECORDS)
+                if (field == BYTES || field == NULLABLE_BYTES || field == RECORDS ||
+                    field == COMPACT_BYTES || field == COMPACT_NULLABLE_BYTES)
                     hasBuffer.set(true);
             }
         };
