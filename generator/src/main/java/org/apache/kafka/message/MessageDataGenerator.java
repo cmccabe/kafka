@@ -1730,53 +1730,66 @@ public final class MessageDataGenerator {
                 throw new RuntimeException("Invalid default for boolean field " +
                     field.name() + ": " + field.defaultString());
             }
-        } else if (field.type() instanceof FieldType.Int8FieldType) {
-            if (field.defaultString().isEmpty()) {
-                return "(byte) 0";
-            } else {
-                try {
-                    Byte.decode(field.defaultString());
-                } catch (NumberFormatException e) {
-                    throw new RuntimeException("Invalid default for int8 field " +
-                        field.name() + ": " + field.defaultString(), e);
-                }
-                return "(byte) " + field.defaultString();
+        } else if ((field.type() instanceof FieldType.Int8FieldType) ||
+                   (field.type() instanceof FieldType.Int16FieldType) ||
+                   (field.type() instanceof FieldType.Int32FieldType) ||
+                   (field.type() instanceof FieldType.Int64FieldType)) {
+            int base = 10;
+            String defaultString = field.defaultString();
+            if (defaultString.startsWith("0x")) {
+                base = 16;
+                defaultString = defaultString.substring(2);
             }
-        } else if (field.type() instanceof FieldType.Int16FieldType) {
-            if (field.defaultString().isEmpty()) {
-                return "(short) 0";
-            } else {
-                try {
-                    Short.decode(field.defaultString());
-                } catch (NumberFormatException e) {
-                    throw new RuntimeException("Invalid default for int16 field " +
-                        field.name() + ": " + field.defaultString(), e);
+            if (field.type() instanceof FieldType.Int8FieldType) {
+                if (defaultString.isEmpty()) {
+                    return "(byte) 0";
+                } else {
+                    try {
+                        Byte.valueOf(defaultString, base);
+                    } catch (NumberFormatException e) {
+                        throw new RuntimeException("Invalid default for int8 field " +
+                            field.name() + ": " + defaultString, e);
+                    }
+                    return "(byte) " + field.defaultString();
                 }
-                return "(short) " + field.defaultString();
-            }
-        } else if (field.type() instanceof FieldType.Int32FieldType) {
-            if (field.defaultString().isEmpty()) {
-                return "0";
-            } else {
-                try {
-                    Integer.decode(field.defaultString());
-                } catch (NumberFormatException e) {
-                    throw new RuntimeException("Invalid default for int32 field " +
-                        field.name() + ": " + field.defaultString(), e);
+            } else if (field.type() instanceof FieldType.Int16FieldType) {
+                if (defaultString.isEmpty()) {
+                    return "(short) 0";
+                } else {
+                    try {
+                        Short.valueOf(defaultString, base);
+                    } catch (NumberFormatException e) {
+                        throw new RuntimeException("Invalid default for int16 field " +
+                            field.name() + ": " + field.defaultString(), e);
+                    }
+                    return "(short) " + field.defaultString();
                 }
-                return field.defaultString();
-            }
-        } else if (field.type() instanceof FieldType.Int64FieldType) {
-            if (field.defaultString().isEmpty()) {
-                return "0L";
-            } else {
-                try {
-                    Integer.decode(field.defaultString());
-                } catch (NumberFormatException e) {
-                    throw new RuntimeException("Invalid default for int64 field " +
-                        field.name() + ": " + field.defaultString(), e);
+            } else if (field.type() instanceof FieldType.Int32FieldType) {
+                if (defaultString.isEmpty()) {
+                    return "0";
+                } else {
+                    try {
+                        Integer.valueOf(defaultString, base);
+                    } catch (NumberFormatException e) {
+                        throw new RuntimeException("Invalid default for int32 field " +
+                            field.name() + ": " + field.defaultString(), e);
+                    }
+                    return field.defaultString();
                 }
-                return field.defaultString() + "L";
+            } else if (field.type() instanceof FieldType.Int64FieldType) {
+                if (defaultString.isEmpty()) {
+                    return "0L";
+                } else {
+                    try {
+                        Long.valueOf(defaultString, base);
+                    } catch (NumberFormatException e) {
+                        throw new RuntimeException("Invalid default for int64 field " +
+                            field.name() + ": " + field.defaultString(), e);
+                    }
+                    return field.defaultString() + "L";
+                }
+            } else {
+                throw new RuntimeException("Unsupported field type " + field.type());
             }
         } else if (field.type() instanceof FieldType.UUIDFieldType) {
             headerGenerator.addImport(MessageGenerator.UUID_CLASS);
