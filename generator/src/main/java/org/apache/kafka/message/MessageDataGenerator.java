@@ -221,7 +221,7 @@ public final class MessageDataGenerator {
         buffer.incrementIndent();
         generateKeyElement(className, struct);
         headerGenerator.addImport(MessageGenerator.IMPLICIT_LINKED_HASH_MULTI_COLLECTION_CLASS);
-        buffer.printf("return find(key);%n");
+        buffer.printf("return find(_key);%n");
         buffer.decrementIndent();
         buffer.printf("}%n");
         buffer.printf("%n");
@@ -234,17 +234,17 @@ public final class MessageDataGenerator {
         buffer.incrementIndent();
         generateKeyElement(className, struct);
         headerGenerator.addImport(MessageGenerator.IMPLICIT_LINKED_HASH_MULTI_COLLECTION_CLASS);
-        buffer.printf("return findAll(key);%n");
+        buffer.printf("return findAll(_key);%n");
         buffer.decrementIndent();
         buffer.printf("}%n");
         buffer.printf("%n");
     }
 
     private void generateKeyElement(String className, StructSpec struct) {
-        buffer.printf("%s key = new %s();%n", className, className);
+        buffer.printf("%s _key = new %s();%n", className, className);
         for (FieldSpec field : struct.fields()) {
             if (field.mapKey()) {
-                buffer.printf("key.set%s(%s);%n",
+                buffer.printf("_key.set%s(%s);%n",
                     field.capitalizedCamelCaseName(),
                     field.camelCaseName());
             }
