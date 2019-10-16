@@ -25,6 +25,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.CancelledKeyException;
 
 import java.security.Principal;
+import java.util.Optional;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLEngineResult.HandshakeStatus;
@@ -69,6 +70,7 @@ public class SslTransportLayer implements TransportLayer {
     private ByteBuffer appReadBuffer;
     private boolean hasBytesBuffered;
     private ByteBuffer emptyBuf = ByteBuffer.allocate(0);
+    private String cipherSuiteName;
 
     public static SslTransportLayer create(String channelId, SelectionKey key, SSLEngine sslEngine) throws IOException {
         return new SslTransportLayer(channelId, key, sslEngine);
@@ -423,6 +425,7 @@ public class SslTransportLayer implements TransportLayer {
                 SSLSession session = sslEngine.getSession();
                 log.debug("SSL handshake completed successfully with peerHost '{}' peerPort {} peerPrincipal '{}' cipherSuite '{}'",
                         session.getPeerHost(), session.getPeerPort(), peerPrincipal(), session.getCipherSuite());
+                cipherSuiteName = session.getCipherSuite();
             }
 
             log.trace("SSLHandshake FINISHED channelId {}, appReadBuffer pos {}, netReadBuffer pos {}, netWriteBuffer pos {} ",
@@ -904,5 +907,10 @@ public class SslTransportLayer implements TransportLayer {
     @Override
     public long transferFrom(FileChannel fileChannel, long position, long count) throws IOException {
         return fileChannel.transferTo(position, count, this);
+    }
+
+    @Override
+    public Optional<String> sslCipherSuiteName() {
+        return Optional.ofNullable(cipherSuiteName);
     }
 }

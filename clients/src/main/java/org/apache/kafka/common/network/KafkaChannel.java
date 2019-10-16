@@ -29,6 +29,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
@@ -641,5 +642,9 @@ public class KafkaChannel implements AutoCloseable {
         // replace with a new one and begin the process of re-authenticating
         authenticator = authenticatorCreator.get();
         authenticator.reauthenticate(reauthenticationContext);
+    }
+
+    public Optional<String> sslCipherSuiteName() {
+        return transportLayer.sslCipherSuiteName();
     }
 }
