@@ -922,6 +922,16 @@ project(':core') {
   }
 }
 
+project(':controller') {
+  dependencies {
+    compile project(':core')
+  }
+
+  javadoc {
+    enabled = false
+  }
+}
+
 project(':examples') {
   archivesBaseName = "kafka-examples"
 
