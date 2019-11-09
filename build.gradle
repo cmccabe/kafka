@@ -924,6 +924,11 @@ project(':core') {
 
 project(':controller') {
   dependencies {
+    compile libs.slf4jApi
+    testCompile libs.junit
+    testCompile libs.log4j
+    testRuntime libs.slf4jlog4j
+
     compile project(':core')
   }
 
