@@ -27,6 +27,6 @@ public class KafkaControllerTest {
 
     @Test
     public void testCreateController() {
-        //KafkaController controller = new KafkaController();
+        KafkaController controller = new KafkaController();
     }
 }
