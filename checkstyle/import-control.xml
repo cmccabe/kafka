@@ -36,7 +36,7 @@
   <allow pkg="javax.security" />
   <allow pkg="org.ietf.jgss" />
 
-  <!-- no one depends on the server -->
+  <!-- no one except the controller depends on the server -->
   <disallow pkg="kafka" />
 
   <!-- anyone can use public classes -->
@@ -169,6 +169,11 @@
     <subpackage name="quotas">
       <allow pkg="org.apache.kafka.common" />
     </subpackage>
+  </subpackage>
+
+  <subpackage name="controller">
+    <allow pkg="kafka" />
+    <allow pkg="org.apache.kafka.server.controller" />
   </subpackage>
 
   <subpackage name="clients">
