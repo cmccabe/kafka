@@ -15,21 +15,21 @@
  * limitations under the License.
  */
 
-package kafka.controller
+package org.apache.kafka.controller;
 
-import kafka.server.KafkaConfig
-import kafka.zk.KafkaZkClient
-import org.apache.kafka.common.metrics.Metrics
+import org.apache.kafka.common.utils.LogContext;
+import org.slf4j.Logger;
 
-case class ControllerManagerFactory(nodeId: Int,
-      config: KafkaConfig,
-      zkClient: KafkaZkClient,
-      metrics: Metrics,
-      threadNamePrefix: String,
-      className: String = "org.apache.kafka.controller.KafkaControllerManager") {
-  def build(): ControllerManager = {
-    val managerClass = Class.forName(className)
-    val method = managerClass.getMethod("create", ControllerManagerFactory.getClass)
-    method.invoke(null, this).asInstanceOf[ControllerManager]
-  }
+public final class KafkaController implements AutoCloseable {
+    private final Logger log;
+    private final BackingStore backingStore;
+
+    KafkaController(LogContext logContext, BackingStore backingStore) {
+        this.log = logContext.logger(KafkaController.class);
+        this.backingStore = backingStore;
+    }
+
+    @Override
+    public void close() {
+    }
 }

@@ -98,6 +98,13 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     stat.getCzxid
   }
 
+  case class RegistrationResult(controllerEpoch: Int, epochZkVersion: Int) {}
+
+  def registerControllerAndIncrementControllerEpoch2(controllerId: Int): RegistrationResult = {
+    val (controllerEpoch, epochZkVersion) = registerControllerAndIncrementControllerEpoch(controllerId)
+    RegistrationResult(controllerEpoch, epochZkVersion)
+  }
+
   /**
    * Registers a given broker in zookeeper as the controller and increments controller epoch.
    * @param controllerId the id of the broker that is to be registered as the controller.
@@ -1055,6 +1062,8 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     }
   }
 
+  def getControllerIdAsInt: Int = getControllerId.getOrElse(-1)
+
   /**
    * Deletes the controller znode.
    * @param expectedControllerEpochZkVersion expected controller epoch zkVersion.
@@ -1555,7 +1564,7 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
 
   /**
     * Pre-create top level paths in ZK if needed.
-    */
+                    */
   def createTopLevelPaths(): Unit = {
     ZkData.PersistentZkPaths.foreach(makeSurePersistentPathExists(_))
   }

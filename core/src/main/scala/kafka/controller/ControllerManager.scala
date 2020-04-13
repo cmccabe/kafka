@@ -45,11 +45,11 @@ trait ControllerManager {
   def start(brokerInfo: BrokerInfo): CompletableFuture[Void]
 
   /**
-   * Change the broker info.
+   * Update the broker info.
    *
    * @return A future that is completed when we finish changing the broker info.
    */
-  def setBrokerInfo(brokerInfo: BrokerInfo): CompletableFuture[Void]
+  def updateBrokerInfo(brokerInfo: BrokerInfo): CompletableFuture[Void]
 
   /**
    * Trigger an election on the specified partitions.
