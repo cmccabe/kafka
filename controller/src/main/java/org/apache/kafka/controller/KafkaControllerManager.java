@@ -17,20 +17,34 @@
 
 package org.apache.kafka.controller;
 
-//import kafka.server.KafkaConfig;
-//import kafka.zk.BrokerInfo;
-//import kafka.zk.KafkaZkClient;
-//import org.apache.kafka.common.metrics.Metrics;
-//import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.server.controller.ControllerManager;
+import kafka.controller.ControllerManager;
+import kafka.zk.BrokerInfo;
+import org.apache.kafka.common.TopicPartition;
+
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 public class KafkaControllerManager implements ControllerManager {
-//    public KafkaControllerManager(Map<String, Object> config,
-//                           KafkaZkClient zkClient,
-//                           Time time,
-//                           Metrics metrics,
-//                           BrokerInfo brokerInfo,
-//                           long brokerEpoch,
-//                           String threadNamePrefix) {
-//    }
+    @Override
+    public CompletableFuture<Void> start(BrokerInfo brokerInfo) {
+        return ControllerUtils.exceptionalFuture(new NoSuchMethodException());
+    }
+
+    @Override
+    public CompletableFuture<Void> setBrokerInfo(BrokerInfo brokerInfo) {
+        return ControllerUtils.exceptionalFuture(new NoSuchMethodException());
+    }
+
+    @Override
+    public CompletableFuture<Map<TopicPartition, PartitionLeaderElectionResult>>
+            electLeaders(int timeoutMs, Set<TopicPartition> parts) {
+        return ControllerUtils.exceptionalFuture(new NoSuchMethodException());
+    }
+
+    @Override
+    public CompletableFuture<Set<TopicPartition>>
+            controlledShutdown(int brokerId, int brokerEpoch) {
+        return ControllerUtils.exceptionalFuture(new NoSuchMethodException());
+    }
 }

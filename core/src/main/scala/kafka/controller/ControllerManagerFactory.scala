@@ -15,7 +15,20 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.server.controller;
+package kafka.controller
 
-public interface ControllerManager {
+import kafka.server.KafkaConfig
+import kafka.zk.KafkaZkClient
+import org.apache.kafka.common.metrics.Metrics
+
+case class ControllerManagerFactory(config: KafkaConfig,
+      zkClient: KafkaZkClient,
+      metrics: Metrics,
+      threadNamePrefix: String,
+      className: String = "org.apache.kafka.controller.KafkaControllerManager") {
+  def build(): ControllerManager = {
+    val managerClass = Class.forName(className)
+    val constructor = managerClass.getConstructor(ControllerManagerFactory.getClass)
+    constructor.newInstance(this).asInstanceOf[ControllerManager]
+  }
 }
