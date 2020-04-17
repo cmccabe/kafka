@@ -33,6 +33,7 @@ import org.slf4j.Logger;
 
 import java.io.Closeable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class ZkBackingStore implements BackingStore {
     private final Logger log;
@@ -41,7 +42,7 @@ public class ZkBackingStore implements BackingStore {
     private final KafkaZkClient zkClient;
     private final ZkStateChangeHandler zkStateChangeHandler;
     private final ControllerChangeHandler controllerChangeHandler;
-    private boolean running;
+    private boolean started;
     private ActivationListener activationListener;
     private long brokerEpoch;
     private BrokerInfo brokerInfo;
@@ -100,11 +101,11 @@ public class ZkBackingStore implements BackingStore {
     }
 
     /**
-     * Verify that the ZkBackingStore is running.
+     * Verify that the ZkBackingStore has been started.
      */
     void verifyRunning() {
-        if (!running)
-            throw new RuntimeException("The ZkBackingStore is not running.");
+        if (!started)
+            throw new RuntimeException("The ZkBackingStore has not been started.");
     }
 
     /**
@@ -136,7 +137,7 @@ public class ZkBackingStore implements BackingStore {
         try {
             zkClient.registerZNodeChangeHandlerAndCheckExistence(controllerChangeHandler);
             activeId = zkClient.getControllerIdAsInt();
-            return (wasActive && !isActive());
+            return wasActive && !isActive();
         } catch (Throwable e) {
             log.error("Unhandled error in shouldResign.", e);
             activeId = -1;
@@ -225,9 +226,9 @@ public class ZkBackingStore implements BackingStore {
         public Void run() {
             EventContext context = new EventContext("StartEvent");
             try {
-                if (running) {
+                if (started) {
                     throw new RuntimeException("Attempting to Start a BackingStore " +
-                        "which is already running.");
+                        "which has already been started.");
                 }
                 zkClient.registerStateChangeHandler(zkStateChangeHandler);
                 brokerEpoch = zkClient.registerBroker(brokerInfo);
@@ -235,8 +236,32 @@ public class ZkBackingStore implements BackingStore {
                 brokerInfo = newBrokerInfo;
                 eventQueue.append(new TryToActivateEvent(false));
                 activationListener = newActivationListener;
-                running = true;
+                started = true;
                 log.info("{}: initialized ZkBackingStore with brokerInfo {}.", context, newBrokerInfo);
+            } catch (Throwable e) {
+                context.close(e, true);
+                throw e;
+            } finally {
+                context.close();
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Shut down the ZkBackingStore.
+     */
+    class StopEvent implements EventQueue.Event<Void> {
+        @Override
+        public Void run() {
+            EventContext context = new EventContext("StopEvent");
+            try {
+                zkClient.unregisterStateChangeHandler(zkStateChangeHandler.name());
+                zkClient.unregisterZNodeChangeHandler(controllerChangeHandler.path());
+                maybeResign();
+                brokerInfo = null;
+                activationListener = null;
+                log.info("{}: stopped ZkBackingStore.");
             } catch (Throwable e) {
                 context.close(e, true);
                 throw e;
@@ -380,7 +405,7 @@ public class ZkBackingStore implements BackingStore {
         this.zkClient = zkClient;
         this.zkStateChangeHandler = new ZkStateChangeHandler();
         this.controllerChangeHandler = new ControllerChangeHandler();
-        this.running = false;
+        this.started = false;
         this.activationListener = null;
         this.brokerEpoch = -1;
         this.brokerInfo = null;
@@ -398,5 +423,16 @@ public class ZkBackingStore implements BackingStore {
     @Override
     public CompletableFuture<Void> updateBrokerInfo(BrokerInfo newBrokerInfo) {
         return eventQueue.append(new UpdateBrokerInfoEvent(newBrokerInfo));
+    }
+
+    @Override
+    public void shutdown(TimeUnit timeUnit, long timeSpan) {
+        eventQueue.shutdown(new StopEvent(), timeUnit, timeSpan);
+    }
+
+    @Override
+    public void close() throws InterruptedException {
+        shutdown(TimeUnit.DAYS, 0);
+        eventQueue.close();
     }
 }

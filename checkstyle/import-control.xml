@@ -173,7 +173,9 @@
 
   <subpackage name="controller">
     <allow pkg="kafka" />
+    <allow pkg="org.apache.kafka.common.network" />
     <allow pkg="org.apache.kafka.server.controller" />
+    <allow pkg="scala" />
   </subpackage>
 
   <subpackage name="clients">

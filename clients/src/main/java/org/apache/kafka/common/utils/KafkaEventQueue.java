@@ -21,6 +21,7 @@ import org.apache.kafka.common.errors.TimeoutException;
 import org.slf4j.Logger;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -153,6 +154,7 @@ public final class KafkaEventQueue implements EventQueue {
         public void run() {
             try {
                 handleEvents();
+                cleanupEvent.run();
             } catch (Throwable e) {
                 log.warn("event handler thread exiting with exception", e);
             }
@@ -316,6 +318,7 @@ public final class KafkaEventQueue implements EventQueue {
     private final TimeoutHandler timeoutHandler;
     private final Thread timeoutHandlerThread;
     private long closingTimeNs = Long.MAX_VALUE;
+    private Event<?> cleanupEvent = null;
 
     public KafkaEventQueue(LogContext logContext, String threadNamePrefix) {
         this.log = logContext.logger(KafkaEventQueue.class);
@@ -350,21 +353,31 @@ public final class KafkaEventQueue implements EventQueue {
     }
 
     @Override
-    public void shutdown(TimeUnit timeUnit, long timeSpan) {
-        if (timeSpan <= 0) {
+    public void shutdown(Event<?> newCleanupEvent, TimeUnit timeUnit, long timeSpan) {
+        if (timeSpan < 0) {
             throw new IllegalArgumentException("shutdown must be called with a " +
                 "positive timeout");
         }
+        Objects.requireNonNull(newCleanupEvent);
+        boolean alreadyShutdown = false;
         lock.lock();
         try {
-            long newClosingTimeNs = Time.SYSTEM.nanoseconds() + timeUnit.toNanos(timeSpan);
-            if (closingTimeNs >= newClosingTimeNs) {
-                closingTimeNs = newClosingTimeNs;
+            if (cleanupEvent != null) {
+                alreadyShutdown = true;
+            } else {
+                cleanupEvent = newCleanupEvent;
+                long newClosingTimeNs = Time.SYSTEM.nanoseconds() + timeUnit.toNanos(timeSpan);
+                if (closingTimeNs >= newClosingTimeNs) {
+                    closingTimeNs = newClosingTimeNs;
+                }
+                timeoutHandler.cond.signal();
+                eventHandler.cond.signal();
             }
-            timeoutHandler.cond.signal();
-            eventHandler.cond.signal();
         } finally {
             lock.unlock();
+        }
+        if (alreadyShutdown) {
+            newCleanupEvent.run();
         }
     }
 

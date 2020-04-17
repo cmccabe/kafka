@@ -20,8 +20,9 @@ package org.apache.kafka.controller;
 import kafka.zk.BrokerInfo;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
-public interface BackingStore {
+public interface BackingStore extends AutoCloseable {
     /**
      * Listens for controller activation and deactivation events.
      */
@@ -49,4 +50,21 @@ public interface BackingStore {
      *                          broker information.
      */
     CompletableFuture<Void> updateBrokerInfo(BrokerInfo newBrokerInfo);
+
+    /**
+     * Shut down the backing store after the given amount of time.
+     *
+     * @param timeUnit      The time unit to use for the timeout.
+     * @param timeSpan      The amount of time to use for the timeout.
+     *                      Once the timeout elapses, any remaining queued
+     *                      events will get a
+     *                      @{org.apache.kafka.common.errors.TimeoutException},
+     *                      as will any subsequent operations.
+     */
+    void shutdown(TimeUnit timeUnit, long timeSpan);
+
+    /**
+     * Synchronously close the backing store and wait for any threads to be joined.
+     */
+    void close() throws InterruptedException;
 }

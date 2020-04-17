@@ -120,12 +120,30 @@ public interface EventQueue extends AutoCloseable {
      * @param timeSpan      The amount of time to use for the timeout.
      *                      Once the timeout elapses, any remaining queued
      *                      events will get a
-     *                      @{org.apache.kafka.common.errors.ShutdownException}.
+     *                      @{org.apache.kafka.common.errors.TimeoutException}.
      */
-    void shutdown(TimeUnit timeUnit, long timeSpan);
+    default void shutdown(TimeUnit timeUnit, long timeSpan) {
+        shutdown(new VoidEvent(), timeUnit, timeSpan);
+    }
+
+    /**
+     * Asynchronously shut down the event queue.
+     *
+     * No new events will be accepted, and the timeout will be initiated
+     * for all existing events.
+     *
+     * @param cleanupEvent  The event to invoke after all other events have been
+     *                      processed.
+     * @param timeUnit      The time unit to use for the timeout.
+     * @param timeSpan      The amount of time to use for the timeout.
+     *                      Once the timeout elapses, any remaining queued
+     *                      events will get a
+     *                      @{org.apache.kafka.common.errors.TimeoutException}.
+     */
+    void shutdown(Event<?> cleanupEvent, TimeUnit timeUnit, long timeSpan);
 
     /**
      * Synchronously close the event queue and wait for any threads to be joined.
      */
-    void close() throws InterruptedException, ExecutionException;
+    void close() throws InterruptedException;
 }
