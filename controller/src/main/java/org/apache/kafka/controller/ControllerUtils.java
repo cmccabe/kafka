@@ -19,6 +19,7 @@ package org.apache.kafka.controller;
 
 import org.slf4j.Logger;
 
+import java.text.DecimalFormat;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
@@ -65,9 +66,12 @@ public final class ControllerUtils {
         }
     }
 
+    private final static DecimalFormat NANOS_TO_FRACTIONAL_MILLIS_DF =
+        new DecimalFormat("#.####");
+
     public static String nanosToFractionalMillis(long ns) {
         float ms = ns;
         ms /= 1000000;
-        return String.format("%.4f", ms);
+        return NANOS_TO_FRACTIONAL_MILLIS_DF.format(ms);
     }
 }
