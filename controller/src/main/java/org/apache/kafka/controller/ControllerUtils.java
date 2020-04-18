@@ -64,4 +64,10 @@ public final class ControllerUtils {
             log.warn("Unexpected error waiting for future.", e);
         }
     }
+
+    public static String nanosToFractionalMillis(long ns) {
+        float ms = ns;
+        ms /= 1000000;
+        return String.format("%.4f", ms);
+    }
 }

@@ -17,8 +17,10 @@
 
 package org.apache.kafka.controller;
 
+import kafka.zk.BrokerInfo;
 import kafka.zk.ZooKeeperTestHarness;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import org.junit.Rule;
 import org.junit.Test;
@@ -43,17 +45,20 @@ public class ZkBackingStoreTest extends ZooKeeperTestHarness {
 
     @Test
     public void testCreateAndClose() throws Exception {
+        zkClient().createTopLevelPaths();
         ZkBackingStore store = ZkBackingStore.create(0, "", zkClient());
         store.close();
     }
 
     @Test
     public void testStartAndClose() throws Exception {
-//        ZkBackingStore store = ZkBackingStore.create(0, "", zkClient());
-//        TestActivationListener testActivationListener = new TestActivationListener();
-//        BrokerInfo broker0Info = ControllerTestUtils.newBrokerInfo(0);
-//        CompletableFuture<Void> startFuture =
-//            store.start(broker0Info, testActivationListener);
-//        startFuture.get();
+        zkClient().createTopLevelPaths();
+        ZkBackingStore store = ZkBackingStore.create(0, "", zkClient());
+        TestActivationListener testActivationListener = new TestActivationListener();
+        BrokerInfo broker0Info = ControllerTestUtils.newBrokerInfo(0);
+        CompletableFuture<Void> startFuture =
+            store.start(broker0Info, testActivationListener);
+        startFuture.get();
+        store.close();
     }
 }

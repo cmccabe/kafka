@@ -32,6 +32,7 @@ import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 
 import java.io.Closeable;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -193,7 +194,7 @@ public class ZkBackingStore implements BackingStore {
             closed = true;
             this.endNs = Time.SYSTEM.nanoseconds();
             if (log.isDebugEnabled()) {
-                log.debug("{}: finished after {} ns.", name, endNs - startNs);
+                log.debug("{}: finished after {} ms.", name, ControllerUtils.nanosToFractionalMillis(endNs - startNs));
             }
             if (e != null) {
                 if (stackTrace) {
@@ -231,7 +232,7 @@ public class ZkBackingStore implements BackingStore {
                         "which has already been started.");
                 }
                 zkClient.registerStateChangeHandler(zkStateChangeHandler);
-                brokerEpoch = zkClient.registerBroker(brokerInfo);
+                brokerEpoch = zkClient.registerBroker(newBrokerInfo);
                 zkClient.registerZNodeChangeHandlerAndCheckExistence(controllerChangeHandler);
                 brokerInfo = newBrokerInfo;
                 eventQueue.append(new TryToActivateEvent(false));
@@ -388,7 +389,7 @@ public class ZkBackingStore implements BackingStore {
     public static ZkBackingStore create(int nodeId,
                                         String threadNamePrefix,
                                         KafkaZkClient zkClient) {
-        LogContext logContext = new LogContext(String.format("[Node %d]", nodeId));
+        LogContext logContext = new LogContext(String.format("[Node %d] ", nodeId));
         return new ZkBackingStore(logContext.logger(ZkBackingStore.class),
             nodeId,
             new KafkaEventQueue(logContext, threadNamePrefix),
@@ -399,9 +400,12 @@ public class ZkBackingStore implements BackingStore {
                    int nodeId,
                    EventQueue eventQueue,
                    KafkaZkClient zkClient) {
+        Objects.requireNonNull(log);
         this.log = log;
         this.nodeId = nodeId;
+        Objects.requireNonNull(eventQueue);
         this.eventQueue = eventQueue;
+        Objects.requireNonNull(zkClient);
         this.zkClient = zkClient;
         this.zkStateChangeHandler = new ZkStateChangeHandler();
         this.controllerChangeHandler = new ControllerChangeHandler();
