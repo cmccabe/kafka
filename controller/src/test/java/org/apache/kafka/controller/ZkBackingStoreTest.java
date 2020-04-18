@@ -30,19 +30,6 @@ public class ZkBackingStoreTest extends ZooKeeperTestHarness {
     @Rule
     final public Timeout globalTimeout = Timeout.millis(120000);
 
-    static class TestActivationListener implements BackingStore.ActivationListener {
-        private final CountDownLatch hasActivated = new CountDownLatch(1);
-
-        @Override
-        public void activate(KafkaController newController) {
-            hasActivated.countDown();
-        }
-
-        @Override
-        public void deactivate() {
-        }
-    }
-
     @Test
     public void testCreateAndClose() throws Exception {
         zkClient().createTopLevelPaths();
@@ -54,11 +41,33 @@ public class ZkBackingStoreTest extends ZooKeeperTestHarness {
     public void testStartAndClose() throws Exception {
         zkClient().createTopLevelPaths();
         ZkBackingStore store = ZkBackingStore.create(0, "", zkClient());
-        TestActivationListener testActivationListener = new TestActivationListener();
         BrokerInfo broker0Info = ControllerTestUtils.newBrokerInfo(0);
+        final CountDownLatch hasActivated = new CountDownLatch(1);
         CompletableFuture<Void> startFuture =
-            store.start(broker0Info, testActivationListener);
+            store.start(broker0Info, new BackingStore.ActivationListener() {
+                @Override
+                public void activate(KafkaController newController) {
+                    hasActivated.countDown();
+                }
+
+                @Override
+                public void deactivate() {
+                }
+            });
         startFuture.get();
+        hasActivated.await();
         store.close();
     }
+
+//    @Test
+//    public void testStartAndClose() throws Exception {
+//        zkClient().createTopLevelPaths();
+//        ZkBackingStore store = ZkBackingStore.create(0, "", zkClient());
+//        TestActivationListener testActivationListener = new TestActivationListener();
+//        BrokerInfo broker0Info = ControllerTestUtils.newBrokerInfo(0);
+//        CompletableFuture<Void> startFuture =
+//            store.start(broker0Info, testActivationListener);
+//        startFuture.get();
+//        store.close();
+//    }
 }
