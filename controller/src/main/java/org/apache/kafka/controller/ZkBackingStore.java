@@ -25,6 +25,7 @@ import kafka.zookeeper.StateChangeHandler;
 import kafka.zookeeper.ZNodeChangeHandler;
 import org.apache.kafka.common.errors.ControllerMovedException;
 import org.apache.kafka.common.errors.NotControllerException;
+import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
@@ -194,13 +195,17 @@ public class ZkBackingStore implements BackingStore {
             closed = true;
             this.endNs = Time.SYSTEM.nanoseconds();
             if (log.isDebugEnabled()) {
-                log.debug("{}: finished after {} ms.", name, ControllerUtils.nanosToFractionalMillis(endNs - startNs));
+                log.debug("{}: finished after {} ms.", name,
+                    ControllerUtils.nanosToFractionalMillis(endNs - startNs));
             }
             if (e != null) {
                 if (stackTrace) {
-                    log.info("{}: failed.", name, endNs - startNs, e);
+                    log.info("{}: failed after {} ms", name,
+                        ControllerUtils.nanosToFractionalMillis(endNs - startNs), e);
                 } else {
-                    log.info("{}: failed with error {}.", name, endNs - startNs, e.getMessage());
+                    log.info("{}: failed after {} ms with error {}.", name,
+                        ControllerUtils.nanosToFractionalMillis(endNs - startNs),
+                        e.getMessage());
                 }
             }
         }
@@ -262,7 +267,7 @@ public class ZkBackingStore implements BackingStore {
                 maybeResign();
                 brokerInfo = null;
                 activationListener = null;
-                log.info("{}: stopped ZkBackingStore.");
+                log.info("Stopped ZkBackingStore.");
             } catch (Throwable e) {
                 context.close(e, true);
                 throw e;
@@ -329,6 +334,8 @@ public class ZkBackingStore implements BackingStore {
                 if (curActiveId == -1) {
                     KafkaZkClient.RegistrationResult result =
                         zkClient.registerControllerAndIncrementControllerEpoch2(nodeId);
+                    zkClient.registerZNodeChangeHandlerAndCheckExistence(
+                        controllerChangeHandler);
                     activeId = nodeId;
                     controllerEpoch = result.controllerEpoch();
                     epochZkVersion = result.epochZkVersion();
@@ -337,7 +344,8 @@ public class ZkBackingStore implements BackingStore {
                         nodeId, controllerEpoch, epochZkVersion);
                     loadZkState();
                 } else if (curActiveId != nodeId) {
-                    zkClient.registerZNodeChangeHandlerAndCheckExistence(controllerChangeHandler);
+                    zkClient.registerZNodeChangeHandlerAndCheckExistence(
+                        controllerChangeHandler);
                     activeId = curActiveId;
                     controllerEpoch = -1;
                     epochZkVersion = -1;
@@ -345,7 +353,7 @@ public class ZkBackingStore implements BackingStore {
                         "stopping the election process.", context, curActiveId);
                 }
             } catch (ControllerMovedException e) {
-                log.info("{}: caught ControllerMovedException while trying to active.",
+                log.info("{}: caught ControllerMovedException while trying to activate.",
                     context);
                 maybeResign();
             } catch (Throwable e) {
@@ -431,12 +439,34 @@ public class ZkBackingStore implements BackingStore {
 
     @Override
     public void shutdown(TimeUnit timeUnit, long timeSpan) {
+        log.debug("Shutting down with a timeout of {} {}.", timeSpan, timeUnit);
         eventQueue.shutdown(new StopEvent(), timeUnit, timeSpan);
     }
 
     @Override
     public void close() throws InterruptedException {
-        shutdown(TimeUnit.DAYS, 0);
+        log.debug("Initiating close..");
+        try {
+            shutdown(TimeUnit.DAYS, 0);
+        } catch (TimeoutException e) {
+            // Ignore duplicate shutdown.
+        }
         eventQueue.close();
+        log.debug("Close complete.");
+    }
+
+    // Visible for testing.
+    int nodeId() {
+        return nodeId;
+    }
+
+    // Visible for testing.
+    EventQueue eventQueue() {
+        return eventQueue;
+    }
+
+    // Visible for testing.
+    KafkaZkClient zkClient() {
+        return zkClient;
     }
 }

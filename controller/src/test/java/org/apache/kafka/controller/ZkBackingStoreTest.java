@@ -18,126 +18,187 @@
 package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
-import kafka.zk.ZooKeeperTestHarness;
+import kafka.zk.KafkaZkClient;
+import kafka.zk.ZkVersion;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.kafka.controller.BackingStore.ActivationListener;
+import org.apache.kafka.controller.ControllerTestUtils.BlockingEvent;
 import org.apache.kafka.test.TestUtils;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
-public class ZkBackingStoreTest extends ZooKeeperTestHarness {
+public class ZkBackingStoreTest {
+    private static final Logger log = LoggerFactory.getLogger(ZkBackingStoreTest.class);
+
     @Rule
-    final public Timeout globalTimeout = Timeout.millis(120000);
+    final public Timeout globalTimeout = Timeout.seconds(60);
 
     @Test
     public void testCreateAndClose() throws Exception {
-        zkClient().createTopLevelPaths();
-        try (ZkBackingStore store = ZkBackingStore.create(0, "", zkClient())) {
+        try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
+            try (KafkaZkClient zkClient = zooKeeper.newKafkaZkClient()) {
+                zkClient.createTopLevelPaths();
+                try (ZkBackingStore store = ZkBackingStore.create(0, "", zkClient)) {
+                }
+            }
         }
     }
 
     @Test
     public void testStartAndClose() throws Exception {
-        zkClient().createTopLevelPaths();
-        try (ZkBackingStore store = ZkBackingStore.create(0, "", zkClient())) {
-            BrokerInfo broker0Info = ControllerTestUtils.newBrokerInfo(0);
-            final CountDownLatch hasActivated = new CountDownLatch(1);
-            CompletableFuture<Void> startFuture =
-                store.start(broker0Info, new ActivationListener() {
-                    @Override
-                    public void activate(KafkaController newController) {
-                        hasActivated.countDown();
-                    }
+        try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
+            try (KafkaZkClient zkClient = zooKeeper.newKafkaZkClient()) {
+                zkClient.createTopLevelPaths();
+                try (ZkBackingStore store = ZkBackingStore.create(0, "", zkClient)) {
+                    BrokerInfo broker0Info = ControllerTestUtils.newBrokerInfo(0);
+                    final CountDownLatch hasActivated = new CountDownLatch(1);
+                    CompletableFuture<Void> startFuture =
+                        store.start(broker0Info, new ActivationListener() {
+                            @Override
+                            public void activate(KafkaController newController) {
+                                hasActivated.countDown();
+                            }
 
-                    @Override
-                    public void deactivate() {
-                    }
-                });
-            startFuture.get();
-            hasActivated.await();
+                            @Override
+                            public void deactivate() {
+                            }
+                        });
+                    startFuture.get();
+                    hasActivated.await();
+                    store.shutdown(TimeUnit.NANOSECONDS, 100);
+                }
+            }
         }
     }
 
-    private class ZkBackingStoreTestContext implements ActivationListener {
-        private final ZkBackingStore store;
-        private final int index;
-        private final AtomicBoolean active = new AtomicBoolean(false);
+    private static class TrackingActivationListener implements ActivationListener {
+        private boolean active;
 
-        ZkBackingStoreTestContext(int index) {
-            this.store = ZkBackingStore.create(index, "", zkClient());
-            this.index = index;
-        }
-
-        CompletableFuture<Void> start() {
-            return store.start(ControllerTestUtils.newBrokerInfo(index), this);
+        @Override
+        synchronized public void activate(KafkaController newController) {
+            this.active = true;
         }
 
         @Override
-        public void activate(KafkaController newController) {
-            active.set(true);
+        synchronized public void deactivate() {
+            this.active = false;
+        }
+
+        synchronized boolean active() {
+            return active;
+        }
+    }
+
+    private static class ZkBackingStoreEnsemble implements AutoCloseable {
+        private final List<ZkBackingStore> stores;
+        private final List<TrackingActivationListener> activationListeners;
+
+        ZkBackingStoreEnsemble(CloseableEmbeddedZooKeeper zooKeeper,
+                               int size) throws Exception {
+            List<ZkBackingStore> newStores = new ArrayList<>();
+            try {
+                for (int i = 0; i < size; i++) {
+                    KafkaZkClient zkClient = zooKeeper.newKafkaZkClient();
+                    if (i == 0) {
+                        zkClient.createTopLevelPaths();
+                    }
+                    newStores.add(ZkBackingStore.create(i, String.format("Node%d_", i),
+                        zkClient));
+                }
+            } catch (Exception e) {
+                for (ZkBackingStore store : newStores) {
+                    store.close();
+                    store.zkClient().close();
+                }
+                throw e;
+            }
+            this.stores = newStores;
+            this.activationListeners = new ArrayList<>();
+            for (int i = 0; i < size; i ++) {
+                this.activationListeners.add(new TrackingActivationListener());
+            }
+        }
+
+        void startAll() throws Exception {
+            List<CompletableFuture<Void>> startFutures = new ArrayList<>();
+            for (int i = 0; i < stores.size(); i++) {
+                ZkBackingStore store = stores.get(i);
+                startFutures.add(store.start(ControllerTestUtils.
+                    newBrokerInfo(i), activationListeners.get(i)));
+            }
+            for (CompletableFuture<Void> startFuture : startFutures) {
+                startFuture.get();
+            }
+        }
+
+        int waitForSingleActive(int nodeIdToIgnore) throws Exception {
+            final AtomicInteger activeNodeId = new AtomicInteger(-1);
+            TestUtils.waitForCondition(() -> {
+                int numActive = 0;
+                activeNodeId.set(-1);
+                for (int i = 0 ; i < stores.size(); i++) {
+                    if (activationListeners.get(i).active) {
+                        if (i != nodeIdToIgnore) {
+                            numActive++;
+                            activeNodeId.set(i);
+                        }
+                    }
+                }
+                return 1 == numActive && activeNodeId.get() != -1;
+            }, "waiting for a single controller to become active");
+            return activeNodeId.get();
         }
 
         @Override
-        public void deactivate() {
-            active.set(false);
+        public void close() throws InterruptedException {
+            for (ZkBackingStore store : stores) {
+                store.shutdown(TimeUnit.SECONDS, 0);
+            }
+            for (ZkBackingStore store : stores) {
+                store.close();
+                store.zkClient().close();
+            }
         }
     }
 
     @Test
     public void testOnlyOneActivates() throws Exception {
-        zkClient().createTopLevelPaths();
-
-        final int numStores = 5;
-        List<ZkBackingStoreTestContext> storeContexts = new ArrayList<>(numStores);
-        try {
-            for (int i = 0; i < numStores; i++) {
-                storeContexts.add(new ZkBackingStoreTestContext(i));
-            }
-            List<CompletableFuture<Void>> startFutures = new ArrayList<>();
-            for (ZkBackingStoreTestContext context : storeContexts) {
-                startFutures.add(context.start());
-            }
-            for (CompletableFuture<Void> startFuture : startFutures) {
-                startFuture.get();
-            }
-            TestUtils.waitForCondition(() -> {
-                int numActive = 0;
-                for (ZkBackingStoreTestContext context : storeContexts) {
-                    if (context.active.get()) {
-                        numActive++;
-                    }
+        try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
+            try (ZkBackingStoreEnsemble ensemble =
+                     new ZkBackingStoreEnsemble(zooKeeper, 2)) {
+                ensemble.startAll();
+                int activeNodeId = ensemble.waitForSingleActive(-1);
+                log.debug("Node {} is now the only active node.", activeNodeId);
+                // Put a blocking event in the event queue of the ZkBackingStore which is
+                // currently the leader, to ensure that it won't be elected a second time.
+                BlockingEvent blockingEvent = new BlockingEvent();
+                try {
+                    ensemble.stores.get(activeNodeId).eventQueue().append(blockingEvent);
+                    blockingEvent.started().await();
+                    // Trigger controller election.
+                    ensemble.stores.get(0).zkClient().
+                        deleteController(ZkVersion.MatchAnyVersion());
+                    // Wait for a new controller to be elected.
+                    int newActiveNodeId = ensemble.waitForSingleActive(activeNodeId);
+                    log.debug("Node {} is the new active node.", newActiveNodeId);
+                    assertFalse("Controller ID " + activeNodeId + " was active both " +
+                        "before and after the election.", activeNodeId == newActiveNodeId);
+                } finally {
+                    blockingEvent.completable().countDown();
                 }
-                return 1 == numActive;
-            }, "waiting for a single controller to become active");
-        } finally {
-            for (ZkBackingStoreTestContext context : storeContexts) {
-                context.store.shutdown(TimeUnit.SECONDS, 0);
-            }
-            for (ZkBackingStoreTestContext context : storeContexts) {
-                context.store.close();
             }
         }
     }
-
-//    @Test
-//    public void testStartAndClose() throws Exception {
-//        zkClient().createTopLevelPaths();
-//        ZkBackingStore store = ZkBackingStore.create(0, "", zkClient());
-//        TestActivationListener testActivationListener = new TestActivationListener();
-//        BrokerInfo broker0Info = ControllerTestUtils.newBrokerInfo(0);
-//        CompletableFuture<Void> startFuture =
-//            store.start(broker0Info, testActivationListener);
-//        startFuture.get();
-//        store.close();
-//    }
 }

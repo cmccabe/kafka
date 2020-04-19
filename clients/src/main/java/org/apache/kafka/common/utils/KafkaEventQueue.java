@@ -231,7 +231,7 @@ public final class KafkaEventQueue implements EventQueue {
             try {
                 handleTimeouts();
             } catch (Throwable e) {
-                log.warn("timeout handler thread exiting with exception", e);
+                log.warn("Timeout handler thread exiting with exception.", e);
             }
         }
 
@@ -280,7 +280,7 @@ public final class KafkaEventQueue implements EventQueue {
             lock.lock();
             try {
                 if (eventContext.timeoutNs != Long.MAX_VALUE) {
-                    throw new IllegalArgumentException("timeout was already set");
+                    throw new IllegalArgumentException("Timeout was already set.");
                 }
                 long prevStartNs = timeouts.isEmpty() ? Long.MAX_VALUE : timeouts.firstKey();
                 // If the time in nanoseconds is already taken, take the next one.
@@ -355,35 +355,33 @@ public final class KafkaEventQueue implements EventQueue {
     @Override
     public void shutdown(Event<?> newCleanupEvent, TimeUnit timeUnit, long timeSpan) {
         if (timeSpan < 0) {
-            throw new IllegalArgumentException("shutdown must be called with a " +
-                "positive timeout");
+            throw new IllegalArgumentException("Shutdown must be called with a " +
+                "positive timeout.");
         }
         Objects.requireNonNull(newCleanupEvent);
-        boolean alreadyShutdown = false;
         lock.lock();
         try {
             if (cleanupEvent != null) {
-                alreadyShutdown = true;
-            } else {
-                cleanupEvent = newCleanupEvent;
-                long newClosingTimeNs = Time.SYSTEM.nanoseconds() + timeUnit.toNanos(timeSpan);
-                if (closingTimeNs >= newClosingTimeNs) {
-                    closingTimeNs = newClosingTimeNs;
-                }
-                timeoutHandler.cond.signal();
-                eventHandler.cond.signal();
+                throw new TimeoutException("Event queue is already shut down.");
             }
+            cleanupEvent = newCleanupEvent;
+            long newClosingTimeNs = Time.SYSTEM.nanoseconds() + timeUnit.toNanos(timeSpan);
+            if (closingTimeNs >= newClosingTimeNs)
+                closingTimeNs = newClosingTimeNs;
+            timeoutHandler.cond.signal();
+            eventHandler.cond.signal();
         } finally {
             lock.unlock();
-        }
-        if (alreadyShutdown) {
-            newCleanupEvent.run();
         }
     }
 
     @Override
     public void close() throws InterruptedException {
-        shutdown(TimeUnit.DAYS, 100);
+        try {
+            shutdown(TimeUnit.DAYS, 100);
+        } catch (TimeoutException e) {
+            // Ignore duplicate shutdown.
+        }
         timeoutHandlerThread.join();
         eventHandlerThread.join();
     }
