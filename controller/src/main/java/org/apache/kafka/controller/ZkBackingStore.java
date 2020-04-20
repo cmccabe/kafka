@@ -129,21 +129,31 @@ public class ZkBackingStore implements BackingStore {
      * Update the current active controller.
      * If that update de-activates this controller, then resign.
      */
-    private void maybeResign() {
-        if (shouldResign())
-            resign();
-    }
-
-    private boolean shouldResign() {
-        boolean wasActive = isActive();
+    private void reloadControllerZnodeAndResignIfNeeded() {
+        int newActiveID = -1;
         try {
             zkClient.registerZNodeChangeHandlerAndCheckExistence(controllerChangeHandler);
-            activeId = zkClient.getControllerIdAsInt();
-            return wasActive && !isActive();
+            newActiveID = zkClient.getControllerIdAsInt();
         } catch (Throwable e) {
-            log.error("Unhandled error in shouldResign.", e);
-            activeId = -1;
-            return true;
+            log.error("Unexpected ZK error in reloadControllerZnodeAndResignIfNeeded.", e);
+        }
+        setActiveIdAndResignIfNeeded(newActiveID);
+    }
+
+    /**
+     * Set the new active controller ID.  Clear the epoch ZK version and controller
+     * epoch if the controller has been deactivated.  If the controller was active before
+     * and is not now, then resign.
+     */
+    private void setActiveIdAndResignIfNeeded(int newActiveId) {
+        boolean wasActive = isActive();
+        activeId = newActiveId;
+        if (activeId != nodeId) {
+            epochZkVersion = -1;
+            controllerEpoch = -1;
+            if (wasActive) {
+                resign();
+            }
         }
     }
 
@@ -264,7 +274,7 @@ public class ZkBackingStore implements BackingStore {
             try {
                 zkClient.unregisterStateChangeHandler(zkStateChangeHandler.name());
                 zkClient.unregisterZNodeChangeHandler(controllerChangeHandler.path());
-                maybeResign();
+                reloadControllerZnodeAndResignIfNeeded();
                 brokerInfo = null;
                 activationListener = null;
                 log.info("Stopped ZkBackingStore.");
@@ -286,10 +296,10 @@ public class ZkBackingStore implements BackingStore {
         public Void run() {
             EventContext context = new EventContext("SessionExpirationEvent");
             try {
-                boolean wasActive = isActive();
-                activeId = -1;
-                if (wasActive)
-                    resign();
+                setActiveIdAndResignIfNeeded(-1);
+            } catch (Throwable e) {
+                context.close(e, true);
+                throw e;
             } finally {
                 context.close();
             }
@@ -305,7 +315,10 @@ public class ZkBackingStore implements BackingStore {
         public Void run() {
             EventContext context = new EventContext("ControllerChangeEvent");
             try {
-                maybeResign();
+                reloadControllerZnodeAndResignIfNeeded();
+            } catch (Throwable e) {
+                context.close(e, true);
+                throw e;
             } finally {
                 context.close();
             }
@@ -330,8 +343,8 @@ public class ZkBackingStore implements BackingStore {
                 if (registerBroker) {
                     brokerEpoch = zkClient.registerBroker(brokerInfo);
                 }
-                int curActiveId = zkClient.getControllerIdAsInt();
-                if (curActiveId == -1) {
+                int newActiveId = zkClient.getControllerIdAsInt();
+                if (newActiveId == -1) {
                     KafkaZkClient.RegistrationResult result =
                         zkClient.registerControllerAndIncrementControllerEpoch2(nodeId);
                     zkClient.registerZNodeChangeHandlerAndCheckExistence(
@@ -343,21 +356,18 @@ public class ZkBackingStore implements BackingStore {
                         "incremented to {} and epoch zk version is now {}", context,
                         nodeId, controllerEpoch, epochZkVersion);
                     loadZkState();
-                } else if (curActiveId != nodeId) {
-                    zkClient.registerZNodeChangeHandlerAndCheckExistence(
-                        controllerChangeHandler);
-                    activeId = curActiveId;
-                    controllerEpoch = -1;
-                    epochZkVersion = -1;
+                } else if (newActiveId != nodeId) {
                     log.info("{}: Broker {} has been elected as the controller, so " +
-                        "stopping the election process.", context, curActiveId);
+                        "stopping the election process.", context, newActiveId);
+                    setActiveIdAndResignIfNeeded(newActiveId);
                 }
             } catch (ControllerMovedException e) {
                 log.info("{}: caught ControllerMovedException while trying to activate.",
                     context);
-                maybeResign();
+                reloadControllerZnodeAndResignIfNeeded();
             } catch (Throwable e) {
                 context.close(e, true);
+                throw e;
             } finally {
                 context.close();
             }
@@ -387,6 +397,7 @@ public class ZkBackingStore implements BackingStore {
                 zkClient.updateBrokerInfo(newBrokerInfo);
             } catch (Throwable e) {
                 context.close(e, true);
+                throw e;
             } finally {
                 context.close();
             }

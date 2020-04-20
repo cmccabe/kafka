@@ -23,6 +23,8 @@ import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.EventQueue;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 import scala.compat.java8.OptionConverters;
 
@@ -31,6 +33,8 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 
 public class ControllerTestUtils {
+    private static final Logger log = LoggerFactory.getLogger(ControllerTestUtils.class);
+
     /**
      * Create a new BrokerInfo instance for testing.
      *
@@ -56,11 +60,14 @@ public class ControllerTestUtils {
 
         @Override
         public Void run() {
+            log.info("Starting BlockingEvent.");
             started.countDown();
             try {
                 completable.await();
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
+            } finally {
+                log.info("Finished BlockingEvent.");
             }
             return null;
         }

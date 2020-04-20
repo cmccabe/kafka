@@ -37,6 +37,7 @@ import org.junit.rules.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 public class ZkBackingStoreTest {
@@ -184,6 +185,7 @@ public class ZkBackingStoreTest {
                 // Put a blocking event in the event queue of the ZkBackingStore which is
                 // currently the leader, to ensure that it won't be elected a second time.
                 BlockingEvent blockingEvent = new BlockingEvent();
+                int newActiveNodeId;
                 try {
                     ensemble.stores.get(activeNodeId).eventQueue().append(blockingEvent);
                     blockingEvent.started().await();
@@ -191,13 +193,14 @@ public class ZkBackingStoreTest {
                     ensemble.stores.get(0).zkClient().
                         deleteController(ZkVersion.MatchAnyVersion());
                     // Wait for a new controller to be elected.
-                    int newActiveNodeId = ensemble.waitForSingleActive(activeNodeId);
+                    newActiveNodeId = ensemble.waitForSingleActive(activeNodeId);
                     log.debug("Node {} is the new active node.", newActiveNodeId);
                     assertFalse("Controller ID " + activeNodeId + " was active both " +
                         "before and after the election.", activeNodeId == newActiveNodeId);
                 } finally {
                     blockingEvent.completable().countDown();
                 }
+                assertEquals(newActiveNodeId, ensemble.waitForSingleActive(-1));
             }
         }
     }
