@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import kafka.controller.ControllerManagerFactory;
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.MetadataStateData;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
@@ -36,7 +37,7 @@ public final class KafkaControllerManager implements ControllerManager {
     private final BackingStore backingStore;
     private final EventQueue eventQueue;
     private final KafkaActivationListener activationListener;
-    private KafkaController controller;
+    private MetadataStateData state;
 
     @Override
     public CompletableFuture<Void> start(BrokerInfo brokerInfo) {
@@ -61,12 +62,12 @@ public final class KafkaControllerManager implements ControllerManager {
 
     class KafkaActivationListener implements BackingStore.ActivationListener {
         @Override
-        public void activate(KafkaController newController) {
+        public void activate(MetadataStateData newState) {
             eventQueue.prepend(new EventQueue.Event<Void>() {
                 @Override
                 public Void run() {
                     log.info("Activating.");
-                    controller = newController;
+                    state = newState;
                     return null;
                 }
             });
@@ -77,9 +78,9 @@ public final class KafkaControllerManager implements ControllerManager {
             eventQueue.prepend(new EventQueue.Event<Void>() {
                 @Override
                 public Void run() {
-                    if (controller != null) {
+                    if (state != null) {
                         log.info("Deactivating.");
-                        controller = null;
+                        state = null;
                     }
                     return null;
                 }
@@ -103,6 +104,6 @@ public final class KafkaControllerManager implements ControllerManager {
         this.backingStore = backingStore;
         this.eventQueue = eventQueue;
         this.activationListener = new KafkaActivationListener();
-        this.controller = null;
+        this.state = null;
     }
 }

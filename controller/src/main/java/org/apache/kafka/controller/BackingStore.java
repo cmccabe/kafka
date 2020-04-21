@@ -18,6 +18,7 @@
 package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
+import org.apache.kafka.common.message.MetadataStateData;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -27,7 +28,7 @@ public interface BackingStore extends AutoCloseable {
      * Listens for controller activation and deactivation events.
      */
     interface ActivationListener {
-        void activate(KafkaController newController);
+        void activate(MetadataStateData newState);
         void deactivate();
     }
 
