@@ -33,11 +33,11 @@
               "about": "The hostname." },
             { "name": "Port", "type": "int16", "versions": "0+",
               "about": "The port." },
-            { "name": "SecurityProtocol", "type": "int8", "versions": "0+",
+            { "name": "SecurityProtocol", "type": "int16", "versions": "0+",
               "about": "The security protocol." }
         ]},
-        { "name": "JmxPort", "type": "int16", "versions": "0+",
-          "about": "The JMX port." },
+//        { "name": "JmxPort", "type": "int16", "versions": "0+",
+//          "about": "The JMX port." },
         { "name": "Rack", "type": "string", "versions": "0+", "nullableVersions": "0+",
           "about": "The broker rack." }
         // TODO: add deleted boolean?  Hopefully, we won't need this.
