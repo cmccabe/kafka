@@ -29,8 +29,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.kafka.common.message.MetadataStateData;
-import org.apache.kafka.controller.BackingStore.ActivationListener;
-import org.apache.kafka.controller.ControllerTestUtils.BlockingEvent;
 import org.apache.kafka.test.TestUtils;
 import org.junit.Rule;
 import org.junit.Test;
@@ -68,7 +66,7 @@ public class ZkBackingStoreTest {
                         ControllerTestUtils.newTestBroker(0));
                     final CountDownLatch hasActivated = new CountDownLatch(1);
                     CompletableFuture<Void> startFuture =
-                        store.start(broker0Info, new ActivationListener() {
+                        store.start(broker0Info, new BackingStore.ActivationListener() {
                             @Override
                             public void activate(MetadataStateData newState) {
                                 hasActivated.countDown();
@@ -86,7 +84,8 @@ public class ZkBackingStoreTest {
         }
     }
 
-    private static class TrackingActivationListener implements ActivationListener {
+    private static class TrackingActivationListener
+            implements BackingStore.ActivationListener {
         private boolean active;
 
         @Override
@@ -112,7 +111,7 @@ public class ZkBackingStoreTest {
         ZkBackingStoreEnsemble(CloseableEmbeddedZooKeeper zooKeeper,
                                int numStores, int numBrokers) throws Exception {
             this.activationListeners = new ArrayList<>();
-            for (int i = 0; i < numStores; i ++) {
+            for (int i = 0; i < numStores; i++) {
                 this.activationListeners.add(new TrackingActivationListener());
             }
             this.brokers = new ArrayList<>(numBrokers);
@@ -156,7 +155,7 @@ public class ZkBackingStoreTest {
             TestUtils.waitForCondition(() -> {
                 int numActive = 0;
                 activeNodeId.set(-1);
-                for (int i = 0 ; i < stores.size(); i++) {
+                for (int i = 0; i < stores.size(); i++) {
                     if (activationListeners.get(i).active) {
                         if (i != nodeIdToIgnore) {
                             numActive++;
@@ -191,7 +190,8 @@ public class ZkBackingStoreTest {
                 log.debug("Node {} is now the only active node.", activeNodeId);
                 // Put a blocking event in the event queue of the ZkBackingStore which is
                 // currently the leader, to ensure that it won't be elected a second time.
-                BlockingEvent blockingEvent = new BlockingEvent();
+                ControllerTestUtils.BlockingEvent blockingEvent =
+                    new ControllerTestUtils.BlockingEvent();
                 int newActiveNodeId;
                 try {
                     ensemble.stores.get(activeNodeId).eventQueue().append(blockingEvent);
