@@ -37,8 +37,10 @@ import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import scala.collection.JavaConverters;
 import scala.compat.java8.OptionConverters;
+import scala.jdk.javaapi.CollectionConverters;
 
 import java.io.Closeable;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -405,15 +407,15 @@ public class ZkBackingStore implements BackingStore {
             // TODO: register znode watcher for all broker znodes
             // TODO: register znode watcher for /broker/ids common znode (in case a new broker pops up)
 
-            for (Map.Entry<Broker, Object> entry : JavaConverters.<Broker, Object>
-                    mapAsJavaMap(zkClient.getAllBrokerAndEpochsInCluster()).entrySet()) {
+            for (Map.Entry<Broker, Object> entry : CollectionConverters.
+                    asJava(zkClient.getAllBrokerAndEpochsInCluster()).entrySet()) {
                 Broker broker = entry.getKey();
                 Long brokerEpoch = (Long) entry.getValue();
                 MetadataStateData.Broker newBroker = new MetadataStateData.Broker();
                 newBroker.setBrokerEpoch(brokerEpoch);
                 newBroker.setBrokerId(broker.id());
                 newBroker.setRack(OptionConverters.<String>toJava(broker.rack()).orElse(null));
-                for (EndPoint endPoint : JavaConverters.<EndPoint>seqAsJavaList(broker.endPoints())) {
+                for (EndPoint endPoint : CollectionConverters.asJava(broker.endPoints())) {
                     BrokerEndpoint brokerEndpoint = new BrokerEndpoint();
                     brokerEndpoint.setHost(endPoint.host());
                     brokerEndpoint.setPort((short) endPoint.port());

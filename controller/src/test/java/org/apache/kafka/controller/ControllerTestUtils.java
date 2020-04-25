@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 import scala.compat.java8.OptionConverters;
+import scala.jdk.javaapi.CollectionConverters;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -105,8 +106,8 @@ public class ControllerTestUtils {
         }
         Optional<String> rack = Optional.ofNullable(stateBroker.rack());
         Broker broker = new Broker(stateBroker.brokerId(),
-            JavaConverters.<EndPoint>asScalaBuffer(endpoints),
-            OptionConverters.<String>toScala(rack));
+            CollectionConverters.asScala(endpoints),
+            OptionConverters.toScala(rack));
         // We don't store the JMX port in MetadataStateData.Broker, so just make
         // something up.
         int jmxPort = 8686 + stateBroker.brokerId();
