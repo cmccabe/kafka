@@ -98,11 +98,11 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     stat.getCzxid
   }
 
-  case class RegistrationResult(controllerEpoch: Int, epochZkVersion: Int) {}
+  case class RegistrationResult(activeId: Int, controllerEpoch: Int, epochZkVersion: Int) {}
 
   def registerControllerAndIncrementControllerEpoch2(controllerId: Int): RegistrationResult = {
     val (controllerEpoch, epochZkVersion) = registerControllerAndIncrementControllerEpoch(controllerId)
-    RegistrationResult(controllerEpoch, epochZkVersion)
+    RegistrationResult(controllerId, controllerEpoch, epochZkVersion)
   }
 
   /**

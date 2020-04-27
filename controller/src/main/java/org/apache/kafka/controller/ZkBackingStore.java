@@ -49,6 +49,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -159,28 +160,14 @@ public class ZkBackingStore implements BackingStore {
 
     /**
      * Reload the active controller id from the /controller znode.
-     * Resign if the new active controller is another broker.
      */
-    private void reloadControllerZnodeAndResignIfNeeded() {
-        int newActiveID = -1;
+    private int loadControllerId() {
         try {
             zkClient.registerZNodeChangeHandlerAndCheckExistence(controllerChangeHandler);
-            newActiveID = zkClient.getControllerIdAsInt();
+            return zkClient.getControllerIdAsInt();
         } catch (Throwable e) {
-            log.error("Unexpected ZK error in reloadControllerZnodeAndResignIfNeeded.", e);
-        }
-        if (nodeId == activeId) {
-            if (newActiveID == activeId) {
-                resign(true, "the controller znode has been modified");
-            } else {
-                resign(false, String.format("after reloading %s, we learned that the new " +
-                    "controller is %d", controllerChangeHandler.path(), newActiveID));
-                activeId = newActiveID;
-            }
-        } else {
-            activeId = newActiveID;
-            log.info("After reloading {}, we learned that the new controller is {}.",
-                controllerChangeHandler.path(), newActiveID);
+            log.error("Unexpected ZK error in loadControllerId.", e);
+            return -1;
         }
     }
 
@@ -271,24 +258,18 @@ public class ZkBackingStore implements BackingStore {
                 return value;
             } catch (Throwable e) {
                 if (hasFlag(HANDLE_CME) && e instanceof ControllerMovedException) {
-                    log.info("{}: caught ControllerMovedException after {} ms.  " +
-                        "Reloading controller znode.", name,
+                    log.info("{}: caught ControllerMovedException after {} ms.", name,
                         executionTimeToString(startNs));
-                    reloadControllerZnodeAndResignIfNeeded();
+                    if (nodeId == activeId) {
+                        resign(true, "the controller had a ControllerMovedException");
+                    }
                 } else {
                     log.error("{}: finished after {} ms with unexpected error", name,
                         executionTimeToString(startNs), e);
                     lastUnexpectedError.set(e);
-                    resign(true, "the controller had an unexpected error");
-                }
-            } finally {
-                long endNs = Time.SYSTEM.nanoseconds();
-                if (hasFlag(INFO_LEVEL_LOG)) {
-                    log.info("{}: finished after {} ms", name,
-                        ControllerUtils.nanosToFractionalMillis(endNs - startNs));
-                } else if (log.isDebugEnabled()) {
-                    log.debug("{}: finished after {} ms", name,
-                        ControllerUtils.nanosToFractionalMillis(endNs - startNs));
+                    if (nodeId == activeId) {
+                        resign(true, "the controller had an unexpected error");
+                    }
                 }
             }
             return null;
@@ -346,7 +327,9 @@ public class ZkBackingStore implements BackingStore {
         public Void execute() {
             zkClient.unregisterStateChangeHandler(zkStateChangeHandler.name());
             zkClient.unregisterZNodeChangeHandler(controllerChangeHandler.path());
-            resign(true, "the backing store is shutting down");
+            if (activeId == nodeId) {
+                resign(true, "the backing store is shutting down");
+            }
             brokerInfo = null;
             changeListener = null;
             return null;
@@ -378,7 +361,17 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public Void execute() {
-            reloadControllerZnodeAndResignIfNeeded();
+            int newActiveId = loadControllerId();
+            if (newActiveId != activeId) {
+                String reason = String.format("after reloading %s, the new controller " +
+                    "is %d", controllerChangeHandler.path(), newActiveId);
+                if (nodeId == activeId) {
+                    resign(false, reason);
+                } else {
+                    log.info("{}.", reason);
+                }
+                activeId = newActiveId;
+            }
             return null;
         }
     }
@@ -419,6 +412,7 @@ public class ZkBackingStore implements BackingStore {
         this.state = new MetadataStateData();
         zkClient.registerZNodeChildChangeHandler(brokerChildChangeHandler);
         state.setBrokers(loadBrokerChildren());
+        log.info("Loaded broker(s) {}", state.brokers());
         for (MetadataStateData.Broker broker : state.brokers()) {
             registerBrokerChangeHandler(broker.brokerId());
         }
@@ -439,6 +433,7 @@ public class ZkBackingStore implements BackingStore {
             MetadataStateData.Broker newBroker = ControllerUtils.
                 brokerToStateBroker(entry.getKey());
             newBroker.setBrokerEpoch((Long) entry.getValue());
+            newBrokers.add(newBroker);
         }
         return newBrokers;
     }
@@ -620,5 +615,15 @@ public class ZkBackingStore implements BackingStore {
     // Visible for testing.
     Throwable lastUnexpectedError() {
         return lastUnexpectedError.get();
+    }
+
+    // Visible for testing.
+    MetadataStateData metadataState() throws ExecutionException, InterruptedException {
+        return eventQueue.append(new EventQueue.Event<MetadataStateData>() {
+            @Override
+            public MetadataStateData run() {
+                return state == null ? null : state.duplicate();
+            }
+        }).get();
     }
 }

@@ -88,6 +88,12 @@ public class ControllerTestUtils {
         return broker;
     }
 
+    static void clearEpochs(MetadataStateData.BrokerCollection brokers) {
+        for (MetadataStateData.Broker broker : brokers) {
+            broker.setBrokerEpoch(-1);
+        }
+    }
+
     /**
      * Convert a MetadataStateData.Broker object into a kafka.zk.BrokerInfo object.
      *

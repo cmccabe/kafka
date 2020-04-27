@@ -27,6 +27,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.apache.kafka.common.message.MetadataStateData;
 import org.apache.kafka.test.TestUtils;
@@ -38,12 +41,13 @@ import org.slf4j.LoggerFactory;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.fail;
 
 public class ZkBackingStoreTest {
     private static final Logger log = LoggerFactory.getLogger(ZkBackingStoreTest.class);
 
     @Rule
-    final public Timeout globalTimeout = Timeout.seconds(60);
+    final public Timeout globalTimeout = Timeout.seconds(20); // 60
 
     @Test
     public void testCreateAndClose() throws Exception {
@@ -167,6 +171,24 @@ public class ZkBackingStoreTest {
             return activeNodeId.get();
         }
 
+        void waitForActiveState(Consumer<MetadataStateData> callback)
+                throws Exception {
+            TestUtils.retryOnExceptionWithTimeout(() -> {
+                int activeId = -1;
+                for (int i = 0; i < stores.size(); i++) {
+                    if (activationListeners.get(i).active) {
+                        activeId = i;
+                        break;
+                    }
+                }
+                if (activeId == -1) {
+                    throw new RuntimeException("there were no active stores");
+                }
+                MetadataStateData state = stores.get(activeId).metadataState();
+                callback.accept(state);;
+            });
+        }
+
         @Override
         public void close() throws InterruptedException {
             for (ZkBackingStore store : stores) {
@@ -207,8 +229,13 @@ public class ZkBackingStoreTest {
                     blockingEvent.completable().countDown();
                 }
                 assertEquals(newActiveNodeId, ensemble.waitForSingleActive(-1));
-//                ZkBackingStore activeStore = ensemble.stores.get(newActiveNodeId);
-//                activeStore.
+                ensemble.waitForActiveState(state -> {
+                    ControllerTestUtils.clearEpochs(state.brokers());
+                    if (!state.brokers().equalsIgnoringOrder(ensemble.brokers)) {
+                        throw new RuntimeException("Expected brokers: " +
+                            ensemble.brokers + ", actual brokers: " + state.brokers());
+                    }
+                });
             }
         }
     }

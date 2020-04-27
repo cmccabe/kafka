@@ -20,6 +20,7 @@ package org.apache.kafka.common.utils;
 import java.util.AbstractCollection;
 import java.util.AbstractSequentialList;
 import java.util.AbstractSet;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
@@ -456,7 +457,7 @@ public class ImplicitLinkedHashCollection<E extends ImplicitLinkedHashCollection
      */
     @Override
     final public boolean remove(Object key) {
-        int slot = findElementToRemove(key);
+        int slot = findSlotOfBestMatch(key);
         if (slot == INVALID_INDEX) {
             return false;
         }
@@ -464,7 +465,7 @@ public class ImplicitLinkedHashCollection<E extends ImplicitLinkedHashCollection
         return true;
     }
 
-    int findElementToRemove(Object key) {
+    int findSlotOfBestMatch(Object key) {
         return findIndexOfEqualElement(key);
     }
 
@@ -607,6 +608,22 @@ public class ImplicitLinkedHashCollection<E extends ImplicitLinkedHashCollection
 
         ImplicitLinkedHashCollection<?> ilhs = (ImplicitLinkedHashCollection<?>) o;
         return this.valuesList().equals(ilhs.valuesList());
+    }
+
+    public boolean equalsIgnoringOrder(Collection<E> other) {
+        if (other.size() != size) {
+            return false;
+        }
+        for (E element : other) {
+            int slot = findSlotOfBestMatch(element);
+            if (slot == INVALID_INDEX) {
+                return false;
+            }
+            if (!elements[slot].equals(element)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

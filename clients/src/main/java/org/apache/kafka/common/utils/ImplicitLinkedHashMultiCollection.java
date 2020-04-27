@@ -90,7 +90,7 @@ public class ImplicitLinkedHashMultiCollection<E extends ImplicitLinkedHashColle
      * @return                  The match index, or INVALID_INDEX if no match was found.
      */
     @Override
-    int findElementToRemove(Object key) {
+    int findSlotOfBestMatch(Object key) {
         if (key == null || size() == 0) {
             return INVALID_INDEX;
         }
