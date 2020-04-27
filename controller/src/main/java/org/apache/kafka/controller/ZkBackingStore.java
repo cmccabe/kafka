@@ -158,21 +158,6 @@ public class ZkBackingStore implements BackingStore {
     }
 
     /**
-     * Verify that the ZkBackingStore has been started.
-     */
-    void verifyRunning() {
-        if (!started)
-            throw new RuntimeException("The ZkBackingStore has not been started.");
-    }
-
-    /**
-     * Returns true if this node is the active controller.
-     */
-    private boolean isActive() {
-        return nodeId == activeId;
-    }
-
-    /**
      * Reload the active controller id from the /controller znode.
      * Resign if the new active controller is another broker.
      */
@@ -184,12 +169,16 @@ public class ZkBackingStore implements BackingStore {
         } catch (Throwable e) {
             log.error("Unexpected ZK error in reloadControllerZnodeAndResignIfNeeded.", e);
         }
-        boolean wasActive = isActive();
-        activeId = newActiveID;
-        if (wasActive && !isActive()) {
-            resign(String.format("after reloading %s, we learned that the new " +
-                "controller is %d", controllerChangeHandler.path(), newActiveID));
+        if (nodeId == activeId) {
+            if (newActiveID == activeId) {
+                resign(true, "the controller znode has been modified");
+            } else {
+                resign(false, String.format("after reloading %s, we learned that the new " +
+                    "controller is %d", controllerChangeHandler.path(), newActiveID));
+                activeId = newActiveID;
+            }
         } else {
+            activeId = newActiveID;
             log.info("After reloading {}, we learned that the new controller is {}.",
                 controllerChangeHandler.path(), newActiveID);
         }
@@ -198,9 +187,13 @@ public class ZkBackingStore implements BackingStore {
     /**
      * Transition away from being the current active controller.
      *
-     * @param reason    The reason for the transition.
+     * @param deleteZnode   True if we should delete the controller znode.
+     * @param reason        The reason for the transition.
      */
-    private void resign(String reason) {
+    private void resign(boolean deleteZnode, String reason) {
+        if (activeId != nodeId) {
+            throw new RuntimeException("Can't resign because this node is not active.");
+        }
         log.warn("Resigning because {}.", reason);
         state = null;
         try {
@@ -215,7 +208,7 @@ public class ZkBackingStore implements BackingStore {
             log.error("Unable to unregister ZkClient watches.", e);
             lastUnexpectedError.set(e);
         }
-        if (isActive()) {
+        if (deleteZnode) {
             try {
                 zkClient.deleteController(epochZkVersion);
             } catch (ControllerMovedException e) {
@@ -227,14 +220,16 @@ public class ZkBackingStore implements BackingStore {
                 lastUnexpectedError.set(e);
             }
         }
+        activeId = -1;
         controllerEpoch = -1;
         epochZkVersion = -1;
     }
 
     private static final int NONE = 0;
-    private static final int INFO_LEVEL_LOG = 1 << 0;
-    private static final int HANDLE_CME = 1 << 1;
-    private static final int REQUIRE_ACTIVE = 1 << 2;
+    private static final int REQUIRE_STARTED = 1 << 0;
+    private static final int REQUIRE_ACTIVE = 1 << 1;
+    private static final int INFO_LEVEL_LOG = 1 << 2;
+    private static final int HANDLE_CME = 1 << 3;
 
     abstract class BaseZkBackingStoreEvent<T> implements EventQueue.Event<T> {
         final String name;
@@ -258,11 +253,12 @@ public class ZkBackingStore implements BackingStore {
                 log.debug("{}: starting", name);
             }
             try {
-                if (hasFlag(REQUIRE_ACTIVE)) {
-                    if (!isActive()) {
-                        throw new ControllerMovedException("This node is not the " +
-                            "active controller.");
-                    }
+                if (hasFlag(REQUIRE_STARTED) && !started) {
+                    throw new RuntimeException("The ZkBackingStore has not been started.");
+                }
+                if (hasFlag(REQUIRE_ACTIVE) && nodeId != activeId) {
+                    throw new ControllerMovedException("This node is not the " +
+                        "active controller.");
                 }
                 T value = execute();
                 if (hasFlag(INFO_LEVEL_LOG)) {
@@ -283,7 +279,7 @@ public class ZkBackingStore implements BackingStore {
                     log.error("{}: finished after {} ms with unexpected error", name,
                         executionTimeToString(startNs), e);
                     lastUnexpectedError.set(e);
-                    resign("the controller had an unexpected error");
+                    resign(true, "the controller had an unexpected error");
                 }
             } finally {
                 long endNs = Time.SYSTEM.nanoseconds();
@@ -343,14 +339,14 @@ public class ZkBackingStore implements BackingStore {
      */
     class StopEvent extends BaseZkBackingStoreEvent<Void> {
         StopEvent() {
-            super(INFO_LEVEL_LOG);
+            super(REQUIRE_STARTED | INFO_LEVEL_LOG);
         }
 
         @Override
         public Void execute() {
             zkClient.unregisterStateChangeHandler(zkStateChangeHandler.name());
             zkClient.unregisterZNodeChangeHandler(controllerChangeHandler.path());
-            resign("the backing store is shutting down");
+            resign(true, "the backing store is shutting down");
             brokerInfo = null;
             changeListener = null;
             return null;
@@ -362,12 +358,12 @@ public class ZkBackingStore implements BackingStore {
      */
     class SessionExpirationEvent extends BaseZkBackingStoreEvent<Void> {
         SessionExpirationEvent() {
-            super(INFO_LEVEL_LOG);
+            super(REQUIRE_STARTED | INFO_LEVEL_LOG);
         }
 
         @Override
         public Void execute() {
-            resign("the zookeeper session expired");
+            resign(false, "the zookeeper session expired");
             return null;
         }
     }
@@ -377,7 +373,7 @@ public class ZkBackingStore implements BackingStore {
      */
     class ControllerChangeEvent extends BaseZkBackingStoreEvent<Void> {
         ControllerChangeEvent() {
-            super(INFO_LEVEL_LOG);
+            super(REQUIRE_STARTED | INFO_LEVEL_LOG);
         }
 
         @Override
@@ -394,7 +390,7 @@ public class ZkBackingStore implements BackingStore {
         private final boolean registerBroker;
 
         TryToActivateEvent(boolean registerBroker) {
-            super(INFO_LEVEL_LOG | HANDLE_CME);
+            super(REQUIRE_STARTED | INFO_LEVEL_LOG | HANDLE_CME);
             this.registerBroker = registerBroker;
         }
 
@@ -455,7 +451,7 @@ public class ZkBackingStore implements BackingStore {
         private final BrokerInfo newBrokerInfo;
 
         UpdateBrokerInfoEvent(BrokerInfo newBrokerInfo) {
-            super(NONE);
+            super(REQUIRE_STARTED);
             this.newBrokerInfo = newBrokerInfo;
         }
 
@@ -471,7 +467,7 @@ public class ZkBackingStore implements BackingStore {
 
     class BrokerChildChangeEvent extends BaseZkBackingStoreEvent<Void> {
         BrokerChildChangeEvent() {
-            super(HANDLE_CME | REQUIRE_ACTIVE);
+            super(REQUIRE_STARTED | REQUIRE_ACTIVE | HANDLE_CME);
         }
 
         @Override
@@ -502,7 +498,7 @@ public class ZkBackingStore implements BackingStore {
         private final int brokerId;
 
         BrokerChangeEvent(int brokerId) {
-            super(HANDLE_CME | REQUIRE_ACTIVE);
+            super(REQUIRE_STARTED | REQUIRE_ACTIVE | HANDLE_CME);
             this.brokerId = brokerId;
         }
 

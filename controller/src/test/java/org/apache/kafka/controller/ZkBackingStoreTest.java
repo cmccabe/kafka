@@ -207,6 +207,8 @@ public class ZkBackingStoreTest {
                     blockingEvent.completable().countDown();
                 }
                 assertEquals(newActiveNodeId, ensemble.waitForSingleActive(-1));
+//                ZkBackingStore activeStore = ensemble.stores.get(newActiveNodeId);
+//                activeStore.
             }
         }
     }
