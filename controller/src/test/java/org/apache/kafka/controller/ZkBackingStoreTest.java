@@ -51,8 +51,35 @@ public class ZkBackingStoreTest {
             try (KafkaZkClient zkClient = zooKeeper.newKafkaZkClient()) {
                 zkClient.createTopLevelPaths();
                 try (ZkBackingStore store = ZkBackingStore.create(0, "", zkClient)) {
+                    assertEquals(null, store.lastUnexpectedError());
                 }
             }
+        }
+    }
+
+    private static class TrackingActivationListener implements BackingStore.ChangeListener {
+        private boolean active;
+        private final CountDownLatch hasActivated = new CountDownLatch(1);
+
+        @Override
+        synchronized public void activate(MetadataStateData newState) {
+            this.active = true;
+            hasActivated.countDown();
+        }
+
+        @Override
+        synchronized public void deactivate() {
+            this.active = false;
+        }
+
+        @Override
+        public void handleBrokerUpdates(List<MetadataStateData.Broker> changedBrokers,
+                                        List<Integer> deletedBrokerIds) {
+
+        }
+
+        synchronized boolean active() {
+            return active;
         }
     }
 
@@ -64,42 +91,14 @@ public class ZkBackingStoreTest {
                 try (ZkBackingStore store = ZkBackingStore.create(0, "", zkClient)) {
                     BrokerInfo broker0Info = ControllerTestUtils.brokerToBrokerInfo(
                         ControllerTestUtils.newTestBroker(0));
-                    final CountDownLatch hasActivated = new CountDownLatch(1);
-                    CompletableFuture<Void> startFuture =
-                        store.start(broker0Info, new BackingStore.ActivationListener() {
-                            @Override
-                            public void activate(MetadataStateData newState) {
-                                hasActivated.countDown();
-                            }
-
-                            @Override
-                            public void deactivate() {
-                            }
-                        });
+                    TrackingActivationListener listener = new TrackingActivationListener();
+                    CompletableFuture<Void> startFuture = store.start(broker0Info, listener);
                     startFuture.get();
-                    hasActivated.await();
+                    listener.hasActivated.await();
                     store.shutdown(TimeUnit.NANOSECONDS, 100);
+                    assertEquals(null, store.lastUnexpectedError());
                 }
             }
-        }
-    }
-
-    private static class TrackingActivationListener
-            implements BackingStore.ActivationListener {
-        private boolean active;
-
-        @Override
-        synchronized public void activate(MetadataStateData newState) {
-            this.active = true;
-        }
-
-        @Override
-        synchronized public void deactivate() {
-            this.active = false;
-        }
-
-        synchronized boolean active() {
-            return active;
         }
     }
 

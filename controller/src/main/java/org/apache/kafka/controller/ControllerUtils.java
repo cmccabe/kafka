@@ -17,9 +17,16 @@
 
 package org.apache.kafka.controller;
 
+import kafka.cluster.Broker;
+import kafka.cluster.EndPoint;
+import org.apache.kafka.common.message.MetadataStateData;
 import org.slf4j.Logger;
+import scala.compat.java8.OptionConverters;
+import scala.jdk.javaapi.CollectionConverters;
 
 import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
@@ -73,5 +80,29 @@ public final class ControllerUtils {
         float ms = ns;
         ms /= 1000000;
         return NANOS_TO_FRACTIONAL_MILLIS_DF.format(ms);
+    }
+
+    /**
+     * Convert a kafka.cluster.Broker object into a MetadataStateData.Broker object.
+     *
+     * @param broker    The broker object to translate.
+     * @return          The translated object.
+     */
+    public static MetadataStateData.Broker brokerToStateBroker(Broker broker) {
+        MetadataStateData.Broker newBroker = new MetadataStateData.Broker();
+        newBroker.setRack(OptionConverters.<String>
+            toJava(broker.rack()).orElse(null));
+        newBroker.setBrokerId(broker.id());
+        List<MetadataStateData.BrokerEndpoint> newEndpoints = new ArrayList<>();
+        for (EndPoint endPoint : CollectionConverters.asJava(broker.endPoints())) {
+            MetadataStateData.BrokerEndpoint newEndpoint =
+                new MetadataStateData.BrokerEndpoint();
+            newEndpoint.setHost(endPoint.host());
+            newEndpoint.setPort((short) endPoint.port());
+            newEndpoint.setSecurityProtocol(endPoint.securityProtocol().id);
+            newEndpoints.add(newEndpoint);
+        }
+        newBroker.setEndPoints(newEndpoints);
+        return newBroker;
     }
 }

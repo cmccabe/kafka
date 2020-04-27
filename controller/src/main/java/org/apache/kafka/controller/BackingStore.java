@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.message.MetadataStateData;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -27,20 +28,35 @@ public interface BackingStore extends AutoCloseable {
     /**
      * Listens for controller activation and deactivation events.
      */
-    interface ActivationListener {
+    interface ChangeListener {
+        /**
+         * Become the active controller.
+         *
+         * @param newState      The current state.
+         */
         void activate(MetadataStateData newState);
+
+        /**
+         * Stop being the active controller.
+         */
         void deactivate();
+
+        /**
+         * Handle changes to the brokers in the cluster.
+         */
+        void handleBrokerUpdates(List<MetadataStateData.Broker> changedBrokers,
+                                 List<Integer> deletedBrokerIds);
     }
 
     /**
      * Start this backing store.
      *
-     * @param brokerInfo    A listener for controller activation and deactivation events.
-     * @param listener      A listener for controller activation and deactivation events.
+     * @param brokerInfo    The broker that we're registering.
+     * @param listener      A listener for backing store events.
      *
      * @return              A future that is completed when we finish registering with ZK.
      */
-    CompletableFuture<Void> start(BrokerInfo brokerInfo, ActivationListener listener);
+    CompletableFuture<Void> start(BrokerInfo brokerInfo, ChangeListener listener);
 
     /**
      * Change the broker information.

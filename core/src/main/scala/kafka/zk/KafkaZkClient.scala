@@ -448,12 +448,21 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     * Get a broker from ZK
     * @return an optional Broker
     */
-  def getBroker(brokerId: Int): Option[Broker] = {
+  def getBroker(brokerId: Int): Option[Broker] = getBrokerAndEpoch(brokerId).map(_.broker)
+
+  case class BrokerAndEpoch(broker: Broker, epoch: Long) {}
+
+  /**
+   * Get information about a broker from ZK.
+   * @return an optional BrokerAndEpoch
+   */
+  def getBrokerAndEpoch(brokerId: Int): Option[BrokerAndEpoch] = {
     val getDataRequest = GetDataRequest(BrokerIdZNode.path(brokerId))
     val getDataResponse = retryRequestUntilConnected(getDataRequest)
     getDataResponse.resultCode match {
       case Code.OK =>
-        Option(BrokerIdZNode.decode(brokerId, getDataResponse.data).broker)
+        Option(BrokerAndEpoch(BrokerIdZNode.decode(brokerId, getDataResponse.data).broker,
+          getDataResponse.stat.getCzxid))
       case Code.NONODE => None
       case _ => throw getDataResponse.resultException.get
     }

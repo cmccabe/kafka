@@ -27,7 +27,6 @@ import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.EventQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.collection.JavaConverters;
 import scala.compat.java8.OptionConverters;
 import scala.jdk.javaapi.CollectionConverters;
 
@@ -90,7 +89,7 @@ public class ControllerTestUtils {
     }
 
     /**
-     * Convert a MetadataStateData.Broker object into a kafka.zk.BrokerInfo class.
+     * Convert a MetadataStateData.Broker object into a kafka.zk.BrokerInfo object.
      *
      * @param stateBroker   The input object.
      * @return              The translated object.

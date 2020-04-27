@@ -27,6 +27,7 @@ import org.apache.kafka.common.utils.LogContext;
 import kafka.controller.ControllerManager;
 import org.slf4j.Logger;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -36,12 +37,12 @@ public final class KafkaControllerManager implements ControllerManager {
     private final Logger log;
     private final BackingStore backingStore;
     private final EventQueue eventQueue;
-    private final KafkaActivationListener activationListener;
+    private final KafkaChangeListener changeListener;
     private MetadataStateData state;
 
     @Override
     public CompletableFuture<Void> start(BrokerInfo brokerInfo) {
-        return backingStore.start(brokerInfo, this.activationListener);
+        return backingStore.start(brokerInfo, this.changeListener);
     }
 
     @Override
@@ -60,7 +61,7 @@ public final class KafkaControllerManager implements ControllerManager {
         return null;
     }
 
-    class KafkaActivationListener implements BackingStore.ActivationListener {
+    class KafkaChangeListener implements BackingStore.ChangeListener {
         @Override
         public void activate(MetadataStateData newState) {
             eventQueue.prepend(new EventQueue.Event<Void>() {
@@ -86,6 +87,30 @@ public final class KafkaControllerManager implements ControllerManager {
                 }
             });
         }
+
+        @Override
+        public void handleBrokerUpdates(List<MetadataStateData.Broker> changedBrokers,
+                                        List<Integer> deletedBrokerIds) {
+            eventQueue.append(new EventQueue.Event<Void>() {
+                @Override
+                public Void run() {
+//                    if (state == null) return null;
+//                    for (MetadataStateData.Broker newBroker : newBrokers) {
+//                        state.brokers().mustAdd(newBroker);
+//                    }
+//                    for (MetadataStateData.Broker bouncedBroker : bouncedBrokers) {
+//                        state.brokers().remove(bouncedBroker);
+//                        state.brokers().mustAdd(bouncedBroker);
+//                    }
+//                    for (int deletedBrokerId : deletedBrokerIds) {
+//                        state.brokers().remove(new MetadataStateData.Broker().
+//                            setBrokerId(deletedBrokerId));
+//                    }
+//                    return null;
+                    throw new RuntimeException("not implemented");
+                }
+            });
+        }
     }
 
     public static KafkaControllerManager create(ControllerManagerFactory factory) {
@@ -103,7 +128,7 @@ public final class KafkaControllerManager implements ControllerManager {
         this.log = logContext.logger(KafkaControllerManager.class);
         this.backingStore = backingStore;
         this.eventQueue = eventQueue;
-        this.activationListener = new KafkaActivationListener();
+        this.changeListener = new KafkaChangeListener();
         this.state = null;
     }
 }
