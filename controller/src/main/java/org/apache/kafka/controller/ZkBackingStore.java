@@ -69,7 +69,7 @@ public class ZkBackingStore implements BackingStore {
     private int activeId;
     private int controllerEpoch;
     private int epochZkVersion;
-    private MetadataStateData.BrokerCollection brokers;
+    private MetadataStateData state;
 
     /**
      * Handles the ZooKeeper session getting dropped or re-established.
@@ -173,17 +173,8 @@ public class ZkBackingStore implements BackingStore {
     }
 
     /**
-     * Throws an exception unless this node is the active controller.
-     */
-    private void verifyActive()  {
-        if (!isActive()) {
-            throw new ControllerMovedException("This node is not the active controller.");
-        }
-    }
-
-    /**
-     * Update the current active controller.
-     * If that update de-activates this controller, then resign.
+     * Reload the active controller id from the /controller znode.
+     * Resign if the new active controller is another broker.
      */
     private void reloadControllerZnodeAndResignIfNeeded() {
         int newActiveID = -1;
@@ -193,42 +184,51 @@ public class ZkBackingStore implements BackingStore {
         } catch (Throwable e) {
             log.error("Unexpected ZK error in reloadControllerZnodeAndResignIfNeeded.", e);
         }
-        setActiveIdAndResignIfNeeded(newActiveID);
-    }
-
-    /**
-     * Set the new active controller ID.  Clear the epoch ZK version and controller
-     * epoch if the controller has been deactivated.  If the controller was active before
-     * and is not now, then resign.
-     */
-    private void setActiveIdAndResignIfNeeded(int newActiveId) {
         boolean wasActive = isActive();
-        activeId = newActiveId;
-        if (activeId != nodeId) {
-            epochZkVersion = -1;
-            controllerEpoch = -1;
-            if (wasActive) {
-                resign();
-            }
+        activeId = newActiveID;
+        if (wasActive && !isActive()) {
+            resign(String.format("after reloading %s, we learned that the new " +
+                "controller is %d", controllerChangeHandler.path(), newActiveID));
+        } else {
+            log.info("After reloading {}, we learned that the new controller is {}.",
+                controllerChangeHandler.path(), newActiveID);
         }
     }
 
-    private void resign() {
+    /**
+     * Transition away from being the current active controller.
+     *
+     * @param reason    The reason for the transition.
+     */
+    private void resign(String reason) {
+        log.warn("Resigning because {}.", reason);
+        state = null;
         try {
-            log.info("Resigning");
-            controllerEpoch = -1;
-            epochZkVersion = -1;
             zkClient.unregisterZNodeChildChangeHandler(brokerChildChangeHandler.path());
             for (Iterator<BrokerChangeHandler> iter =
                  brokerChangeHandlers.values().iterator(); iter.hasNext(); ) {
                 zkClient.unregisterZNodeChangeHandler(iter.next().path());
                 iter.remove();
             }
-            brokers = null;
             changeListener.deactivate();
         } catch (Throwable e) {
-            log.error("Unhandled error in resign.", e);
+            log.error("Unable to unregister ZkClient watches.", e);
+            lastUnexpectedError.set(e);
         }
+        if (isActive()) {
+            try {
+                zkClient.deleteController(epochZkVersion);
+            } catch (ControllerMovedException e) {
+                log.info("Tried to delete {} during resignation, but it has already "+
+                    "been modified.", ControllerZNode.path());
+            } catch (Throwable e) {
+                log.error("Unable to delete {} during resignation due to unexpected " +
+                    "error.", e);
+                lastUnexpectedError.set(e);
+            }
+        }
+        controllerEpoch = -1;
+        epochZkVersion = -1;
     }
 
     private static final int NONE = 0;
@@ -283,6 +283,7 @@ public class ZkBackingStore implements BackingStore {
                     log.error("{}: finished after {} ms with unexpected error", name,
                         executionTimeToString(startNs), e);
                     lastUnexpectedError.set(e);
+                    resign("the controller had an unexpected error");
                 }
             } finally {
                 long endNs = Time.SYSTEM.nanoseconds();
@@ -349,7 +350,7 @@ public class ZkBackingStore implements BackingStore {
         public Void execute() {
             zkClient.unregisterStateChangeHandler(zkStateChangeHandler.name());
             zkClient.unregisterZNodeChangeHandler(controllerChangeHandler.path());
-            reloadControllerZnodeAndResignIfNeeded();
+            resign("the backing store is shutting down");
             brokerInfo = null;
             changeListener = null;
             return null;
@@ -366,7 +367,7 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public Void execute() {
-            setActiveIdAndResignIfNeeded(-1);
+            resign("the zookeeper session expired");
             return null;
         }
     }
@@ -403,37 +404,29 @@ public class ZkBackingStore implements BackingStore {
                 brokerEpoch = zkClient.registerBroker(brokerInfo);
                 log.info("{}: registered brokerInfo {}.", name, brokerInfo);
             }
-            int newActiveId = zkClient.getControllerIdAsInt();
-            if (newActiveId == -1) {
-                KafkaZkClient.RegistrationResult result =
-                    zkClient.registerControllerAndIncrementControllerEpoch2(nodeId);
-                zkClient.registerZNodeChangeHandlerAndCheckExistence(
-                    controllerChangeHandler);
-                activeId = nodeId;
-                controllerEpoch = result.controllerEpoch();
-                epochZkVersion = result.epochZkVersion();
-                log.info("{}, {} successfully elected as the controller. Epoch " +
-                    "incremented to {} and epoch zk version is now {}", name,
-                    nodeId, controllerEpoch, epochZkVersion);
-                loadZkState();
-            } else if (newActiveId != nodeId) {
-                log.info("{}: Broker {} has been elected as the controller, so " +
-                    "stopping the election process.", name, newActiveId);
-                setActiveIdAndResignIfNeeded(newActiveId);
-            }
+            KafkaZkClient.RegistrationResult result =
+                zkClient.registerControllerAndIncrementControllerEpoch2(nodeId);
+            zkClient.registerZNodeChangeHandlerAndCheckExistence(
+                controllerChangeHandler);
+            activeId = nodeId;
+            controllerEpoch = result.controllerEpoch();
+            epochZkVersion = result.epochZkVersion();
+            log.info("{}, {} successfully elected as the controller. Epoch " +
+                "incremented to {} and epoch zk version is now {}", name,
+                nodeId, controllerEpoch, epochZkVersion);
+            loadZkState();
             return null;
         }
     }
 
     private void loadZkState() {
-        MetadataStateData newState = new MetadataStateData();
+        this.state = new MetadataStateData();
         zkClient.registerZNodeChildChangeHandler(brokerChildChangeHandler);
-        brokers = loadBrokerChildren();
-        for (MetadataStateData.Broker broker : brokers) {
+        state.setBrokers(loadBrokerChildren());
+        for (MetadataStateData.Broker broker : state.brokers()) {
             registerBrokerChangeHandler(broker.brokerId());
         }
-        newState.setBrokers(brokers.duplicate());
-        changeListener.activate(newState);
+        changeListener.activate(state.duplicate());
     }
 
     private void registerBrokerChangeHandler(int brokerId) {
@@ -488,18 +481,18 @@ public class ZkBackingStore implements BackingStore {
             List<MetadataStateData.Broker> changed = new ArrayList<>();
             MetadataStateData.BrokerCollection newBrokers = loadBrokerChildren();
             for (MetadataStateData.Broker newBroker : newBrokers) {
-                MetadataStateData.Broker existingBroker = brokers.find(newBroker);
+                MetadataStateData.Broker existingBroker = state.brokers().find(newBroker);
                 if (!newBroker.equals(existingBroker)) {
                     changed.add(newBroker.duplicate());
                 }
             }
             List<Integer> deleted = new ArrayList<>();
-            for (MetadataStateData.Broker existingBroker : brokers) {
+            for (MetadataStateData.Broker existingBroker : state.brokers()) {
                 if (newBrokers.find(existingBroker) == null) {
                     deleted.add(existingBroker.brokerId());
                 }
             }
-            brokers = newBrokers;
+            state.setBrokers(newBrokers);
             changeListener.handleBrokerUpdates(changed, deleted);
             return null;
         }
@@ -515,7 +508,7 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public Void execute() {
-            MetadataStateData.Broker existingBroker = brokers.find(brokerId);
+            MetadataStateData.Broker existingBroker = state.brokers().find(brokerId);
             if (existingBroker == null) {
                 throw new RuntimeException("Received BrokerChangeEvent for broker " +
                     brokerId + ", but that broker is not in our cached metadata.");
@@ -526,7 +519,7 @@ public class ZkBackingStore implements BackingStore {
                 // The broker znode must have been deleted between the change
                 // notification firing and this handler.  Handle the broker going away.
                 log.debug("{}: broker {} is now gone.", name, brokerId);
-                brokers.remove(existingBroker);
+                state.brokers().remove(existingBroker);
                 changeListener.handleBrokerUpdates(
                     Collections.emptyList(), Collections.singletonList(brokerId));
                 return null;
@@ -581,7 +574,7 @@ public class ZkBackingStore implements BackingStore {
         this.activeId = -1;
         this.controllerEpoch = -1;
         this.epochZkVersion = -1;
-        this.brokers = null;
+        this.state = null;
     }
 
     @Override
