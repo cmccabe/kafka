@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 
 public class ControllerTestUtils {
@@ -119,5 +120,11 @@ public class ControllerTestUtils {
         // Use the latest version
         int version = 4;
         return new BrokerInfo(broker, version, jmxPort);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static CompletableFuture<Void> allOf(List<CompletableFuture<Void>> futures) {
+        return CompletableFuture.allOf(futures.
+            toArray(new CompletableFuture[futures.size()]));
     }
 }

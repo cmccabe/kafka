@@ -27,10 +27,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
+import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.message.MetadataStateData;
 import org.apache.kafka.test.TestUtils;
 import org.junit.Rule;
@@ -41,7 +40,6 @@ import org.slf4j.LoggerFactory;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.fail;
 
 public class ZkBackingStoreTest {
     private static final Logger log = LoggerFactory.getLogger(ZkBackingStoreTest.class);
@@ -112,13 +110,13 @@ public class ZkBackingStoreTest {
         private final List<ZkBackingStore> stores;
 
         ZkBackingStoreEnsemble(CloseableEmbeddedZooKeeper zooKeeper,
-                               int numStores, int numBrokers) throws Exception {
+                               int numStores) throws Exception {
             this.activationListeners = new ArrayList<>();
             for (int i = 0; i < numStores; i++) {
                 this.activationListeners.add(new TrackingActivationListener());
             }
-            this.brokers = new ArrayList<>(numBrokers);
-            for (int i = 0; i < numBrokers; i++) {
+            this.brokers = new ArrayList<>(numStores);
+            for (int i = 0; i < numStores; i++) {
                 this.brokers.add(ControllerTestUtils.newTestBroker(i));
             }
             this.stores = new ArrayList<>(numStores);
@@ -140,7 +138,20 @@ public class ZkBackingStoreTest {
             }
         }
 
-        void startAll() throws Exception {
+        void updateBroker(MetadataStateData.Broker broker) {
+            brokers.set(broker.brokerId(), broker);
+            stores.get(broker.brokerId()).
+                updateBrokerInfo(ControllerTestUtils.brokerToBrokerInfo(broker));
+        }
+
+        CompletableFuture<Void> start(int i) throws Exception {
+            ZkBackingStore store = stores.get(i);
+            return store.start(
+                ControllerTestUtils.brokerToBrokerInfo(brokers.get(i)),
+                activationListeners.get(i));
+        }
+
+        CompletableFuture<Void> startAll() throws Exception {
             List<CompletableFuture<Void>> startFutures = new ArrayList<>();
             for (int i = 0; i < stores.size(); i++) {
                 ZkBackingStore store = stores.get(i);
@@ -148,9 +159,7 @@ public class ZkBackingStoreTest {
                     ControllerTestUtils.brokerToBrokerInfo(brokers.get(i)),
                     activationListeners.get(i)));
             }
-            for (CompletableFuture<Void> startFuture : startFutures) {
-                startFuture.get();
-            }
+            return ControllerTestUtils.allOf(startFutures);
         }
 
         int waitForSingleActive(int nodeIdToIgnore) throws Exception {
@@ -189,10 +198,26 @@ public class ZkBackingStoreTest {
             });
         }
 
+        void waitForBrokers(List<MetadataStateData.Broker> expected) throws Exception {
+            waitForActiveState(state -> {
+                // Don't compare epochs.
+                ControllerTestUtils.clearEpochs(state.brokers());
+                if (!state.brokers().equalsIgnoringOrder(expected)) {
+                    throw new RuntimeException("Expected brokers: " +
+                        expected + ", actual brokers: " + state.brokers());
+                }
+            });
+        }
+
+
         @Override
         public void close() throws InterruptedException {
             for (ZkBackingStore store : stores) {
-                store.shutdown(TimeUnit.SECONDS, 0);
+                try {
+                    store.shutdown(TimeUnit.SECONDS, 0);
+                } catch (TimeoutException e) {
+                    // ignore
+                }
             }
             for (ZkBackingStore store : stores) {
                 store.close();
@@ -205,8 +230,8 @@ public class ZkBackingStoreTest {
     public void testOnlyOneActivates() throws Exception {
         try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
             try (ZkBackingStoreEnsemble ensemble =
-                     new ZkBackingStoreEnsemble(zooKeeper, 2, 2)) {
-                ensemble.startAll();
+                     new ZkBackingStoreEnsemble(zooKeeper, 2)) {
+                ensemble.startAll().get();
                 int activeNodeId = ensemble.waitForSingleActive(-1);
                 log.debug("Node {} is now the only active node.", activeNodeId);
                 // Put a blocking event in the event queue of the ZkBackingStore which is
@@ -229,13 +254,40 @@ public class ZkBackingStoreTest {
                     blockingEvent.completable().countDown();
                 }
                 assertEquals(newActiveNodeId, ensemble.waitForSingleActive(-1));
-                ensemble.waitForActiveState(state -> {
-                    ControllerTestUtils.clearEpochs(state.brokers());
-                    if (!state.brokers().equalsIgnoringOrder(ensemble.brokers)) {
-                        throw new RuntimeException("Expected brokers: " +
-                            ensemble.brokers + ", actual brokers: " + state.brokers());
-                    }
-                });
+                ensemble.waitForBrokers(ensemble.brokers);
+            }
+        }
+    }
+
+    @Test
+    public void testBrokerRegistration() throws Exception {
+        try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
+            try (ZkBackingStoreEnsemble ensemble =
+                     new ZkBackingStoreEnsemble(zooKeeper, 3)) {
+
+                // Test creating ZkBackingStores one by one and verifying that we tracked
+                // the nodes getting registered.
+                final int numBrokers = ensemble.brokers.size();
+                for (int i = 0; i < numBrokers; i++) {
+                    final int startedUpTo = i;
+                    log.info("starting broker {}", i);
+                    ensemble.start(i).get();
+                    ensemble.waitForBrokers(ensemble.brokers.subList(0, startedUpTo + 1));
+                }
+                // Test changing broker information.
+                ensemble.updateBroker(ensemble.brokers.get(numBrokers -1).
+                    duplicate().setRack("testRack"));
+                ensemble.waitForBrokers(ensemble.brokers);
+
+                // Test removing ZkBackingStores and verifying that the remaining ones
+                // tracked the nodes going away.
+                for (int i = 0; i < numBrokers -1; i++) {
+                    final int stoppedUpTo = i;
+                    log.info("closing broker {}", i);
+                    ensemble.stores.get(i).close();
+                    ensemble.stores.get(i).zkClient().close();
+                    ensemble.waitForBrokers(ensemble.brokers.subList(stoppedUpTo + 1, numBrokers));
+                }
             }
         }
     }

@@ -19,6 +19,7 @@ package org.apache.kafka.controller;
 
 import kafka.cluster.Broker;
 import kafka.zk.BrokerIdZNode;
+import kafka.zk.BrokerIdsZNode;
 import kafka.zk.BrokerInfo;
 import kafka.zk.BrokersZNode;
 import kafka.zk.ControllerZNode;
@@ -128,7 +129,7 @@ public class ZkBackingStore implements BackingStore {
     class BrokerChildChangeHandler implements ZNodeChildChangeHandler {
         @Override
         public String path() {
-            return BrokersZNode.path();
+            return BrokerIdsZNode.path();
         }
 
         @Override
@@ -186,7 +187,7 @@ public class ZkBackingStore implements BackingStore {
         try {
             zkClient.unregisterZNodeChildChangeHandler(brokerChildChangeHandler.path());
             for (Iterator<BrokerChangeHandler> iter =
-                 brokerChangeHandlers.values().iterator(); iter.hasNext(); ) {
+                     brokerChangeHandlers.values().iterator(); iter.hasNext(); ) {
                 zkClient.unregisterZNodeChangeHandler(iter.next().path());
                 iter.remove();
             }
@@ -425,6 +426,13 @@ public class ZkBackingStore implements BackingStore {
         brokerChangeHandlers.put(brokerId, changeHandler);
     }
 
+    private void unregisterBrokerChangeHandler(int brokerId) {
+        BrokerChangeHandler handler = brokerChangeHandlers.remove(brokerId);
+        if (handler != null) {
+            zkClient.unregisterZNodeChangeHandler(handler.path());
+        }
+    }
+
     private MetadataStateData.BrokerCollection loadBrokerChildren() {
         MetadataStateData.BrokerCollection newBrokers =
             new MetadataStateData.BrokerCollection();
@@ -474,6 +482,9 @@ public class ZkBackingStore implements BackingStore {
             for (MetadataStateData.Broker newBroker : newBrokers) {
                 MetadataStateData.Broker existingBroker = state.brokers().find(newBroker);
                 if (!newBroker.equals(existingBroker)) {
+                    if (existingBroker == null) {
+                        registerBrokerChangeHandler(newBroker.brokerId());
+                    }
                     changed.add(newBroker.duplicate());
                 }
             }
@@ -481,6 +492,7 @@ public class ZkBackingStore implements BackingStore {
             for (MetadataStateData.Broker existingBroker : state.brokers()) {
                 if (newBrokers.find(existingBroker) == null) {
                     deleted.add(existingBroker.brokerId());
+                    unregisterBrokerChangeHandler(existingBroker.brokerId());
                 }
             }
             state.setBrokers(newBrokers);
@@ -522,8 +534,11 @@ public class ZkBackingStore implements BackingStore {
             if (!stateBroker.equals(existingBroker)) {
                 log.debug("{}: The information for broker {} is now {}",
                     name, brokerId, stateBroker);
+                state.brokers().remove(existingBroker);
+                state.brokers().add(stateBroker);
                 changeListener.handleBrokerUpdates(
-                    Collections.singletonList(stateBroker), Collections.emptyList());
+                    Collections.singletonList(stateBroker.duplicate()),
+                    Collections.emptyList());
             } else {
                 log.debug("{}: The information for broker {} is unchanged.",
                     name, brokerId);
