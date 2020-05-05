@@ -36,29 +36,23 @@
             { "name": "SecurityProtocol", "type": "int16", "versions": "0+",
               "about": "The security protocol." }
         ]},
-//        { "name": "JmxPort", "type": "int16", "versions": "0+",
-//          "about": "The JMX port." },
         { "name": "Rack", "type": "string", "versions": "0+", "nullableVersions": "0+",
           "about": "The broker rack." }
-        // TODO: add deleted boolean?  Hopefully, we won't need this.
     ]},
     { "name": "Topics", "type": "[]Topic", "versions": "0+",
       "about": "The topics in this cluster.", "fields": [
         { "name": "Name", "type": "string", "versions": "0+", "mapKey": true,
           "about": "The topic name." },
-        { "name": "Config", "type": "[]TopicConfig", "versions": "0+",
-          "about": "The configuration for this topic.", "fields": [
-            { "name": "Key", "type": "string", "versions": "0+", "mapKey": true,
-              "about": "The configuration key." },
-            { "name": "Value", "type": "string", "versions": "0+",
-              "about": "The configuration value." }
-        ]},
         { "name": "Partitions", "type": "[]Partition", "versions": "0+",
           "about": "The partitions in this topic.", "fields": [
             { "name": "Id", "type": "int32", "versions": "0+", "mapKey": true,
               "about": "The partition id." },
             { "name": "Replicas", "type": "[]int32", "versions": "0+",
               "about": "The replicas." },
+            { "name": "AddingReplicas", "type": "[]int32", "versions": "0+",
+              "about": "The replicas we are adding." },
+            { "name": "RemovingReplicas", "type": "[]int32", "versions": "0+",
+              "about": "The replicas we are removing." },
             { "name": "Isr", "type": "[]int32", "versions": "0+",
               "about": "The in-sync replicas." },
             { "name": "Leader", "type": "int32", "versions": "0+",
@@ -79,6 +73,5 @@
               "about": "The configuration value." }
         ]}
     ]}
-    // TODO: add ACLs (or perhaps they'll be in a separate place?)
   ]
 }

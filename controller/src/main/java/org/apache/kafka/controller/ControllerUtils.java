@@ -19,6 +19,9 @@ package org.apache.kafka.controller;
 
 import kafka.cluster.Broker;
 import kafka.cluster.EndPoint;
+import kafka.controller.ReplicaAssignment;
+import kafka.utils.CoreUtils;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataStateData;
 import org.slf4j.Logger;
 import scala.compat.java8.OptionConverters;
@@ -27,6 +30,7 @@ import scala.jdk.javaapi.CollectionConverters;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
@@ -88,7 +92,7 @@ public final class ControllerUtils {
      * @param broker    The broker object to translate.
      * @return          The translated object.
      */
-    public static MetadataStateData.Broker brokerToStateBroker(Broker broker) {
+    public static MetadataStateData.Broker brokerToBrokerState(Broker broker) {
         MetadataStateData.Broker newBroker = new MetadataStateData.Broker();
         newBroker.setRack(OptionConverters.<String>
             toJava(broker.rack()).orElse(null));
@@ -104,5 +108,36 @@ public final class ControllerUtils {
         }
         newBroker.setEndPoints(newEndpoints);
         return newBroker;
+    }
+
+    /**
+     * Convert a replica assignment map into a TopicCollection.
+     *
+     * @param map       The input map.
+     * @return          The topic collection.  Note that this will not contain ISR
+     *                  information.
+     */
+    public static MetadataStateData.TopicCollection replicaAssignmentsToTopicStates(
+            Map<TopicPartition, ReplicaAssignment> map) {
+        MetadataStateData.TopicCollection newTopics =
+            new MetadataStateData.TopicCollection();
+        for (Map.Entry<TopicPartition, ReplicaAssignment> entry : map.entrySet()) {
+            TopicPartition topicPartition = entry.getKey();
+            MetadataStateData.Topic topic = newTopics.find(topicPartition.topic());
+            if (topic == null) {
+                topic = new MetadataStateData.Topic().setName(topicPartition.topic());
+                newTopics.add(topic);
+            }
+            MetadataStateData.Partition partition = new MetadataStateData.Partition();
+            partition.setId(topicPartition.partition());
+            ReplicaAssignment replicaAssignment = entry.getValue();
+            partition.setReplicas(CoreUtils.asJava(replicaAssignment.replicas()));
+            partition.setAddingReplicas(
+                CoreUtils.asJava(replicaAssignment.addingReplicas()));
+            partition.setRemovingReplicas(
+                CoreUtils.asJava(replicaAssignment.removingReplicas()));
+            topic.partitions().add(partition);
+        }
+        return newTopics;
     }
 }

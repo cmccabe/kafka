@@ -27,6 +27,7 @@ import java.util.{Base64, Properties, UUID}
 import com.typesafe.scalalogging.Logger
 import javax.management._
 
+import scala.jdk.CollectionConverters._
 import scala.collection._
 import scala.collection.{Seq, mutable}
 import kafka.cluster.EndPoint
@@ -319,4 +320,8 @@ object CoreUtils {
     elements.groupMapReduce(key)(f)(reduce)
   }
 
+  def asJava(x: Seq[Int]): java.util.List[Integer] =
+    x.map(Integer.valueOf).asJava
+
+  def toImmutableMap[A, B](x: Map[A, B]): collection.immutable.Map[A, B] = x.toMap
 }

@@ -111,6 +111,11 @@ public final class KafkaControllerManager implements ControllerManager {
                 }
             });
         }
+
+        @Override
+        public void handleTopicUpdates(List<MetadataStateData.Topic> changed, List<String> deleted) {
+
+        }
     }
 
     public static KafkaControllerManager create(ControllerManagerFactory factory) {

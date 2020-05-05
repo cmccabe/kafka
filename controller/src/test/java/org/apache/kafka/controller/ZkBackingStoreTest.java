@@ -17,11 +17,15 @@
 
 package org.apache.kafka.controller;
 
+import kafka.utils.CoreUtils;
 import kafka.zk.BrokerInfo;
 import kafka.zk.KafkaZkClient;
 import kafka.zk.ZkVersion;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -29,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.message.MetadataStateData;
 import org.apache.kafka.test.TestUtils;
@@ -37,6 +42,8 @@ import org.junit.Test;
 import org.junit.rules.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.collection.Seq;
+import scala.jdk.javaapi.CollectionConverters;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -75,9 +82,13 @@ public class ZkBackingStoreTest {
         }
 
         @Override
-        public void handleBrokerUpdates(List<MetadataStateData.Broker> changedBrokers,
-                                        List<Integer> deletedBrokerIds) {
+        synchronized public void handleBrokerUpdates(List<MetadataStateData.Broker> changedBrokers,
+                                                     List<Integer> deletedBrokerIds) {
+        }
 
+        @Override
+        synchronized public void handleTopicUpdates(List<MetadataStateData.Topic> changed,
+                                                    List<String> deleted) {
         }
 
         synchronized boolean active() {
@@ -209,6 +220,14 @@ public class ZkBackingStoreTest {
             });
         }
 
+        void waitForTopics(List<MetadataStateData.Topic> expected) throws Exception {
+            waitForActiveState(state -> {
+                if (!state.topics().equalsIgnoringOrder(expected)) {
+                    throw new RuntimeException("Expected topics: " +
+                        expected + ", actual topics: " + state.topics());
+                }
+            });
+        }
 
         @Override
         public void close() throws InterruptedException {
@@ -288,6 +307,42 @@ public class ZkBackingStoreTest {
                     ensemble.stores.get(i).zkClient().close();
                     ensemble.waitForBrokers(ensemble.brokers.subList(stoppedUpTo + 1, numBrokers));
                 }
+            }
+        }
+    }
+
+    @Test
+    public void testTopicCreation() throws Exception {
+        try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
+            try (ZkBackingStoreEnsemble ensemble =
+                     new ZkBackingStoreEnsemble(zooKeeper, 2)) {
+                ensemble.startAll().get();
+                ensemble.waitForTopics(Collections.emptyList());
+                HashMap<TopicPartition, Seq<Object>> assignment = new HashMap<>();
+                assignment.put(new TopicPartition("foo", 0),
+                    CollectionConverters.asScala(Arrays.asList(0, 1, 2)));
+                assignment.put(new TopicPartition("foo", 1),
+                    CollectionConverters.asScala(Arrays.asList(1, 2, 3)));
+                assignment.put(new TopicPartition("foo", 2),
+                    CollectionConverters.asScala(Arrays.asList(2, 3, 0)));
+                KafkaZkClient zkClient = ensemble.stores.get(0).zkClient();
+                zkClient.createTopicAssignment("foo",
+                    CoreUtils.toImmutableMap(CollectionConverters.asScala(assignment)));
+                MetadataStateData.Topic foo = new MetadataStateData.Topic().setName("foo");
+                foo.partitions().add(new MetadataStateData.Partition().setId(0).
+                    setReplicas(Arrays.asList(0, 1, 2)));
+                foo.partitions().add(new MetadataStateData.Partition().setId(1).
+                    setReplicas(Arrays.asList(1, 2, 3)));
+                foo.partitions().add(new MetadataStateData.Partition().setId(2).
+                    setReplicas(Arrays.asList(2, 3, 0)));
+                ensemble.waitForTopics(Collections.singletonList(foo));
+                assignment.remove(new TopicPartition("foo", 2));
+                foo.partitions().remove(new MetadataStateData.Partition().setId(2));
+                zkClient.setTopicAssignment("foo",
+                    CoreUtils.toImmutableMap(CollectionConverters.asScala(assignment)));
+                ensemble.waitForTopics(Collections.singletonList(foo));
+                zkClient.deleteTopicZNode("foo", -1);
+                ensemble.waitForTopics(Collections.emptyList());
             }
         }
     }

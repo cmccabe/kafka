@@ -525,6 +525,11 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     setDataResponse.maybeThrow
   }
 
+  def setTopicAssignment(topic: String,
+                         assignment: Map[TopicPartition, Seq[Int]]): Unit =
+    setTopicAssignment(topic, assignment.map { case (k, v) => k -> ReplicaAssignment(v) },
+      ZkVersion.MatchAnyVersion)
+
   /**
    * Create the topic znode with the given assignment.
    * @param topic the topic whose assignment is being set.

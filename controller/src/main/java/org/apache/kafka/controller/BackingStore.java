@@ -46,6 +46,12 @@ public interface BackingStore extends AutoCloseable {
          */
         void handleBrokerUpdates(List<MetadataStateData.Broker> changedBrokers,
                                  List<Integer> deletedBrokerIds);
+
+        /**
+         * Handle changes to the topics in the cluster.
+         */
+        void handleTopicUpdates(List<MetadataStateData.Topic> changed,
+                                List<String> deleted);
     }
 
     /**

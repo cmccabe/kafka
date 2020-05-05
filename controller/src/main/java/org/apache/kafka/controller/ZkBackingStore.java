@@ -18,17 +18,20 @@
 package org.apache.kafka.controller;
 
 import kafka.cluster.Broker;
+import kafka.controller.ReplicaAssignment;
 import kafka.zk.BrokerIdZNode;
 import kafka.zk.BrokerIdsZNode;
 import kafka.zk.BrokerInfo;
-import kafka.zk.BrokersZNode;
 import kafka.zk.ControllerZNode;
 import kafka.zk.KafkaZkClient;
 import kafka.zk.KafkaZkClient.BrokerAndEpoch;
 import kafka.zk.StateChangeHandlers;
+import kafka.zk.TopicZNode;
+import kafka.zk.TopicsZNode;
 import kafka.zookeeper.StateChangeHandler;
 import kafka.zookeeper.ZNodeChangeHandler;
 import kafka.zookeeper.ZNodeChildChangeHandler;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ControllerMovedException;
 import org.apache.kafka.common.errors.NotControllerException;
 import org.apache.kafka.common.errors.TimeoutException;
@@ -64,6 +67,8 @@ public class ZkBackingStore implements BackingStore {
     private final ControllerChangeHandler controllerChangeHandler;
     private final BrokerChildChangeHandler brokerChildChangeHandler;
     private final Map<Integer, BrokerChangeHandler> brokerChangeHandlers;
+    private final TopicChildChangeHandler topicChildChangeHandler;
+    private final Map<String, TopicChangeHandler> topicChangeHandlers;
     private boolean started;
     private ChangeListener changeListener;
     private long brokerEpoch;
@@ -160,6 +165,42 @@ public class ZkBackingStore implements BackingStore {
     }
 
     /**
+     * Handles changes to the children of the /broker/topics path.
+     */
+    class TopicChildChangeHandler implements ZNodeChildChangeHandler {
+        @Override
+        public String path() {
+            return TopicsZNode.path();
+        }
+
+        @Override
+        public void handleChildChange() {
+            eventQueue.append(new TopicChildChangeEvent());
+        }
+    }
+
+    /**
+     * Handles changes to a /broker/topics/$topic path.
+     */
+    class TopicChangeHandler implements ZNodeChangeHandler {
+        private final String topic;
+
+        TopicChangeHandler(String topic) {
+            this.topic = topic;
+        }
+
+        @Override
+        public String path() {
+            return TopicZNode.path(topic);
+        }
+
+        @Override
+        public void handleDataChange() {
+            eventQueue.append(new TopicChangeEvent(topic));
+        }
+    }
+
+    /**
      * Reload the active controller id from the /controller znode.
      */
     private int loadControllerId() {
@@ -186,8 +227,14 @@ public class ZkBackingStore implements BackingStore {
         state = null;
         try {
             zkClient.unregisterZNodeChildChangeHandler(brokerChildChangeHandler.path());
+            zkClient.unregisterZNodeChildChangeHandler(topicChildChangeHandler.path());
             for (Iterator<BrokerChangeHandler> iter =
                      brokerChangeHandlers.values().iterator(); iter.hasNext(); ) {
+                zkClient.unregisterZNodeChangeHandler(iter.next().path());
+                iter.remove();
+            }
+            for (Iterator<TopicChangeHandler> iter =
+                     topicChangeHandlers.values().iterator(); iter.hasNext(); ) {
                 zkClient.unregisterZNodeChangeHandler(iter.next().path());
                 iter.remove();
             }
@@ -412,8 +459,11 @@ public class ZkBackingStore implements BackingStore {
     private void loadZkState() {
         this.state = new MetadataStateData();
         zkClient.registerZNodeChildChangeHandler(brokerChildChangeHandler);
+        zkClient.registerZNodeChildChangeHandler(topicChildChangeHandler);
         state.setBrokers(loadBrokerChildren());
         log.info("Loaded broker(s) {}", state.brokers());
+        state.setTopics(loadTopicChildren());
+        log.info("Loaded topic(s) {}", state.topics());
         for (MetadataStateData.Broker broker : state.brokers()) {
             registerBrokerChangeHandler(broker.brokerId());
         }
@@ -433,17 +483,38 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
+    private void registerTopicChangeHandler(String name) {
+        TopicChangeHandler changeHandler = new TopicChangeHandler(name);
+        zkClient.registerZNodeChangeHandlerAndCheckExistence(changeHandler);
+        topicChangeHandlers.put(name, changeHandler);
+    }
+
+    private void unregisterTopicChangeHandler(String name) {
+        TopicChangeHandler handler = topicChangeHandlers.remove(name);
+        if (handler != null) {
+            zkClient.unregisterZNodeChangeHandler(handler.path());
+        }
+    }
+
     private MetadataStateData.BrokerCollection loadBrokerChildren() {
         MetadataStateData.BrokerCollection newBrokers =
             new MetadataStateData.BrokerCollection();
         for (Map.Entry<Broker, Object> entry : CollectionConverters.
                 asJava(zkClient.getAllBrokerAndEpochsInCluster()).entrySet()) {
             MetadataStateData.Broker newBroker = ControllerUtils.
-                brokerToStateBroker(entry.getKey());
+                brokerToBrokerState(entry.getKey());
             newBroker.setBrokerEpoch((Long) entry.getValue());
             newBrokers.add(newBroker);
         }
         return newBrokers;
+    }
+
+    private MetadataStateData.TopicCollection loadTopicChildren() {
+        scala.collection.immutable.Set<String> scalaTopics =
+            zkClient.getAllTopicsInCluster(true);
+        Map<TopicPartition, ReplicaAssignment> map = CollectionConverters.asJava(
+            zkClient.getFullReplicaAssignmentForTopics(scalaTopics));
+        return ControllerUtils.replicaAssignmentsToTopicStates(map);
     }
 
     /**
@@ -528,7 +599,7 @@ public class ZkBackingStore implements BackingStore {
                 return null;
             }
             MetadataStateData.Broker stateBroker = ControllerUtils.
-                brokerToStateBroker(brokerInfo.get().broker());
+                brokerToBrokerState(brokerInfo.get().broker());
             stateBroker.setBrokerEpoch(brokerInfo.get().epoch());
 
             if (!stateBroker.equals(existingBroker)) {
@@ -543,6 +614,71 @@ public class ZkBackingStore implements BackingStore {
                 log.debug("{}: The information for broker {} is unchanged.",
                     name, brokerId);
             }
+            return null;
+        }
+    }
+
+    class TopicChildChangeEvent extends BaseZkBackingStoreEvent<Void> {
+        TopicChildChangeEvent() {
+            super(REQUIRE_STARTED | REQUIRE_ACTIVE | HANDLE_CME);
+        }
+
+        @Override
+        public Void execute() {
+            // Unfortunately, the ZK watch does not say which child znode was created
+            // or deleted, so we have to re-read everything.
+            MetadataStateData.TopicCollection newTopics = loadTopicChildren();
+            List<MetadataStateData.Topic> changed = new ArrayList<>();
+
+            for (MetadataStateData.Topic newTopic : newTopics) {
+                MetadataStateData.Topic existingTopic = state.topics().find(newTopic);
+                if (!newTopic.equals(existingTopic)) {
+                    if (existingTopic == null) {
+                        registerTopicChangeHandler(newTopic.name());
+                    }
+                    changed.add(newTopic.duplicate());
+                }
+            }
+            List<String> deleted = new ArrayList<>();
+            for (MetadataStateData.Topic existingTopic : state.topics()) {
+                if (newTopics.find(existingTopic) == null) {
+                    deleted.add(existingTopic.name());
+                    unregisterTopicChangeHandler(existingTopic.name());
+                }
+            }
+            state.setTopics(newTopics);
+            changeListener.handleTopicUpdates(changed, deleted);
+            return null;
+        }
+    }
+
+    class TopicChangeEvent extends BaseZkBackingStoreEvent<Void> {
+        private final String topic;
+
+        TopicChangeEvent(String topic) {
+            super(REQUIRE_STARTED | REQUIRE_ACTIVE | HANDLE_CME);
+            this.topic = topic;
+        }
+
+        @Override
+        public Void execute() {
+            Map<TopicPartition, ReplicaAssignment> map = CollectionConverters.asJava(
+                zkClient.getFullReplicaAssignmentForTopics(
+                    CollectionConverters.asScala(Collections.singleton(topic)).toSet()));
+            MetadataStateData.TopicCollection newTopics = ControllerUtils.
+                replicaAssignmentsToTopicStates(map);
+            MetadataStateData.Topic newTopic = newTopics.find(topic);
+            if (newTopic == null) {
+                newTopic = new MetadataStateData.Topic().setName(topic);
+            }
+            MetadataStateData.Topic existingTopic = state.topics().find(newTopic);
+            if (!newTopic.equals(existingTopic)) {
+                state.topics().remove(newTopic);
+                state.topics().add(newTopic.duplicate());
+                changeListener.handleTopicUpdates(Collections.singletonList(newTopic.duplicate()),
+                    Collections.emptyList());
+            }
+            // TODO: add "auto-revert changes to topics in deleting state" here?
             return null;
         }
     }
@@ -573,6 +709,8 @@ public class ZkBackingStore implements BackingStore {
         this.controllerChangeHandler = new ControllerChangeHandler();
         this.brokerChildChangeHandler = new BrokerChildChangeHandler();
         this.brokerChangeHandlers = new HashMap<>();
+        this.topicChildChangeHandler = new TopicChildChangeHandler();
+        this.topicChangeHandlers = new HashMap<>();
         this.started = false;
         this.changeListener = null;
         this.brokerEpoch = -1;
