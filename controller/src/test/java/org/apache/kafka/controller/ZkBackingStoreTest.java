@@ -31,6 +31,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import org.apache.kafka.common.TopicPartition;
@@ -59,7 +60,8 @@ public class ZkBackingStoreTest {
         try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
             try (KafkaZkClient zkClient = zooKeeper.newKafkaZkClient()) {
                 zkClient.createTopLevelPaths();
-                try (ZkBackingStore store = ZkBackingStore.create(0, "", zkClient)) {
+                try (ZkBackingStore store = ZkBackingStore.create(
+                        new AtomicReference<>(null), 0, "", zkClient)) {
                     assertEquals(null, store.lastUnexpectedError());
                 }
             }
@@ -101,7 +103,8 @@ public class ZkBackingStoreTest {
         try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
             try (KafkaZkClient zkClient = zooKeeper.newKafkaZkClient()) {
                 zkClient.createTopLevelPaths();
-                try (ZkBackingStore store = ZkBackingStore.create(0, "", zkClient)) {
+                try (ZkBackingStore store = ZkBackingStore.create(
+                        new AtomicReference<>(null), 0, "", zkClient)) {
                     BrokerInfo broker0Info = ControllerTestUtils.brokerToBrokerInfo(
                         ControllerTestUtils.newTestBroker(0));
                     TrackingActivationListener listener = new TrackingActivationListener();
@@ -137,8 +140,8 @@ public class ZkBackingStoreTest {
                     if (i == 0) {
                         zkClient.createTopLevelPaths();
                     }
-                    stores.add(ZkBackingStore.create(i, String.format("Node%d_", i),
-                        zkClient));
+                    stores.add(ZkBackingStore.create(new AtomicReference<>(null),
+                        i, String.format("Node%d_", i), zkClient));
                 }
             } catch (Exception e) {
                 for (ZkBackingStore store : stores) {

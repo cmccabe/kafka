@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 public interface EventQueue extends AutoCloseable {
     interface Event<T> {
-        T run();
+        T run() throws Throwable;
     }
 
     class VoidEvent implements Event<Void> {

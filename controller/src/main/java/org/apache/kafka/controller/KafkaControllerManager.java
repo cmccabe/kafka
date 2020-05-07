@@ -20,72 +20,42 @@ package org.apache.kafka.controller;
 import kafka.controller.ControllerManagerFactory;
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.ApiException;
+import org.apache.kafka.common.errors.NotControllerException;
 import org.apache.kafka.common.message.MetadataStateData;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
 import kafka.controller.ControllerManager;
+import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class KafkaControllerManager implements ControllerManager {
     private final LogContext logContext;
     private final Logger log;
+    private final AtomicReference<Throwable> lastUnexpectedError;
     private final BackingStore backingStore;
     private final EventQueue eventQueue;
     private final KafkaChangeListener changeListener;
     private MetadataStateData state;
-
-    @Override
-    public CompletableFuture<Void> start(BrokerInfo brokerInfo) {
-        return backingStore.start(brokerInfo, this.changeListener);
-    }
-
-    @Override
-    public CompletableFuture<Void> updateBrokerInfo(BrokerInfo newBrokerInfo) {
-        return backingStore.updateBrokerInfo(newBrokerInfo);
-    }
-
-    @Override
-    public CompletableFuture<Map<TopicPartition, PartitionLeaderElectionResult>>
-            electLeaders(int timeoutMs, Set<TopicPartition> parts) {
-        return null;
-    }
-
-    @Override
-    public CompletableFuture<Set<TopicPartition>> controlledShutdown(int brokerId, int brokerEpoch) {
-        return null;
-    }
+    private boolean started;
 
     class KafkaChangeListener implements BackingStore.ChangeListener {
         @Override
         public void activate(MetadataStateData newState) {
-            eventQueue.prepend(new EventQueue.Event<Void>() {
-                @Override
-                public Void run() {
-                    log.info("Activating.");
-                    state = newState;
-                    return null;
-                }
-            });
+            eventQueue.append(new ActivateEvent(newState));
         }
 
         @Override
         public void deactivate() {
-            eventQueue.prepend(new EventQueue.Event<Void>() {
-                @Override
-                public Void run() {
-                    if (state != null) {
-                        log.info("Deactivating.");
-                        state = null;
-                    }
-                    return null;
-                }
-            });
+            eventQueue.append(new DeactivateEvent());
         }
 
         @Override
@@ -118,22 +88,168 @@ public final class KafkaControllerManager implements ControllerManager {
         }
     }
 
+    abstract class AbstractEvent<T> implements EventQueue.Event<T> {
+        final String name;
+
+        AbstractEvent() {
+            this.name = getClass().getSimpleName();
+        }
+
+        @Override
+        final public T run() throws Throwable {
+            long startNs = Time.SYSTEM.nanoseconds();
+            log.info("{}: starting", name);
+            try {
+                T value = execute();
+                log.info("{}: finished after {} ms",
+                    name, executionTimeToString(startNs));
+                return value;
+            } catch (Throwable e) {
+                if (e instanceof ExecutionException && e.getCause() != null) {
+                    e = e.getCause();
+                }
+                if (e instanceof ApiException) {
+                    log.info("{}: caught {} after {} ms.", name,
+                        e.getClass().getSimpleName(), executionTimeToString(startNs));
+                    throw e;
+                } else {
+                    log.error("{}: finished after {} ms with unexpected error", name,
+                        executionTimeToString(startNs), e);
+                    lastUnexpectedError.set(e);
+//                    if (state != null) {
+//                        backingStore.resign();
+//                    }
+                }
+            }
+            return null;
+        }
+
+        final private String executionTimeToString(long startNs) {
+            long endNs = Time.SYSTEM.nanoseconds();
+            return ControllerUtils.nanosToFractionalMillis(endNs - startNs);
+        }
+
+        public abstract T execute() throws Throwable;
+    }
+
+    /**
+     * Check that the KafkaControllerManager has been started.  This is a sanity check
+     * that the developer remembered to call start().
+     */
+    private void checkIsStarted() {
+        if (!started) {
+            throw new RuntimeException("The KafkaControllerManager has not been started.");
+        }
+    }
+
+    /**
+     * Check that the KafkaControllerManager has been started and is currently active.
+     */
+    private void checkIsStartedAndActive() {
+        checkIsStarted();
+        if (state == null) {
+            throw new NotControllerException("This node is not the active controller.");
+        }
+    }
+
+    /**
+     Initialize the KafkaControllerManager.
+     */
+    class StartEvent extends AbstractEvent<Void> {
+        private final BrokerInfo newBrokerInfo;
+
+        StartEvent(BrokerInfo newBrokerInfo) {
+            this.newBrokerInfo = newBrokerInfo;
+        }
+
+        @Override
+        public Void execute() throws Throwable {
+            if (started) {
+                throw new RuntimeException("Attempting to Start a KafkaControllerManager " +
+                    "which has already been started.");
+            }
+            backingStore.start(newBrokerInfo, changeListener).get();
+            started = true;
+            return null;
+        }
+    }
+
+    /**
+     * Activate the KafkaControllerManager.
+     */
+    class ActivateEvent extends AbstractEvent<Void> {
+        private final MetadataStateData newState;
+
+        ActivateEvent(MetadataStateData newState) {
+            this.newState = newState;
+        }
+
+        @Override
+        public Void execute() throws Throwable {
+            checkIsStarted();
+            state = newState;
+            return null;
+        }
+    }
+
+    /**
+     * Deactivate the KafkaControllerManager.
+     */
+    class DeactivateEvent extends AbstractEvent<Void> {
+        @Override
+        public Void execute() throws Throwable {
+            checkIsStartedAndActive();
+            state = null;
+            return null;
+        }
+    }
+
     public static KafkaControllerManager create(ControllerManagerFactory factory) {
         LogContext logContext =
             new LogContext(String.format("[Node %d]", factory.nodeId()));
-        return new KafkaControllerManager(logContext, ZkBackingStore.
-            create(factory.nodeId(), factory.threadNamePrefix(), factory.zkClient()),
-            new KafkaEventQueue(logContext, factory.threadNamePrefix()));
+        AtomicReference<Throwable> lastUnexpectedError = new AtomicReference<>(null);
+        ZkBackingStore zkBackingStore = ZkBackingStore.create(lastUnexpectedError,
+                factory.nodeId(),
+                factory.threadNamePrefix(),
+                factory.zkClient());
+        return new KafkaControllerManager(logContext,
+                lastUnexpectedError,
+                zkBackingStore,
+                new KafkaEventQueue(logContext, factory.threadNamePrefix()));
     }
 
     KafkaControllerManager(LogContext logContext,
+                           AtomicReference<Throwable> lastUnexpectedError,
                            BackingStore backingStore,
                            EventQueue eventQueue) {
         this.logContext = logContext;
         this.log = logContext.logger(KafkaControllerManager.class);
+        this.lastUnexpectedError = lastUnexpectedError;
         this.backingStore = backingStore;
         this.eventQueue = eventQueue;
         this.changeListener = new KafkaChangeListener();
         this.state = null;
+        this.started = false;
+    }
+
+    @Override
+    public CompletableFuture<Void> start(BrokerInfo newBrokerInfo) {
+        return eventQueue.append(new StartEvent(newBrokerInfo));
+    }
+
+    @Override
+    public CompletableFuture<Void> updateBrokerInfo(BrokerInfo newBrokerInfo) {
+        return backingStore.updateBrokerInfo(newBrokerInfo);
+    }
+
+    @Override
+    public CompletableFuture<Map<TopicPartition, PartitionLeaderElectionResult>>
+            electLeaders(int timeoutMs, Set<TopicPartition> parts) {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<Set<TopicPartition>> controlledShutdown(int brokerId, int brokerEpoch) {
+        return null;
     }
 }

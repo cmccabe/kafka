@@ -115,7 +115,7 @@ public final class KafkaEventQueue implements EventQueue {
         /**
          * Run the event associated with this EventContext.
          */
-        void run() {
+        void run() throws Throwable {
             try {
                 future.complete(event.run());
             } catch (Exception e) {
