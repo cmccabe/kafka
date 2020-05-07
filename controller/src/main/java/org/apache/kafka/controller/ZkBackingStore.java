@@ -49,6 +49,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -311,7 +312,8 @@ public class ZkBackingStore implements BackingStore {
             log.info("{}", logSuffix);
             return;
         }
-        log.warn("Resigning because {}{}", logSuffix.substring(0, 1).toLowerCase(),
+        log.warn("Resigning because {}{}",
+            logSuffix.substring(0, 1).toLowerCase(Locale.ROOT),
             logSuffix.substring(1));
         state = null;
         try {
@@ -336,7 +338,7 @@ public class ZkBackingStore implements BackingStore {
             try {
                 zkClient.deleteController(epochZkVersion);
             } catch (ControllerMovedException e) {
-                log.info("Tried to delete {} during resignation, but it has already "+
+                log.info("Tried to delete {} during resignation, but it has already " +
                     "been modified.", ControllerZNode.path());
             } catch (Throwable e) {
                 log.error("Unable to delete {} during resignation due to unexpected " +

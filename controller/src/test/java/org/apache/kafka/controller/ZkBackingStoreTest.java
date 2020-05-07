@@ -208,7 +208,7 @@ public class ZkBackingStoreTest {
                     throw new RuntimeException("there were no active stores");
                 }
                 MetadataStateData state = stores.get(activeId).metadataState();
-                callback.accept(state);;
+                callback.accept(state);
             });
         }
 
@@ -297,13 +297,13 @@ public class ZkBackingStoreTest {
                     ensemble.waitForBrokers(ensemble.brokers.subList(0, startedUpTo + 1));
                 }
                 // Test changing broker information.
-                ensemble.updateBroker(ensemble.brokers.get(numBrokers -1).
+                ensemble.updateBroker(ensemble.brokers.get(numBrokers - 1).
                     duplicate().setRack("testRack"));
                 ensemble.waitForBrokers(ensemble.brokers);
 
                 // Test removing ZkBackingStores and verifying that the remaining ones
                 // tracked the nodes going away.
-                for (int i = 0; i < numBrokers -1; i++) {
+                for (int i = 0; i < numBrokers - 1; i++) {
                     final int stoppedUpTo = i;
                     log.info("closing broker {}", i);
                     ensemble.stores.get(i).close();
