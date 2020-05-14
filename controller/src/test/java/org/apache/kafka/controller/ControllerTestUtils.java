@@ -20,8 +20,8 @@ package org.apache.kafka.controller;
 import kafka.cluster.Broker;
 import kafka.cluster.EndPoint;
 import kafka.zk.BrokerInfo;
-import org.apache.kafka.common.message.MetadataStateData;
-import org.apache.kafka.common.message.MetadataStateData.BrokerEndpoint;
+import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.message.MetadataState.BrokerEndpoint;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.EventQueue;
@@ -72,13 +72,13 @@ public class ControllerTestUtils {
     }
 
     /**
-     * Create a new MetadataStateData.Broker instance for testing.
+     * Create a new MetadataState.Broker instance for testing.
      *
-     * @param id    The broker ID to use for the new MetadataStateData.Broker instance.
-     * @return      The new MetadataStateData.Broker instance.
+     * @param id    The broker ID to use for the new MetadataState.Broker instance.
+     * @return      The new MetadataState.Broker instance.
      */
-    static MetadataStateData.Broker newTestBroker(int id) {
-        MetadataStateData.Broker broker = new MetadataStateData.Broker();
+    static MetadataState.Broker newTestBroker(int id) {
+        MetadataState.Broker broker = new MetadataState.Broker();
         broker.setEndPoints(Collections.singletonList(
             new BrokerEndpoint().setHost("localhost").
                 setPort((short) 9020).
@@ -89,19 +89,19 @@ public class ControllerTestUtils {
         return broker;
     }
 
-    static void clearEpochs(MetadataStateData.BrokerCollection brokers) {
-        for (MetadataStateData.Broker broker : brokers) {
+    static void clearEpochs(MetadataState.BrokerCollection brokers) {
+        for (MetadataState.Broker broker : brokers) {
             broker.setBrokerEpoch(-1);
         }
     }
 
     /**
-     * Convert a MetadataStateData.Broker object into a kafka.zk.BrokerInfo object.
+     * Convert a MetadataState.Broker object into a kafka.zk.BrokerInfo object.
      *
      * @param stateBroker   The input object.
      * @return              The translated object.
      */
-    public static BrokerInfo brokerToBrokerInfo(MetadataStateData.Broker stateBroker) {
+    public static BrokerInfo brokerToBrokerInfo(MetadataState.Broker stateBroker) {
         List<EndPoint> endpoints = new ArrayList<>();
         for (BrokerEndpoint endpoint : stateBroker.endPoints()) {
             SecurityProtocol securityProtocol =
@@ -114,7 +114,7 @@ public class ControllerTestUtils {
         Broker broker = new Broker(stateBroker.brokerId(),
             CollectionConverters.asScala(endpoints),
             OptionConverters.toScala(rack));
-        // We don't store the JMX port in MetadataStateData.Broker, so just make
+        // We don't store the JMX port in MetadataState.Broker, so just make
         // something up.
         int jmxPort = 8686 + stateBroker.brokerId();
         // Use the latest version

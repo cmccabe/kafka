@@ -22,7 +22,7 @@ import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.NotControllerException;
-import org.apache.kafka.common.message.MetadataStateData;
+import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
@@ -44,12 +44,12 @@ public final class KafkaControllerManager implements ControllerManager {
     private final BackingStore backingStore;
     private final EventQueue eventQueue;
     private final KafkaChangeListener changeListener;
-    private MetadataStateData state;
+    private MetadataState state;
     private boolean started;
 
     class KafkaChangeListener implements BackingStore.ChangeListener {
         @Override
-        public void activate(MetadataStateData newState) {
+        public void activate(MetadataState newState) {
             eventQueue.append(new ActivateEvent(newState));
         }
 
@@ -59,21 +59,21 @@ public final class KafkaControllerManager implements ControllerManager {
         }
 
         @Override
-        public void handleBrokerUpdates(List<MetadataStateData.Broker> changedBrokers,
+        public void handleBrokerUpdates(List<MetadataState.Broker> changedBrokers,
                                         List<Integer> deletedBrokerIds) {
             eventQueue.append(new EventQueue.Event<Void>() {
                 @Override
                 public Void run() {
 //                    if (state == null) return null;
-//                    for (MetadataStateData.Broker newBroker : newBrokers) {
+//                    for (MetadataState.Broker newBroker : newBrokers) {
 //                        state.brokers().mustAdd(newBroker);
 //                    }
-//                    for (MetadataStateData.Broker bouncedBroker : bouncedBrokers) {
+//                    for (MetadataState.Broker bouncedBroker : bouncedBrokers) {
 //                        state.brokers().remove(bouncedBroker);
 //                        state.brokers().mustAdd(bouncedBroker);
 //                    }
 //                    for (int deletedBrokerId : deletedBrokerIds) {
-//                        state.brokers().remove(new MetadataStateData.Broker().
+//                        state.brokers().remove(new MetadataState.Broker().
 //                            setBrokerId(deletedBrokerId));
 //                    }
 //                    return null;
@@ -83,7 +83,7 @@ public final class KafkaControllerManager implements ControllerManager {
         }
 
         @Override
-        public void handleTopicUpdates(List<MetadataStateData.Topic> changed, List<String> deleted) {
+        public void handleTopicUpdates(List<MetadataState.Topic> changed, List<String> deleted) {
 
         }
     }
@@ -178,9 +178,9 @@ public final class KafkaControllerManager implements ControllerManager {
      * Activate the KafkaControllerManager.
      */
     class ActivateEvent extends AbstractEvent<Void> {
-        private final MetadataStateData newState;
+        private final MetadataState newState;
 
-        ActivateEvent(MetadataStateData newState) {
+        ActivateEvent(MetadataState newState) {
             this.newState = newState;
         }
 

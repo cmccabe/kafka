@@ -36,7 +36,7 @@ import java.util.function.Consumer;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.message.MetadataStateData;
+import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.test.TestUtils;
 import org.junit.Rule;
 import org.junit.Test;
@@ -73,7 +73,7 @@ public class ZkBackingStoreTest {
         private final CountDownLatch hasActivated = new CountDownLatch(1);
 
         @Override
-        synchronized public void activate(MetadataStateData newState) {
+        synchronized public void activate(MetadataState newState) {
             this.active = true;
             hasActivated.countDown();
         }
@@ -84,12 +84,12 @@ public class ZkBackingStoreTest {
         }
 
         @Override
-        synchronized public void handleBrokerUpdates(List<MetadataStateData.Broker> changedBrokers,
+        synchronized public void handleBrokerUpdates(List<MetadataState.Broker> changedBrokers,
                                                      List<Integer> deletedBrokerIds) {
         }
 
         @Override
-        synchronized public void handleTopicUpdates(List<MetadataStateData.Topic> changed,
+        synchronized public void handleTopicUpdates(List<MetadataState.Topic> changed,
                                                     List<String> deleted) {
         }
 
@@ -120,7 +120,7 @@ public class ZkBackingStoreTest {
 
     private static class ZkBackingStoreEnsemble implements AutoCloseable {
         private final List<TrackingActivationListener> activationListeners;
-        private final List<MetadataStateData.Broker> brokers;
+        private final List<MetadataState.Broker> brokers;
         private final List<ZkBackingStore> stores;
 
         ZkBackingStoreEnsemble(CloseableEmbeddedZooKeeper zooKeeper,
@@ -152,7 +152,7 @@ public class ZkBackingStoreTest {
             }
         }
 
-        void updateBroker(MetadataStateData.Broker broker) {
+        void updateBroker(MetadataState.Broker broker) {
             brokers.set(broker.brokerId(), broker);
             stores.get(broker.brokerId()).
                 updateBrokerInfo(ControllerTestUtils.brokerToBrokerInfo(broker));
@@ -194,7 +194,7 @@ public class ZkBackingStoreTest {
             return activeNodeId.get();
         }
 
-        void waitForActiveState(Consumer<MetadataStateData> callback)
+        void waitForActiveState(Consumer<MetadataState> callback)
                 throws Exception {
             TestUtils.retryOnExceptionWithTimeout(() -> {
                 int activeId = -1;
@@ -207,12 +207,12 @@ public class ZkBackingStoreTest {
                 if (activeId == -1) {
                     throw new RuntimeException("there were no active stores");
                 }
-                MetadataStateData state = stores.get(activeId).metadataState();
+                MetadataState state = stores.get(activeId).metadataState();
                 callback.accept(state);
             });
         }
 
-        void waitForBrokers(List<MetadataStateData.Broker> expected) throws Exception {
+        void waitForBrokers(List<MetadataState.Broker> expected) throws Exception {
             waitForActiveState(state -> {
                 // Don't compare epochs.
                 ControllerTestUtils.clearEpochs(state.brokers());
@@ -223,7 +223,7 @@ public class ZkBackingStoreTest {
             });
         }
 
-        void waitForTopics(List<MetadataStateData.Topic> expected) throws Exception {
+        void waitForTopics(List<MetadataState.Topic> expected) throws Exception {
             waitForActiveState(state -> {
                 if (!state.topics().equalsIgnoringOrder(expected)) {
                     throw new RuntimeException("Expected topics: " +
@@ -331,16 +331,16 @@ public class ZkBackingStoreTest {
                 KafkaZkClient zkClient = ensemble.stores.get(0).zkClient();
                 zkClient.createTopicAssignment("foo",
                     CoreUtils.toImmutableMap(CollectionConverters.asScala(assignment)));
-                MetadataStateData.Topic foo = new MetadataStateData.Topic().setName("foo");
-                foo.partitions().add(new MetadataStateData.Partition().setId(0).
+                MetadataState.Topic foo = new MetadataState.Topic().setName("foo");
+                foo.partitions().add(new MetadataState.Partition().setId(0).
                     setReplicas(Arrays.asList(0, 1, 2)));
-                foo.partitions().add(new MetadataStateData.Partition().setId(1).
+                foo.partitions().add(new MetadataState.Partition().setId(1).
                     setReplicas(Arrays.asList(1, 2, 3)));
-                foo.partitions().add(new MetadataStateData.Partition().setId(2).
+                foo.partitions().add(new MetadataState.Partition().setId(2).
                     setReplicas(Arrays.asList(2, 3, 0)));
                 ensemble.waitForTopics(Collections.singletonList(foo));
                 assignment.remove(new TopicPartition("foo", 2));
-                foo.partitions().remove(new MetadataStateData.Partition().setId(2));
+                foo.partitions().remove(new MetadataState.Partition().setId(2));
                 zkClient.setTopicAssignment("foo",
                     CoreUtils.toImmutableMap(CollectionConverters.asScala(assignment)));
                 ensemble.waitForTopics(Collections.singletonList(foo));

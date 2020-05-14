@@ -18,7 +18,7 @@
 package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
-import org.apache.kafka.common.message.MetadataStateData;
+import org.apache.kafka.common.message.MetadataState;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -34,7 +34,7 @@ public interface BackingStore extends AutoCloseable {
          *
          * @param newState      The current state.
          */
-        void activate(MetadataStateData newState);
+        void activate(MetadataState newState);
 
         /**
          * Stop being the active controller.
@@ -44,13 +44,13 @@ public interface BackingStore extends AutoCloseable {
         /**
          * Handle changes to the brokers in the cluster.
          */
-        void handleBrokerUpdates(List<MetadataStateData.Broker> changedBrokers,
+        void handleBrokerUpdates(List<MetadataState.Broker> changedBrokers,
                                  List<Integer> deletedBrokerIds);
 
         /**
          * Handle changes to the topics in the cluster.
          */
-        void handleTopicUpdates(List<MetadataStateData.Topic> changed,
+        void handleTopicUpdates(List<MetadataState.Topic> changed,
                                 List<String> deleted);
     }
 

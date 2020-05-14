@@ -35,7 +35,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ControllerMovedException;
 import org.apache.kafka.common.errors.NotControllerException;
 import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.message.MetadataStateData;
+import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
@@ -77,7 +77,7 @@ public class ZkBackingStore implements BackingStore {
     private int activeId;
     private int controllerEpoch;
     private int epochZkVersion;
-    private MetadataStateData state;
+    private MetadataState state;
 
     /**
      * Handles the ZooKeeper session getting dropped or re-established.
@@ -501,10 +501,10 @@ public class ZkBackingStore implements BackingStore {
             checkIsStartedAndActive();
             // Unfortunately, the ZK watch does not say which child znode was created
             // or deleted, so we have to re-read everything.
-            List<MetadataStateData.Broker> changed = new ArrayList<>();
-            MetadataStateData.BrokerCollection newBrokers = loadBrokerChildren();
-            for (MetadataStateData.Broker newBroker : newBrokers) {
-                MetadataStateData.Broker existingBroker = state.brokers().find(newBroker);
+            List<MetadataState.Broker> changed = new ArrayList<>();
+            MetadataState.BrokerCollection newBrokers = loadBrokerChildren();
+            for (MetadataState.Broker newBroker : newBrokers) {
+                MetadataState.Broker existingBroker = state.brokers().find(newBroker);
                 if (!newBroker.equals(existingBroker)) {
                     if (existingBroker == null) {
                         registerBrokerChangeHandler(newBroker.brokerId());
@@ -513,7 +513,7 @@ public class ZkBackingStore implements BackingStore {
                 }
             }
             List<Integer> deleted = new ArrayList<>();
-            for (MetadataStateData.Broker existingBroker : state.brokers()) {
+            for (MetadataState.Broker existingBroker : state.brokers()) {
                 if (newBrokers.find(existingBroker) == null) {
                     deleted.add(existingBroker.brokerId());
                     unregisterBrokerChangeHandler(existingBroker.brokerId());
@@ -535,7 +535,7 @@ public class ZkBackingStore implements BackingStore {
         @Override
         public Void execute() {
             checkIsStartedAndActive();
-            MetadataStateData.Broker existingBroker = state.brokers().find(brokerId);
+            MetadataState.Broker existingBroker = state.brokers().find(brokerId);
             if (existingBroker == null) {
                 throw new RuntimeException("Received BrokerChangeEvent for broker " +
                     brokerId + ", but that broker is not in our cached metadata.");
@@ -551,7 +551,7 @@ public class ZkBackingStore implements BackingStore {
                     Collections.emptyList(), Collections.singletonList(brokerId));
                 return null;
             }
-            MetadataStateData.Broker stateBroker = ControllerUtils.
+            MetadataState.Broker stateBroker = ControllerUtils.
                 brokerToBrokerState(brokerInfo.get().broker());
             stateBroker.setBrokerEpoch(brokerInfo.get().epoch());
 
@@ -577,11 +577,11 @@ public class ZkBackingStore implements BackingStore {
             checkIsStartedAndActive();
             // Unfortunately, the ZK watch does not say which child znode was created
             // or deleted, so we have to re-read everything.
-            MetadataStateData.TopicCollection newTopics = loadTopicChildren();
-            List<MetadataStateData.Topic> changed = new ArrayList<>();
+            MetadataState.TopicCollection newTopics = loadTopicChildren();
+            List<MetadataState.Topic> changed = new ArrayList<>();
 
-            for (MetadataStateData.Topic newTopic : newTopics) {
-                MetadataStateData.Topic existingTopic = state.topics().find(newTopic);
+            for (MetadataState.Topic newTopic : newTopics) {
+                MetadataState.Topic existingTopic = state.topics().find(newTopic);
                 if (!newTopic.equals(existingTopic)) {
                     if (existingTopic == null) {
                         registerTopicChangeHandler(newTopic.name());
@@ -590,7 +590,7 @@ public class ZkBackingStore implements BackingStore {
                 }
             }
             List<String> deleted = new ArrayList<>();
-            for (MetadataStateData.Topic existingTopic : state.topics()) {
+            for (MetadataState.Topic existingTopic : state.topics()) {
                 if (newTopics.find(existingTopic) == null) {
                     deleted.add(existingTopic.name());
                     unregisterTopicChangeHandler(existingTopic.name());
@@ -615,13 +615,13 @@ public class ZkBackingStore implements BackingStore {
             Map<TopicPartition, ReplicaAssignment> map = CollectionConverters.asJava(
                 zkClient.getFullReplicaAssignmentForTopics(
                     CollectionConverters.asScala(Collections.singleton(topic)).toSet()));
-            MetadataStateData.TopicCollection newTopics = ControllerUtils.
+            MetadataState.TopicCollection newTopics = ControllerUtils.
                 replicaAssignmentsToTopicStates(map);
-            MetadataStateData.Topic newTopic = newTopics.find(topic);
+            MetadataState.Topic newTopic = newTopics.find(topic);
             if (newTopic == null) {
-                newTopic = new MetadataStateData.Topic().setName(topic);
+                newTopic = new MetadataState.Topic().setName(topic);
             }
-            MetadataStateData.Topic existingTopic = state.topics().find(newTopic);
+            MetadataState.Topic existingTopic = state.topics().find(newTopic);
             if (!newTopic.equals(existingTopic)) {
                 state.topics().remove(newTopic);
                 state.topics().add(newTopic.duplicate());
@@ -634,25 +634,25 @@ public class ZkBackingStore implements BackingStore {
     }
 
     private void loadZkState() {
-        this.state = new MetadataStateData();
+        this.state = new MetadataState();
         zkClient.registerZNodeChildChangeHandler(brokerChildChangeHandler);
         zkClient.registerZNodeChildChangeHandler(topicChildChangeHandler);
         state.setBrokers(loadBrokerChildren());
         log.info("Loaded broker(s) {}", state.brokers());
         state.setTopics(loadTopicChildren());
         log.info("Loaded topic(s) {}", state.topics());
-        for (MetadataStateData.Broker broker : state.brokers()) {
+        for (MetadataState.Broker broker : state.brokers()) {
             registerBrokerChangeHandler(broker.brokerId());
         }
         changeListener.activate(state.duplicate());
     }
 
-    private MetadataStateData.BrokerCollection loadBrokerChildren() {
-        MetadataStateData.BrokerCollection newBrokers =
-            new MetadataStateData.BrokerCollection();
+    private MetadataState.BrokerCollection loadBrokerChildren() {
+        MetadataState.BrokerCollection newBrokers =
+            new MetadataState.BrokerCollection();
         for (Map.Entry<Broker, Object> entry : CollectionConverters.
             asJava(zkClient.getAllBrokerAndEpochsInCluster()).entrySet()) {
-            MetadataStateData.Broker newBroker = ControllerUtils.
+            MetadataState.Broker newBroker = ControllerUtils.
                 brokerToBrokerState(entry.getKey());
             newBroker.setBrokerEpoch((Long) entry.getValue());
             newBrokers.add(newBroker);
@@ -660,7 +660,7 @@ public class ZkBackingStore implements BackingStore {
         return newBrokers;
     }
 
-    private MetadataStateData.TopicCollection loadTopicChildren() {
+    private MetadataState.TopicCollection loadTopicChildren() {
         scala.collection.immutable.Set<String> scalaTopics =
             zkClient.getAllTopicsInCluster(true);
         Map<TopicPartition, ReplicaAssignment> map = CollectionConverters.asJava(
@@ -759,10 +759,10 @@ public class ZkBackingStore implements BackingStore {
     }
 
     // Visible for testing.
-    MetadataStateData metadataState() throws ExecutionException, InterruptedException {
-        return eventQueue.append(new EventQueue.Event<MetadataStateData>() {
+    MetadataState metadataState() throws ExecutionException, InterruptedException {
+        return eventQueue.append(new EventQueue.Event<MetadataState>() {
             @Override
-            public MetadataStateData run() {
+            public MetadataState run() {
                 return state == null ? null : state.duplicate();
             }
         }).get();

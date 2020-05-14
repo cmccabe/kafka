@@ -22,7 +22,7 @@ import kafka.cluster.EndPoint;
 import kafka.controller.ReplicaAssignment;
 import kafka.utils.CoreUtils;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.message.MetadataStateData;
+import org.apache.kafka.common.message.MetadataState;
 import org.slf4j.Logger;
 import scala.compat.java8.OptionConverters;
 import scala.jdk.javaapi.CollectionConverters;
@@ -87,20 +87,20 @@ public final class ControllerUtils {
     }
 
     /**
-     * Convert a kafka.cluster.Broker object into a MetadataStateData.Broker object.
+     * Convert a kafka.cluster.Broker object into a MetadataState.Broker object.
      *
      * @param broker    The broker object to translate.
      * @return          The translated object.
      */
-    public static MetadataStateData.Broker brokerToBrokerState(Broker broker) {
-        MetadataStateData.Broker newBroker = new MetadataStateData.Broker();
+    public static MetadataState.Broker brokerToBrokerState(Broker broker) {
+        MetadataState.Broker newBroker = new MetadataState.Broker();
         newBroker.setRack(OptionConverters.<String>
             toJava(broker.rack()).orElse(null));
         newBroker.setBrokerId(broker.id());
-        List<MetadataStateData.BrokerEndpoint> newEndpoints = new ArrayList<>();
+        List<MetadataState.BrokerEndpoint> newEndpoints = new ArrayList<>();
         for (EndPoint endPoint : CollectionConverters.asJava(broker.endPoints())) {
-            MetadataStateData.BrokerEndpoint newEndpoint =
-                new MetadataStateData.BrokerEndpoint();
+            MetadataState.BrokerEndpoint newEndpoint =
+                new MetadataState.BrokerEndpoint();
             newEndpoint.setHost(endPoint.host());
             newEndpoint.setPort((short) endPoint.port());
             newEndpoint.setSecurityProtocol(endPoint.securityProtocol().id);
@@ -117,18 +117,18 @@ public final class ControllerUtils {
      * @return          The topic collection.  Note that this will not contain ISR
      *                  information.
      */
-    public static MetadataStateData.TopicCollection replicaAssignmentsToTopicStates(
+    public static MetadataState.TopicCollection replicaAssignmentsToTopicStates(
             Map<TopicPartition, ReplicaAssignment> map) {
-        MetadataStateData.TopicCollection newTopics =
-            new MetadataStateData.TopicCollection();
+        MetadataState.TopicCollection newTopics =
+            new MetadataState.TopicCollection();
         for (Map.Entry<TopicPartition, ReplicaAssignment> entry : map.entrySet()) {
             TopicPartition topicPartition = entry.getKey();
-            MetadataStateData.Topic topic = newTopics.find(topicPartition.topic());
+            MetadataState.Topic topic = newTopics.find(topicPartition.topic());
             if (topic == null) {
-                topic = new MetadataStateData.Topic().setName(topicPartition.topic());
+                topic = new MetadataState.Topic().setName(topicPartition.topic());
                 newTopics.add(topic);
             }
-            MetadataStateData.Partition partition = new MetadataStateData.Partition();
+            MetadataState.Partition partition = new MetadataState.Partition();
             partition.setId(topicPartition.partition());
             ReplicaAssignment replicaAssignment = entry.getValue();
             partition.setReplicas(CoreUtils.asJava(replicaAssignment.replicas()));
