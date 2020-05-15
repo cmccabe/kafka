@@ -62,7 +62,7 @@ public class ZkBackingStore implements BackingStore {
     private final AtomicReference<Throwable> lastUnexpectedError;
     private final Logger log;
     private final int nodeId;
-    private final EventQueue eventQueue;
+    private final EventQueue backingStoreQueue;
     private final KafkaZkClient zkClient;
     private final ZkStateChangeHandler zkStateChangeHandler;
     private final ControllerChangeHandler controllerChangeHandler;
@@ -92,7 +92,7 @@ public class ZkBackingStore implements BackingStore {
         public void beforeInitializingSession() {
             NotControllerException exception =
                 new NotControllerException("Zookeeper session expired");
-            CompletableFuture<Void> future = eventQueue.clearAndEnqueue(exception,
+            CompletableFuture<Void> future = backingStoreQueue.clearAndEnqueue(exception,
                 new SessionExpirationEvent());
             ControllerUtils.await(log, future);
             changeListener.deactivate();
@@ -100,7 +100,7 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void afterInitializingSession() {
-            eventQueue.append(new TryToActivateEvent(true));
+            backingStoreQueue.append(new TryToActivateEvent(true));
         }
     }
 
@@ -115,17 +115,17 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void handleCreation() {
-            eventQueue.append(new ControllerChangeEvent());
+            backingStoreQueue.append(new ControllerChangeEvent());
         }
 
         @Override
         public void handleDeletion() {
-            eventQueue.append(new TryToActivateEvent(false));
+            backingStoreQueue.append(new TryToActivateEvent(false));
         }
 
         @Override
         public void handleDataChange() {
-            eventQueue.append(new ControllerChangeEvent());
+            backingStoreQueue.append(new ControllerChangeEvent());
         }
     }
 
@@ -140,7 +140,7 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void handleChildChange() {
-            eventQueue.append(new BrokerChildChangeEvent());
+            backingStoreQueue.append(new BrokerChildChangeEvent());
         }
     }
 
@@ -161,7 +161,7 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void handleDataChange() {
-            eventQueue.append(new BrokerChangeEvent(brokerId));
+            backingStoreQueue.append(new BrokerChangeEvent(brokerId));
         }
     }
 
@@ -176,7 +176,7 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void handleChildChange() {
-            eventQueue.append(new TopicChildChangeEvent());
+            backingStoreQueue.append(new TopicChildChangeEvent());
         }
     }
 
@@ -197,7 +197,7 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void handleDataChange() {
-            eventQueue.append(new TopicChangeEvent(topic));
+            backingStoreQueue.append(new TopicChangeEvent(topic));
         }
     }
 
@@ -227,49 +227,23 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
-    private static final int HANDLE_NOT_CONTROLLER = 1 << 3;
-
-    abstract class AbstractEvent<T> implements EventQueue.Event<T> {
-        final String name;
-
-        AbstractEvent() {
-            this.name = getClass().getSimpleName();
+    abstract class AbstractZkBackingStoreEvent<T> extends AbstractEvent<T> {
+        public AbstractZkBackingStoreEvent() {
+            super(log);
         }
 
         @Override
-        final public T run() throws Throwable {
-            long startNs = Time.SYSTEM.nanoseconds();
-            log.info("{}: starting", name);
-            try {
-                T value = execute();
-                log.info("{}: finished after {} ms",
-                    name, executionTimeToString(startNs));
-                return value;
-            } catch (Throwable e) {
-                if (e instanceof ExecutionException && e.getCause() != null) {
-                    e = e.getCause();
-                }
-                if (e instanceof ControllerMovedException) {
-                    log.info("{}: caught ControllerMovedException after {} ms.", name,
-                        executionTimeToString(startNs));
-                    resignIfActive(true, "The controller got a ControllerMovedException");
-                    throw new NotControllerException(e.getMessage());
-                } else {
-                    log.error("{}: finished after {} ms with unexpected error", name,
-                        executionTimeToString(startNs), e);
-                    lastUnexpectedError.set(e);
-                    resignIfActive(true, "The controller had an unexpected error.");
-                    throw e;
-                }
-            }
+        public void handleControllerMoved(Throwable e) throws Throwable {
+            resignIfActive(true, "The controller got a " + e.getClass().getSimpleName());
+            throw new NotControllerException(e.getMessage());
         }
 
-        final private String executionTimeToString(long startNs) {
-            long endNs = Time.SYSTEM.nanoseconds();
-            return ControllerUtils.nanosToFractionalMillis(endNs - startNs);
+        @Override
+        public void handleUnexpectedError(Throwable e) throws Throwable {
+            lastUnexpectedError.set(e);
+            resignIfActive(true, "The controller had an unexpected error.");
+            throw e;
         }
-
-        public abstract T execute();
     }
 
     /**
@@ -354,7 +328,7 @@ public class ZkBackingStore implements BackingStore {
     /**
      * Start the ZkBackingStore.  This should be done before any other operation.
      */
-    class StartEvent extends AbstractEvent<Void> {
+    class StartEvent extends AbstractZkBackingStoreEvent<Void> {
         private final BrokerInfo newBrokerInfo;
         private final ChangeListener newChangeListener;
 
@@ -373,7 +347,7 @@ public class ZkBackingStore implements BackingStore {
             brokerEpoch = zkClient.registerBroker(newBrokerInfo);
             zkClient.registerZNodeChangeHandlerAndCheckExistence(controllerChangeHandler);
             brokerInfo = newBrokerInfo;
-            eventQueue.append(new TryToActivateEvent(false));
+            backingStoreQueue.append(new TryToActivateEvent(false));
             changeListener = newChangeListener;
             started = true;
             log.info("{}: initialized ZkBackingStore with brokerInfo {}.",
@@ -385,7 +359,7 @@ public class ZkBackingStore implements BackingStore {
     /**
      * Shut down the ZkBackingStore.
      */
-    class StopEvent extends AbstractEvent<Void> {
+    class StopEvent extends AbstractZkBackingStoreEvent<Void> {
         @Override
         public Void execute() {
             checkIsStarted();
@@ -401,7 +375,7 @@ public class ZkBackingStore implements BackingStore {
     /**
      * Handle the ZooKeeper session expiring.
      */
-    class SessionExpirationEvent extends AbstractEvent<Void> {
+    class SessionExpirationEvent extends AbstractZkBackingStoreEvent<Void> {
         @Override
         public Void execute() {
             checkIsStarted();
@@ -413,7 +387,7 @@ public class ZkBackingStore implements BackingStore {
     /**
      * Handles a change to the /controller znode.
      */
-    class ControllerChangeEvent extends AbstractEvent<Void> {
+    class ControllerChangeEvent extends AbstractZkBackingStoreEvent<Void> {
         @Override
         public Void execute() {
             checkIsStarted();
@@ -444,7 +418,7 @@ public class ZkBackingStore implements BackingStore {
     /**
      * Try to become the active controller.
      */
-    class TryToActivateEvent extends AbstractEvent<Void> {
+    class TryToActivateEvent extends AbstractZkBackingStoreEvent<Void> {
         private final boolean registerBroker;
 
         TryToActivateEvent(boolean registerBroker) {
@@ -477,7 +451,7 @@ public class ZkBackingStore implements BackingStore {
      * Update the current broker information.  Unlike the original broker
      * znode registration, this doesn't change the broker epoch.
      */
-    class UpdateBrokerInfoEvent extends AbstractEvent<Void> {
+    class UpdateBrokerInfoEvent extends AbstractZkBackingStoreEvent<Void> {
         private final BrokerInfo newBrokerInfo;
 
         UpdateBrokerInfoEvent(BrokerInfo newBrokerInfo) {
@@ -495,7 +469,7 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
-    class BrokerChildChangeEvent extends AbstractEvent<Void> {
+    class BrokerChildChangeEvent extends AbstractZkBackingStoreEvent<Void> {
         @Override
         public Void execute() {
             checkIsStartedAndActive();
@@ -525,7 +499,7 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
-    class BrokerChangeEvent extends AbstractEvent<Void> {
+    class BrokerChangeEvent extends AbstractZkBackingStoreEvent<Void> {
         private final int brokerId;
 
         BrokerChangeEvent(int brokerId) {
@@ -571,7 +545,7 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
-    class TopicChildChangeEvent extends AbstractEvent<Void> {
+    class TopicChildChangeEvent extends AbstractZkBackingStoreEvent<Void> {
         @Override
         public Void execute() {
             checkIsStartedAndActive();
@@ -602,7 +576,7 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
-    class TopicChangeEvent extends AbstractEvent<Void> {
+    class TopicChangeEvent extends AbstractZkBackingStoreEvent<Void> {
         private final String topic;
 
         TopicChangeEvent(String topic) {
@@ -683,14 +657,14 @@ public class ZkBackingStore implements BackingStore {
     ZkBackingStore(AtomicReference<Throwable> lastUnexpectedError,
                    Logger log,
                    int nodeId,
-                   EventQueue eventQueue,
+                   EventQueue backingStoreQueue,
                    KafkaZkClient zkClient) {
         this.lastUnexpectedError = lastUnexpectedError;
         Objects.requireNonNull(log);
         this.log = log;
         this.nodeId = nodeId;
-        Objects.requireNonNull(eventQueue);
-        this.eventQueue = eventQueue;
+        Objects.requireNonNull(backingStoreQueue);
+        this.backingStoreQueue = backingStoreQueue;
         Objects.requireNonNull(zkClient);
         this.zkClient = zkClient;
         this.zkStateChangeHandler = new ZkStateChangeHandler();
@@ -712,18 +686,18 @@ public class ZkBackingStore implements BackingStore {
     @Override
     public CompletableFuture<Void> start(BrokerInfo newBrokerInfo,
                                          ChangeListener newChangeListener) {
-        return eventQueue.append(new StartEvent(newBrokerInfo, newChangeListener));
+        return backingStoreQueue.append(new StartEvent(newBrokerInfo, newChangeListener));
     }
 
     @Override
     public CompletableFuture<Void> updateBrokerInfo(BrokerInfo newBrokerInfo) {
-        return eventQueue.append(new UpdateBrokerInfoEvent(newBrokerInfo));
+        return backingStoreQueue.append(new UpdateBrokerInfoEvent(newBrokerInfo));
     }
 
     @Override
     public void shutdown(TimeUnit timeUnit, long timeSpan) {
         log.debug("Shutting down with a timeout of {} {}.", timeSpan, timeUnit);
-        eventQueue.shutdown(new StopEvent(), timeUnit, timeSpan);
+        backingStoreQueue.shutdown(new StopEvent(), timeUnit, timeSpan);
     }
 
     @Override
@@ -734,7 +708,7 @@ public class ZkBackingStore implements BackingStore {
         } catch (TimeoutException e) {
             // Ignore duplicate shutdown.
         }
-        eventQueue.close();
+        backingStoreQueue.close();
         log.debug("Close complete.");
     }
 
@@ -749,8 +723,8 @@ public class ZkBackingStore implements BackingStore {
     }
 
     // Visible for testing.
-    EventQueue eventQueue() {
-        return eventQueue;
+    EventQueue backingStoreQueue() {
+        return backingStoreQueue;
     }
 
     // Visible for testing.
@@ -760,7 +734,7 @@ public class ZkBackingStore implements BackingStore {
 
     // Visible for testing.
     MetadataState metadataState() throws ExecutionException, InterruptedException {
-        return eventQueue.append(new EventQueue.Event<MetadataState>() {
+        return backingStoreQueue.append(new EventQueue.Event<MetadataState>() {
             @Override
             public MetadataState run() {
                 return state == null ? null : state.duplicate();

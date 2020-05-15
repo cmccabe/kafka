@@ -262,7 +262,7 @@ public class ZkBackingStoreTest {
                     new ControllerTestUtils.BlockingEvent();
                 int newActiveNodeId;
                 try {
-                    ensemble.stores.get(activeNodeId).eventQueue().append(blockingEvent);
+                    ensemble.stores.get(activeNodeId).backingStoreQueue().append(blockingEvent);
                     blockingEvent.started().await();
                     // Trigger controller election.
                     ensemble.stores.get(0).zkClient().

@@ -42,7 +42,7 @@ public final class KafkaControllerManager implements ControllerManager {
     private final Logger log;
     private final AtomicReference<Throwable> lastUnexpectedError;
     private final BackingStore backingStore;
-    private final EventQueue eventQueue;
+    private final EventQueue controllerQueue;
     private final KafkaChangeListener changeListener;
     private MetadataState state;
     private boolean started;
@@ -50,18 +50,18 @@ public final class KafkaControllerManager implements ControllerManager {
     class KafkaChangeListener implements BackingStore.ChangeListener {
         @Override
         public void activate(MetadataState newState) {
-            eventQueue.append(new ActivateEvent(newState));
+            controllerQueue.append(new ActivateEvent(newState));
         }
 
         @Override
         public void deactivate() {
-            eventQueue.append(new DeactivateEvent());
+            controllerQueue.append(new DeactivateEvent());
         }
 
         @Override
         public void handleBrokerUpdates(List<MetadataState.Broker> changedBrokers,
                                         List<Integer> deletedBrokerIds) {
-            eventQueue.append(new EventQueue.Event<Void>() {
+            controllerQueue.append(new EventQueue.Event<Void>() {
                 @Override
                 public Void run() {
 //                    if (state == null) return null;
@@ -221,12 +221,12 @@ public final class KafkaControllerManager implements ControllerManager {
     KafkaControllerManager(LogContext logContext,
                            AtomicReference<Throwable> lastUnexpectedError,
                            BackingStore backingStore,
-                           EventQueue eventQueue) {
+                           EventQueue controllerQueue) {
         this.logContext = logContext;
         this.log = logContext.logger(KafkaControllerManager.class);
         this.lastUnexpectedError = lastUnexpectedError;
         this.backingStore = backingStore;
-        this.eventQueue = eventQueue;
+        this.controllerQueue = controllerQueue;
         this.changeListener = new KafkaChangeListener();
         this.state = null;
         this.started = false;
@@ -234,7 +234,7 @@ public final class KafkaControllerManager implements ControllerManager {
 
     @Override
     public CompletableFuture<Void> start(BrokerInfo newBrokerInfo) {
-        return eventQueue.append(new StartEvent(newBrokerInfo));
+        return controllerQueue.append(new StartEvent(newBrokerInfo));
     }
 
     @Override
