@@ -53,7 +53,7 @@ public class ZkBackingStoreTest {
     private static final Logger log = LoggerFactory.getLogger(ZkBackingStoreTest.class);
 
     @Rule
-    final public Timeout globalTimeout = Timeout.seconds(20); // 60
+    final public Timeout globalTimeout = Timeout.seconds(40);
 
     @Test
     public void testCreateAndClose() throws Exception {
@@ -68,18 +68,21 @@ public class ZkBackingStoreTest {
         }
     }
 
-    private static class TrackingActivationListener implements BackingStore.ChangeListener {
+    private static class TrackingActivationListener implements BackingStore.Activator,
+            BackingStore.Controller {
         private boolean active;
         private final CountDownLatch hasActivated = new CountDownLatch(1);
 
         @Override
-        synchronized public void activate(MetadataState newState) {
+        synchronized public BackingStore.Controller activate(MetadataState newState,
+                                                             int controllerEpoch) {
             this.active = true;
             hasActivated.countDown();
+            return this;
         }
 
         @Override
-        synchronized public void deactivate() {
+        synchronized public void close() {
             this.active = false;
         }
 

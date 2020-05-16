@@ -17,19 +17,55 @@
 
 package org.apache.kafka.controller;
 
+import kafka.controller.ControllerManager;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.utils.EventQueue;
+import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
 import org.slf4j.Logger;
 
-public final class KafkaController implements AutoCloseable {
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+
+public final class KafkaController implements BackingStore.Controller {
     private final Logger log;
     private final BackingStore backingStore;
+    private final EventQueue controllerQueue;
+    private final MetadataState state;
+    private final int controllerEpoch;
 
-    KafkaController(LogContext logContext, BackingStore backingStore) {
+    KafkaController(LogContext logContext,
+                    String threadNamePrefix,
+                    BackingStore backingStore,
+                    MetadataState state,
+                    int controllerEpoch) {
         this.log = logContext.logger(KafkaController.class);
         this.backingStore = backingStore;
+        this.controllerQueue = new KafkaEventQueue(logContext, threadNamePrefix);
+        this.state = state;
+        this.controllerEpoch = controllerEpoch;
+    }
+
+    public CompletableFuture<Map<TopicPartition, ControllerManager.PartitionLeaderElectionResult>>
+                electLeaders(int timeoutMs, Set<TopicPartition> parts) {
+        return null;
     }
 
     @Override
     public void close() {
+
+    }
+
+    @Override
+    public void handleBrokerUpdates(List<MetadataState.Broker> changedBrokers, List<Integer> deletedBrokerIds) {
+
+    }
+
+    @Override
+    public void handleTopicUpdates(List<MetadataState.Topic> changed, List<String> deleted) {
+
     }
 }

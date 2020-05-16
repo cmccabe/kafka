@@ -28,18 +28,24 @@ public interface BackingStore extends AutoCloseable {
     /**
      * Listens for controller activation and deactivation events.
      */
-    interface ChangeListener {
+    interface Activator {
         /**
          * Become the active controller.
          *
-         * @param newState      The current state.
+         * @param newState          The current state.
+         * @param controllerEpoch   The controller epoch.
          */
-        void activate(MetadataState newState);
+        Controller activate(MetadataState newState, int controllerEpoch);
+    }
 
+    /**
+     * Listens for controller state changes.
+     */
+    interface Controller extends AutoCloseable {
         /**
-         * Stop being the active controller.
+         * Stop this change listener because this node is no longer the active controller.
          */
-        void deactivate();
+        void close();
 
         /**
          * Handle changes to the brokers in the cluster.
@@ -58,11 +64,11 @@ public interface BackingStore extends AutoCloseable {
      * Start this backing store.
      *
      * @param brokerInfo    The broker that we're registering.
-     * @param listener      A listener for backing store events.
+     * @param activator     The callback object to use when activating.
      *
      * @return              A future that is completed when we finish registering with ZK.
      */
-    CompletableFuture<Void> start(BrokerInfo brokerInfo, ChangeListener listener);
+    CompletableFuture<Void> start(BrokerInfo brokerInfo, Activator activator);
 
     /**
      * Change the broker information.

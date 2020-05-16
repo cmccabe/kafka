@@ -71,13 +71,28 @@ public class ZkBackingStore implements BackingStore {
     private final TopicChildChangeHandler topicChildChangeHandler;
     private final Map<String, TopicChangeHandler> topicChangeHandlers;
     private boolean started;
-    private ChangeListener changeListener;
+    private Activator activator;
     private long brokerEpoch;
     private BrokerInfo brokerInfo;
     private int activeId;
-    private int controllerEpoch;
-    private int epochZkVersion;
-    private MetadataState state;
+    private ActiveZkBackingStoreState activeState;
+
+    static class ActiveZkBackingStoreState {
+        final int controllerEpoch;
+        final int epochZkVersion;
+        final MetadataState metadata;
+        final Controller controller;
+
+        ActiveZkBackingStoreState(int controllerEpoch,
+                                  int epochZkVersion,
+                                  MetadataState metadata,
+                                  Controller controller) {
+            this.controllerEpoch = controllerEpoch;
+            this.epochZkVersion = epochZkVersion;
+            this.metadata = metadata;
+            this.controller = controller;
+        }
+    }
 
     /**
      * Handles the ZooKeeper session getting dropped or re-established.
@@ -95,7 +110,7 @@ public class ZkBackingStore implements BackingStore {
             // without a ZK session.  Then we prepend the SessionExpirationEvent to the
             // queue, so that it is handled first.  It will trigger our resignation, if
             // needed.
-            CompletableFuture<Integer> future = backingStoreQueue.enqueue(false,
+            CompletableFuture<Void> future = backingStoreQueue.enqueue(false,
                 ZkSessionDropCanceller.INSTANCE,
                 null,
                 new SessionExpirationEvent());
@@ -295,7 +310,7 @@ public class ZkBackingStore implements BackingStore {
      */
     private void checkIsStartedAndActive() {
         checkIsStarted();
-        if (nodeId != activeId) {
+        if (activeState == null) {
             throw new ControllerMovedException("This node is not the " +
                 "active controller.");
         }
@@ -309,14 +324,13 @@ public class ZkBackingStore implements BackingStore {
      * @param logSuffix     What to include in the log message.
      */
     private void resignIfActive(boolean deleteZnode, String logSuffix) {
-        if (activeId != nodeId) {
+        if (activeState == null) {
             log.info("{}", logSuffix);
             return;
         }
         log.warn("Resigning because {}{}",
             logSuffix.substring(0, 1).toLowerCase(Locale.ROOT),
             logSuffix.substring(1));
-        state = null;
         try {
             zkClient.unregisterZNodeChildChangeHandler(brokerChildChangeHandler.path());
             zkClient.unregisterZNodeChildChangeHandler(topicChildChangeHandler.path());
@@ -330,14 +344,14 @@ public class ZkBackingStore implements BackingStore {
                 zkClient.unregisterZNodeChangeHandler(iter.next().path());
                 iter.remove();
             }
-            changeListener.deactivate();
+            activeState.controller.close();
         } catch (Throwable e) {
             log.error("Unable to unregister ZkClient watches.", e);
             lastUnexpectedError.set(e);
         }
         if (deleteZnode) {
             try {
-                zkClient.deleteController(epochZkVersion);
+                zkClient.deleteController(activeState.epochZkVersion);
             } catch (ControllerMovedException e) {
                 log.info("Tried to delete {} during resignation, but it has already " +
                     "been modified.", ControllerZNode.path());
@@ -348,8 +362,7 @@ public class ZkBackingStore implements BackingStore {
             }
         }
         activeId = -1;
-        controllerEpoch = -1;
-        epochZkVersion = -1;
+        activeState = null;
     }
 
     /**
@@ -357,12 +370,12 @@ public class ZkBackingStore implements BackingStore {
      */
     class StartEvent extends AbstractZkBackingStoreEvent<Void> {
         private final BrokerInfo newBrokerInfo;
-        private final ChangeListener newChangeListener;
+        private final Activator newActivator;
 
-        StartEvent(BrokerInfo newBrokerInfo, ChangeListener newChangeListener) {
+        StartEvent(BrokerInfo newBrokerInfo, Activator newActivator) {
             super(false);
             this.newBrokerInfo = newBrokerInfo;
-            this.newChangeListener = newChangeListener;
+            this.newActivator = newActivator;
         }
 
         @Override
@@ -376,7 +389,7 @@ public class ZkBackingStore implements BackingStore {
             zkClient.registerZNodeChangeHandlerAndCheckExistence(controllerChangeHandler);
             brokerInfo = newBrokerInfo;
             backingStoreQueue.append(new TryToActivateEvent(false));
-            changeListener = newChangeListener;
+            activator = newActivator;
             started = true;
             log.info("{}: initialized ZkBackingStore with brokerInfo {}.",
                 name, newBrokerInfo);
@@ -399,7 +412,7 @@ public class ZkBackingStore implements BackingStore {
             zkClient.unregisterZNodeChangeHandler(controllerChangeHandler.path());
             resignIfActive(true, "The backing store is shutting down.");
             brokerInfo = null;
-            changeListener = null;
+            activator = null;
             return null;
         }
     }
@@ -407,20 +420,16 @@ public class ZkBackingStore implements BackingStore {
     /**
      * Handle the ZooKeeper session expiring.
      */
-    class SessionExpirationEvent extends AbstractZkBackingStoreEvent<Integer> {
+    class SessionExpirationEvent extends AbstractZkBackingStoreEvent<Void> {
         SessionExpirationEvent() {
             super(false);
         }
 
         @Override
-        public Integer execute() {
+        public Void execute() {
             checkIsStarted();
-            int oldControllerEpoch = -1;
-            if (activeId == nodeId) {
-                oldControllerEpoch = controllerEpoch;
-            }
             resignIfActive(false, "The zookeeper session expired");
-            return oldControllerEpoch;
+            return null;
         }
     }
 
@@ -482,12 +491,11 @@ public class ZkBackingStore implements BackingStore {
             zkClient.registerZNodeChangeHandlerAndCheckExistence(
                 controllerChangeHandler);
             activeId = nodeId;
-            controllerEpoch = result.controllerEpoch();
-            epochZkVersion = result.epochZkVersion();
             log.info("{}, {} successfully elected as the controller. Epoch " +
                 "incremented to {} and epoch zk version is now {}", name,
-                nodeId, controllerEpoch, epochZkVersion);
-            loadZkState();
+                nodeId, result.controllerEpoch(), result.epochZkVersion());
+            activeState = loadActiveState(
+                result.controllerEpoch(), result.epochZkVersion());
             return null;
         }
     }
@@ -544,7 +552,8 @@ public class ZkBackingStore implements BackingStore {
             List<MetadataState.Broker> changed = new ArrayList<>();
             MetadataState.BrokerCollection newBrokers = loadBrokerChildren();
             for (MetadataState.Broker newBroker : newBrokers) {
-                MetadataState.Broker existingBroker = state.brokers().find(newBroker);
+                MetadataState.Broker existingBroker =
+                    activeState.metadata.brokers().find(newBroker);
                 if (!newBroker.equals(existingBroker)) {
                     if (existingBroker == null) {
                         registerBrokerChangeHandler(newBroker.brokerId());
@@ -553,14 +562,14 @@ public class ZkBackingStore implements BackingStore {
                 }
             }
             List<Integer> deleted = new ArrayList<>();
-            for (MetadataState.Broker existingBroker : state.brokers()) {
+            for (MetadataState.Broker existingBroker : activeState.metadata.brokers()) {
                 if (newBrokers.find(existingBroker) == null) {
                     deleted.add(existingBroker.brokerId());
                     unregisterBrokerChangeHandler(existingBroker.brokerId());
                 }
             }
-            state.setBrokers(newBrokers);
-            changeListener.handleBrokerUpdates(changed, deleted);
+            activeState.metadata.setBrokers(newBrokers);
+            activeState.controller.handleBrokerUpdates(changed, deleted);
             return null;
         }
     }
@@ -576,7 +585,8 @@ public class ZkBackingStore implements BackingStore {
         @Override
         public Void execute() {
             checkIsStartedAndActive();
-            MetadataState.Broker existingBroker = state.brokers().find(brokerId);
+            MetadataState.Broker existingBroker =
+                activeState.metadata.brokers().find(brokerId);
             if (existingBroker == null) {
                 throw new RuntimeException("Received BrokerChangeEvent for broker " +
                     brokerId + ", but that broker is not in our cached metadata.");
@@ -587,8 +597,8 @@ public class ZkBackingStore implements BackingStore {
                 // The broker znode must have been deleted between the change
                 // notification firing and this handler.  Handle the broker going away.
                 log.debug("{}: broker {} is now gone.", name, brokerId);
-                state.brokers().remove(existingBroker);
-                changeListener.handleBrokerUpdates(
+                activeState.metadata.brokers().remove(existingBroker);
+                activeState.controller.handleBrokerUpdates(
                     Collections.emptyList(), Collections.singletonList(brokerId));
                 return null;
             }
@@ -599,9 +609,9 @@ public class ZkBackingStore implements BackingStore {
             if (!stateBroker.equals(existingBroker)) {
                 log.debug("{}: The information for broker {} is now {}",
                     name, brokerId, stateBroker);
-                state.brokers().remove(existingBroker);
-                state.brokers().add(stateBroker);
-                changeListener.handleBrokerUpdates(
+                activeState.metadata.brokers().remove(existingBroker);
+                activeState.metadata.brokers().add(stateBroker);
+                activeState.controller.handleBrokerUpdates(
                     Collections.singletonList(stateBroker.duplicate()),
                     Collections.emptyList());
             } else {
@@ -626,7 +636,8 @@ public class ZkBackingStore implements BackingStore {
             List<MetadataState.Topic> changed = new ArrayList<>();
 
             for (MetadataState.Topic newTopic : newTopics) {
-                MetadataState.Topic existingTopic = state.topics().find(newTopic);
+                MetadataState.Topic existingTopic =
+                    activeState.metadata.topics().find(newTopic);
                 if (!newTopic.equals(existingTopic)) {
                     if (existingTopic == null) {
                         registerTopicChangeHandler(newTopic.name());
@@ -635,14 +646,14 @@ public class ZkBackingStore implements BackingStore {
                 }
             }
             List<String> deleted = new ArrayList<>();
-            for (MetadataState.Topic existingTopic : state.topics()) {
+            for (MetadataState.Topic existingTopic : activeState.metadata.topics()) {
                 if (newTopics.find(existingTopic) == null) {
                     deleted.add(existingTopic.name());
                     unregisterTopicChangeHandler(existingTopic.name());
                 }
             }
-            state.setTopics(newTopics);
-            changeListener.handleTopicUpdates(changed, deleted);
+            activeState.metadata.setTopics(newTopics);
+            activeState.controller.handleTopicUpdates(changed, deleted);
             return null;
         }
     }
@@ -667,11 +678,13 @@ public class ZkBackingStore implements BackingStore {
             if (newTopic == null) {
                 newTopic = new MetadataState.Topic().setName(topic);
             }
-            MetadataState.Topic existingTopic = state.topics().find(newTopic);
+            MetadataState.Topic existingTopic =
+                activeState.metadata.topics().find(newTopic);
             if (!newTopic.equals(existingTopic)) {
-                state.topics().remove(newTopic);
-                state.topics().add(newTopic.duplicate());
-                changeListener.handleTopicUpdates(Collections.singletonList(newTopic.duplicate()),
+                activeState.metadata.topics().remove(newTopic);
+                activeState.metadata.topics().add(newTopic.duplicate());
+                activeState.controller.handleTopicUpdates(
+                    Collections.singletonList(newTopic.duplicate()),
                     Collections.emptyList());
             }
             // TODO: add "auto-revert changes to topics in deleting state" here?
@@ -679,8 +692,9 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
-    private void loadZkState() {
-        this.state = new MetadataState();
+    private ActiveZkBackingStoreState loadActiveState(int controllerEpoch,
+                                                      int epochZkVersion) {
+        MetadataState state = new MetadataState();
         zkClient.registerZNodeChildChangeHandler(brokerChildChangeHandler);
         zkClient.registerZNodeChildChangeHandler(topicChildChangeHandler);
         state.setBrokers(loadBrokerChildren());
@@ -690,7 +704,9 @@ public class ZkBackingStore implements BackingStore {
         for (MetadataState.Broker broker : state.brokers()) {
             registerBrokerChangeHandler(broker.brokerId());
         }
-        changeListener.activate(state.duplicate());
+        Controller controller = activator.activate(state, controllerEpoch);
+        return new ActiveZkBackingStoreState(controllerEpoch,
+            epochZkVersion, state, controller);
     }
 
     private MetadataState.BrokerCollection loadBrokerChildren() {
@@ -746,19 +762,17 @@ public class ZkBackingStore implements BackingStore {
         this.topicChildChangeHandler = new TopicChildChangeHandler();
         this.topicChangeHandlers = new HashMap<>();
         this.started = false;
-        this.changeListener = null;
+        this.activator = null;
         this.brokerEpoch = -1;
         this.brokerInfo = null;
         this.activeId = -1;
-        this.controllerEpoch = -1;
-        this.epochZkVersion = -1;
-        this.state = null;
+        this.activeState = null;
     }
 
     @Override
     public CompletableFuture<Void> start(BrokerInfo newBrokerInfo,
-                                         ChangeListener newChangeListener) {
-        return backingStoreQueue.append(new StartEvent(newBrokerInfo, newChangeListener));
+                                         Activator newActivator) {
+        return backingStoreQueue.append(new StartEvent(newBrokerInfo, newActivator));
     }
 
     @Override
@@ -814,7 +828,7 @@ public class ZkBackingStore implements BackingStore {
         return backingStoreQueue.append(new EventQueue.Event<MetadataState>() {
             @Override
             public MetadataState run() {
-                return state == null ? null : state.duplicate();
+                return activeState == null ? null : activeState.metadata.duplicate();
             }
         }).get();
     }
