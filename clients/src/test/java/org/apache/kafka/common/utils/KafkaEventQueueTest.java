@@ -30,6 +30,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -117,12 +118,40 @@ public class KafkaEventQueueTest {
         assertEquals(3, numEventsExecuted.get());
     }
 
+    private static class TestEvent implements EventQueue.Event<Integer> {
+        private final int i;
+        private final Throwable cancellationException;
+
+        TestEvent(int i, Throwable cancellationException) {
+            this.i = i;
+            this.cancellationException = cancellationException;
+        }
+
+        @Override
+        public Integer run() throws Throwable {
+            return i;
+        }
+    }
+
+    private static class TestEventCanceller
+            implements Function<EventQueue.Event<?>, Throwable> {
+        final static TestEventCanceller INSTANCE = new TestEventCanceller();
+
+        @Override
+        public Throwable apply(EventQueue.Event<?> event) {
+            if (!(event instanceof TestEvent)) {
+                return null;
+            }
+            TestEvent testEvent = (TestEvent) event;
+            return testEvent.cancellationException;
+        }
+    }
+
     @Test
-    public void testClearException() throws Exception {
+    public void testCanceller() throws Exception {
         KafkaEventQueue queue =
-            new KafkaEventQueue(new LogContext(), "testClearException");
+            new KafkaEventQueue(new LogContext(), "testCanceller");
         final CountDownLatch setupLatch = new CountDownLatch(1);
-        final AtomicBoolean failed = new AtomicBoolean(false);
         queue.append(() -> {
             try {
                 setupLatch.await();
@@ -131,23 +160,32 @@ public class KafkaEventQueueTest {
             }
             return null;
         });
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        List<CompletableFuture<Integer>> futures = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
-            futures.add(queue.append(() -> {
-                failed.set(true);
-                return null;
-            }));
+            Throwable e = null;
+            if ((i % 3) != 0) {
+                e = new RuntimeException();
+            }
+            futures.add(queue.append(new TestEvent(i, e)));
         }
-        CompletableFuture<Integer> clearFuture = queue.clearAndEnqueue(
-            new RuntimeException("cleared"), () -> 123);
+        CompletableFuture<Integer> clearFuture = queue.enqueue(false,
+            TestEventCanceller.INSTANCE, null, () -> 123);
         setupLatch.countDown();
-        assertFalse(failed.get());
-        for (CompletableFuture<Void> future : futures) {
-            assertEquals(RuntimeException.class,
-                assertThrows(ExecutionException.class,
-                    () -> future.get()).getCause().getClass());
+        for (int i = 0; i < futures.size(); i++) {
+            if ((i % 3) == 0) {
+                assertEquals(Integer.valueOf(i), futures.get(i).get());
+            } else {
+                final int j = i;
+                assertEquals(RuntimeException.class,
+                    assertThrows(ExecutionException.class,
+                        () -> futures.get(j).get()).getCause().getClass());
+            }
         }
         assertEquals(Integer.valueOf(123), clearFuture.get());
+        for (int i = 0; i < 10; i++) {
+            assertEquals(Integer.valueOf(i),
+                queue.append(new TestEvent(i, new RuntimeException())).get());
+        }
         queue.close();
     }
 }

@@ -39,7 +39,6 @@ import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import scala.compat.java8.OptionConverters;
 import scala.jdk.javaapi.CollectionConverters;
@@ -57,6 +56,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 public class ZkBackingStore implements BackingStore {
     private final AtomicReference<Throwable> lastUnexpectedError;
@@ -90,17 +90,42 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void beforeInitializingSession() {
-            NotControllerException exception =
-                new NotControllerException("Zookeeper session expired");
-            CompletableFuture<Void> future = backingStoreQueue.clearAndEnqueue(exception,
+            // Handle the ZooKeeper session dropping.  We immediately cancel all events
+            // that would require us to be the controller.  We can't be the controller
+            // without a ZK session.  Then we prepend the SessionExpirationEvent to the
+            // queue, so that it is handled first.  It will trigger our resignation, if
+            // needed.
+            CompletableFuture<Integer> future = backingStoreQueue.enqueue(false,
+                ZkSessionDropCanceller.INSTANCE,
+                null,
                 new SessionExpirationEvent());
+            // Block until the SessionExpirationEvent is handled.  This ensures that we
+            // have resigned and cleared the controller state before we try to
+            // re-establish the connection to ZK.
             ControllerUtils.await(log, future);
-            changeListener.deactivate();
         }
 
         @Override
         public void afterInitializingSession() {
+            // Once we have a new ZK session, try to become the active controller.
             backingStoreQueue.append(new TryToActivateEvent(true));
+        }
+    }
+
+    static class ZkSessionDropCanceller implements Function<EventQueue.Event<?>, Throwable> {
+        final static ZkSessionDropCanceller INSTANCE = new ZkSessionDropCanceller();
+
+        @Override
+        public Throwable apply(EventQueue.Event<?> event) {
+            if (!(event instanceof AbstractZkBackingStoreEvent)) {
+                return null;
+            }
+            AbstractZkBackingStoreEvent<?> e = (AbstractZkBackingStoreEvent<?>) event;
+            if (e.cancelIfZkSessionDrops) {
+                return new NotControllerException("Zookeeper session expired");
+            } else {
+                return null;
+            }
         }
     }
 
@@ -228,21 +253,23 @@ public class ZkBackingStore implements BackingStore {
     }
 
     abstract class AbstractZkBackingStoreEvent<T> extends AbstractEvent<T> {
-        public AbstractZkBackingStoreEvent() {
+        private final boolean cancelIfZkSessionDrops;
+
+        public AbstractZkBackingStoreEvent(boolean cancelIfZkSessionDrops) {
             super(log);
+            this.cancelIfZkSessionDrops = cancelIfZkSessionDrops;
         }
 
         @Override
-        public void handleControllerMoved(Throwable e) throws Throwable {
-            resignIfActive(true, "The controller got a " + e.getClass().getSimpleName());
-            throw new NotControllerException(e.getMessage());
-        }
-
-        @Override
-        public void handleUnexpectedError(Throwable e) throws Throwable {
-            lastUnexpectedError.set(e);
-            resignIfActive(true, "The controller had an unexpected error.");
-            throw e;
+        public Throwable handleException(Throwable e) throws Throwable {
+            if (e instanceof ControllerMovedException) {
+                resignIfActive(true, "The controller got a ControllerMovedException.");
+                return new NotControllerException(e.getMessage());
+            } else {
+                lastUnexpectedError.set(e);
+                resignIfActive(true, "The controller had an unexpected error.");
+                return e;
+            }
         }
     }
 
@@ -333,6 +360,7 @@ public class ZkBackingStore implements BackingStore {
         private final ChangeListener newChangeListener;
 
         StartEvent(BrokerInfo newBrokerInfo, ChangeListener newChangeListener) {
+            super(false);
             this.newBrokerInfo = newBrokerInfo;
             this.newChangeListener = newChangeListener;
         }
@@ -360,6 +388,10 @@ public class ZkBackingStore implements BackingStore {
      * Shut down the ZkBackingStore.
      */
     class StopEvent extends AbstractZkBackingStoreEvent<Void> {
+        StopEvent() {
+            super(false);
+        }
+
         @Override
         public Void execute() {
             checkIsStarted();
@@ -375,12 +407,20 @@ public class ZkBackingStore implements BackingStore {
     /**
      * Handle the ZooKeeper session expiring.
      */
-    class SessionExpirationEvent extends AbstractZkBackingStoreEvent<Void> {
+    class SessionExpirationEvent extends AbstractZkBackingStoreEvent<Integer> {
+        SessionExpirationEvent() {
+            super(false);
+        }
+
         @Override
-        public Void execute() {
+        public Integer execute() {
             checkIsStarted();
+            int oldControllerEpoch = -1;
+            if (activeId == nodeId) {
+                oldControllerEpoch = controllerEpoch;
+            }
             resignIfActive(false, "The zookeeper session expired");
-            return null;
+            return oldControllerEpoch;
         }
     }
 
@@ -388,6 +428,10 @@ public class ZkBackingStore implements BackingStore {
      * Handles a change to the /controller znode.
      */
     class ControllerChangeEvent extends AbstractZkBackingStoreEvent<Void> {
+        ControllerChangeEvent() {
+            super(true);
+        }
+
         @Override
         public Void execute() {
             checkIsStarted();
@@ -422,6 +466,7 @@ public class ZkBackingStore implements BackingStore {
         private final boolean registerBroker;
 
         TryToActivateEvent(boolean registerBroker) {
+            super(true);
             this.registerBroker = registerBroker;
         }
 
@@ -455,6 +500,7 @@ public class ZkBackingStore implements BackingStore {
         private final BrokerInfo newBrokerInfo;
 
         UpdateBrokerInfoEvent(BrokerInfo newBrokerInfo) {
+            super(false);
             this.newBrokerInfo = newBrokerInfo;
         }
 
@@ -469,7 +515,27 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
+    /**
+     * Deactivate the ZkBackingStore if it is active.
+     */
+    class DeactivateIfActiveEvent extends AbstractZkBackingStoreEvent<Void> {
+        DeactivateIfActiveEvent() {
+            super(true);
+        }
+
+        @Override
+        public Void execute() {
+            checkIsStarted();
+            resignIfActive(true, "Deactivating the ZkBackingStore.");
+            return null;
+        }
+    }
+
     class BrokerChildChangeEvent extends AbstractZkBackingStoreEvent<Void> {
+        BrokerChildChangeEvent() {
+            super(true);
+        }
+
         @Override
         public Void execute() {
             checkIsStartedAndActive();
@@ -503,6 +569,7 @@ public class ZkBackingStore implements BackingStore {
         private final int brokerId;
 
         BrokerChangeEvent(int brokerId) {
+            super(true);
             this.brokerId = brokerId;
         }
 
@@ -546,6 +613,10 @@ public class ZkBackingStore implements BackingStore {
     }
 
     class TopicChildChangeEvent extends AbstractZkBackingStoreEvent<Void> {
+        TopicChildChangeEvent() {
+            super(true);
+        }
+
         @Override
         public Void execute() {
             checkIsStartedAndActive();
@@ -580,6 +651,7 @@ public class ZkBackingStore implements BackingStore {
         private final String topic;
 
         TopicChangeEvent(String topic) {
+            super(true);
             this.topic = topic;
         }
 
@@ -692,6 +764,11 @@ public class ZkBackingStore implements BackingStore {
     @Override
     public CompletableFuture<Void> updateBrokerInfo(BrokerInfo newBrokerInfo) {
         return backingStoreQueue.append(new UpdateBrokerInfoEvent(newBrokerInfo));
+    }
+
+    @Override
+    public CompletableFuture<Void> deactivateIfActive() {
+        return backingStoreQueue.append(new DeactivateIfActiveEvent());
     }
 
     @Override

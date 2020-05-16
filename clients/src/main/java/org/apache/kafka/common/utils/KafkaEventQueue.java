@@ -20,6 +20,8 @@ package org.apache.kafka.common.utils;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
@@ -27,6 +29,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 
 public final class KafkaEventQueue implements EventQueue {
     /**
@@ -41,10 +44,9 @@ public final class KafkaEventQueue implements EventQueue {
         private final Event<T> event;
 
         /**
-         * If non-null, the exception that we should deliver to all subsequent queued
-         * events.
+         * If non-null, the canceller that we should apply to all subsequent events.
          */
-        private final Throwable clearException;
+        private final Function<Event<?>, Throwable> canceller;
 
         /**
          * The CompletableFuture that the caller can listen on.
@@ -67,9 +69,9 @@ public final class KafkaEventQueue implements EventQueue {
          */
         private long timeoutNs = Long.MAX_VALUE;
 
-        EventContext(Event<T> event, Throwable clearException) {
+        EventContext(Event<T> event, Function<Event<?>, Throwable> canceller) {
             this.event = event;
-            this.clearException = clearException;
+            this.canceller = canceller;
             this.future = new CompletableFuture<>();
         }
 
@@ -139,6 +141,16 @@ public final class KafkaEventQueue implements EventQueue {
         }
     }
 
+    private static class EventContextAndException {
+        private final EventContext<?> eventContext;
+        private final Throwable exception;
+
+        EventContextAndException(EventContext<?> eventContext, Throwable exception) {
+            this.eventContext = eventContext;
+            this.exception = exception;
+        }
+    }
+
     private class EventHandler implements Runnable {
         /**
          * The head of the event queue.
@@ -163,7 +175,7 @@ public final class KafkaEventQueue implements EventQueue {
         private void handleEvents() throws Throwable {
             while (true) {
                 EventContext<?> eventContext;
-                Throwable clearException = null;
+                Function<Event<?>, Throwable> canceller = null;
                 lock.lock();
                 try {
                     while (head.isSingleton()) {
@@ -175,23 +187,42 @@ public final class KafkaEventQueue implements EventQueue {
                         cond.await();
                     }
                     eventContext = head.next;
-                    if (eventContext.clearException != null && eventContext.next != head) {
-                        // If there is a clearException set, complete all the subsequent
-                        // events with it.
-                        clearException = eventContext.clearException;
-                        eventContext = eventContext.next;
-                    }
+                    canceller = eventContext.canceller;
                     eventContext.remove();
                     timeoutHandler.removeTimeout(eventContext);
                 } finally {
                     lock.unlock();
                 }
-                // Drop the lock and complete the future.
-                if (clearException == null) {
-                    eventContext.run();
-                } else {
-                    eventContext.completeWithException(clearException);
+                if (canceller != null) {
+                    applyCanceller(canceller);
                 }
+                eventContext.run();
+            }
+        }
+
+        private void applyCanceller(Function<Event<?>, Throwable> canceller) {
+            EventContext<?> cur, next;
+            List<EventContextAndException> toComplete = new ArrayList<>();
+            lock.lock();
+            try {
+                cur = head.next;
+                while (cur != head) {
+                    next = cur.next;
+                    Throwable e = canceller.apply(cur.event);
+                    if (e != null) {
+                        cur.remove();
+                        timeoutHandler.removeTimeout(cur);
+                        toComplete.add(new EventContextAndException(cur, e));
+                    }
+                    cur = next;
+                }
+            } finally {
+                lock.unlock();
+            }
+            // Complete the exceptions after dropping the lock, in case the completions
+            // take some time.
+            for (EventContextAndException c : toComplete) {
+                c.eventContext.completeWithException(c.exception);
             }
         }
 
@@ -333,11 +364,13 @@ public final class KafkaEventQueue implements EventQueue {
     }
 
     @Override
-    public <T> CompletableFuture<T> enqueue(boolean append, Throwable clearException,
-                                            Long deadlineNs, Event<T> event) {
+    public <T> CompletableFuture<T> enqueue(boolean append,
+                                            Function<Event<?>, Throwable> canceller,
+                                            Long deadlineNs,
+                                            Event<T> event) {
         lock.lock();
         try {
-            EventContext<T> eventContext = new EventContext<>(event, clearException);
+            EventContext<T> eventContext = new EventContext<>(event, canceller);
             if (closingTimeNs != Long.MAX_VALUE) {
                 eventContext.completeWithTimeout();
                 return eventContext.future;

@@ -18,6 +18,7 @@
 package org.apache.kafka.controller;
 
 import org.apache.kafka.common.errors.ControllerMovedException;
+import org.apache.kafka.common.errors.NotControllerException;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
@@ -46,17 +47,9 @@ abstract class AbstractEvent<T> implements EventQueue.Event<T> {
             if (e instanceof ExecutionException && e.getCause() != null) {
                 e = e.getCause();
             }
-            if (e instanceof ControllerMovedException) {
-                log.info("{}: caught ControllerMovedException after {} ms.", name,
-                    executionTimeToString(startNs));
-                handleControllerMoved(e);
-                throw e;
-            } else {
-                log.error("{}: finished after {} ms with unexpected error", name,
-                    executionTimeToString(startNs), e);
-                handleUnexpectedError(e);
-                throw e;
-            }
+            log.info("{}: caught {} after {} ms.", name, e.getClass().getSimpleName(),
+                executionTimeToString(startNs));
+            throw handleException(e);
         }
     }
 
@@ -65,9 +58,7 @@ abstract class AbstractEvent<T> implements EventQueue.Event<T> {
         return ControllerUtils.nanosToFractionalMillis(endNs - startNs);
     }
 
-    public abstract T execute();
+    public abstract T execute() throws Throwable;
 
-    public abstract void handleControllerMoved(Throwable e) throws Throwable;
-
-    public abstract void handleUnexpectedError(Throwable e) throws Throwable;
+    public abstract Throwable handleException(Throwable e) throws Throwable;
 }

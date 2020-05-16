@@ -75,6 +75,14 @@ public interface BackingStore extends AutoCloseable {
     CompletableFuture<Void> updateBrokerInfo(BrokerInfo newBrokerInfo);
 
     /**
+     * Deactivate this BackingStore if it is active.
+     *
+     * @return                  A future that is completed once we know the deactivation
+     *                          has been done.
+     */
+    CompletableFuture<Void> deactivateIfActive();
+
+    /**
      * Shut down the backing store after the given amount of time.
      *
      * @param timeUnit      The time unit to use for the timeout.

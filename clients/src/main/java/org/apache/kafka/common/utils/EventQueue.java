@@ -19,6 +19,7 @@ package org.apache.kafka.common.utils;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 public interface EventQueue extends AutoCloseable {
     interface Event<T> {
@@ -59,19 +60,6 @@ public interface EventQueue extends AutoCloseable {
     }
 
     /**
-     * Clear all existing elements, then append a new element to the end of the queue.
-     *
-     * @param t                 The exception to deliver to all existing events.
-     * @param event             The event to add after all existing events are cleared.
-     *
-     * @return                  A future which is completed with an exception or
-     *                          with the result of Event#run.
-     */
-    default <T> CompletableFuture<T> clearAndEnqueue(Throwable t, Event<T> event) {
-        return enqueue(false, t, null, event);
-    }
-
-    /**
      * Enqueue an event to be run in FIFO order.
      *
      * @param deadlineNs        The time in monotonic nanoseconds after which the future
@@ -94,8 +82,10 @@ public interface EventQueue extends AutoCloseable {
      * @param append            True if the element should be appended to the end of
      *                          the queue.  False if the element should be inserted to
      *                          the beginning.
-     * @param clearException    null, or an exception to deliver to all queued elements
-     *                          after this one.
+     * @param canceller         null, or an function to apply to all queued
+     *                          elements.  If the function returns an exception
+     *                          the event will be completed with that exception
+     *                          and removed from the queue.
      * @param deadlineNs        The time in monotonic nanoseconds after which the future
      *                          is completed with a
      *                          @{org.apache.kafka.common.errors.TimeoutException},
@@ -106,8 +96,10 @@ public interface EventQueue extends AutoCloseable {
      *                          with the result of Event#run.  If there was a
      *                          timeout, the event will not be run.
      */
-    <T> CompletableFuture<T> enqueue(boolean append, Throwable clearException,
-                                     Long deadlineNs, Event<T> event);
+    <T> CompletableFuture<T> enqueue(boolean append,
+                                     Function<Event<?>, Throwable> canceller,
+                                     Long deadlineNs,
+                                     Event<T> event);
 
     /**
      * Asynchronously shut down the event queue.
