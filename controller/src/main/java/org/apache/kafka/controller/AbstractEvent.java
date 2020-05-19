@@ -17,8 +17,6 @@
 
 package org.apache.kafka.controller;
 
-import org.apache.kafka.common.errors.ControllerMovedException;
-import org.apache.kafka.common.errors.NotControllerException;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;

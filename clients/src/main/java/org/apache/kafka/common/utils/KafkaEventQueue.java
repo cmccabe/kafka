@@ -141,11 +141,11 @@ public final class KafkaEventQueue implements EventQueue {
         }
     }
 
-    private static class EventContextAndException {
+    private static class ToCancel {
         private final EventContext<?> eventContext;
         private final Throwable exception;
 
-        EventContextAndException(EventContext<?> eventContext, Throwable exception) {
+        ToCancel(EventContext<?> eventContext, Throwable exception) {
             this.eventContext = eventContext;
             this.exception = exception;
         }
@@ -202,7 +202,7 @@ public final class KafkaEventQueue implements EventQueue {
 
         private void applyCanceller(Function<Event<?>, Throwable> canceller) {
             EventContext<?> cur, next;
-            List<EventContextAndException> toComplete = new ArrayList<>();
+            List<ToCancel> toCancel = new ArrayList<>();
             lock.lock();
             try {
                 cur = head.next;
@@ -212,7 +212,7 @@ public final class KafkaEventQueue implements EventQueue {
                     if (e != null) {
                         cur.remove();
                         timeoutHandler.removeTimeout(cur);
-                        toComplete.add(new EventContextAndException(cur, e));
+                        toCancel.add(new ToCancel(cur, e));
                     }
                     cur = next;
                 }
@@ -221,7 +221,7 @@ public final class KafkaEventQueue implements EventQueue {
             }
             // Complete the exceptions after dropping the lock, in case the completions
             // take some time.
-            for (EventContextAndException c : toComplete) {
+            for (ToCancel c : toCancel) {
                 c.eventContext.completeWithException(c.exception);
             }
         }

@@ -167,7 +167,7 @@ public final class KafkaControllerManager implements ControllerManager {
     public CompletableFuture<Map<TopicPartition, PartitionLeaderElectionResult>>
             electLeaders(int timeoutMs, Set<TopicPartition> parts) {
         return makeControllerCall(
-                controller -> controller.electLeaders(timeoutMs, parts));
+            controller -> controller.electLeaders(timeoutMs, parts));
     }
 
     @Override
