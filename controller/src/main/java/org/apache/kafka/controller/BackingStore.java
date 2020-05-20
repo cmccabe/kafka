@@ -18,47 +18,10 @@
 package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
-import org.apache.kafka.common.message.MetadataState;
 
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface BackingStore extends AutoCloseable {
-    /**
-     * Listens for controller activation and deactivation events.
-     */
-    interface Activator {
-        /**
-         * Become the active controller.
-         *
-         * @param newState          The current state.
-         * @param controllerEpoch   The controller epoch.
-         */
-        Controller activate(MetadataState newState, int controllerEpoch);
-    }
-
-    /**
-     * Listens for controller state changes.
-     */
-    interface Controller extends AutoCloseable {
-        /**
-         * Stop this change listener because this node is no longer the active controller.
-         */
-        void close();
-
-        /**
-         * Handle changes to the brokers in the cluster.
-         */
-        void handleBrokerUpdates(List<MetadataState.Broker> changedBrokers,
-                                 List<Integer> deletedBrokerIds);
-
-        /**
-         * Handle changes to the topics in the cluster.
-         */
-        void handleTopicUpdates(List<MetadataState.Topic> changed,
-                                List<String> deleted);
-    }
-
     /**
      * Start this backing store.
      *

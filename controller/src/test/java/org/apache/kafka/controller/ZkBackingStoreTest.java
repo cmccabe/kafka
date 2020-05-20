@@ -67,14 +67,12 @@ public class ZkBackingStoreTest {
         }
     }
 
-    private static class TrackingActivationListener implements BackingStore.Activator,
-            BackingStore.Controller {
+    private static class TrackingActivationListener implements Activator, Controller {
         private boolean active;
         private final CountDownLatch hasActivated = new CountDownLatch(1);
 
         @Override
-        synchronized public BackingStore.Controller activate(MetadataState newState,
-                                                             int controllerEpoch) {
+        synchronized public Controller activate(MetadataState newState, int controllerEpoch) {
             this.active = true;
             hasActivated.countDown();
             return this;

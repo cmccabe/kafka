@@ -91,9 +91,9 @@ public final class KafkaControllerManager implements ControllerManager {
         }
     }
 
-    class KafkaActivator implements BackingStore.Activator {
+    class KafkaActivator implements Activator {
         @Override
-        public BackingStore.Controller activate(MetadataState state, int epoch) {
+        public Controller activate(MetadataState state, int epoch) {
             KafkaController newController = new KafkaController(logContext,
                 threadNamePrefix, backingStore, state, epoch);
             lock.lock();

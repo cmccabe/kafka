@@ -30,7 +30,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
-public final class KafkaController implements BackingStore.Controller {
+public final class KafkaController implements Controller {
     private final Logger log;
     private final BackingStore backingStore;
     private final EventQueue controllerQueue;
