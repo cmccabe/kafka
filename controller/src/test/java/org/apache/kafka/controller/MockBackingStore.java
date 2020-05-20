@@ -18,15 +18,8 @@
 package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
-import org.apache.kafka.common.utils.MockTime;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 public class MockBackingStore implements BackingStore {
     private final Throwable startException;

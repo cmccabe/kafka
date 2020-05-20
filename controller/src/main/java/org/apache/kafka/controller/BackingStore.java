@@ -22,7 +22,6 @@ import org.apache.kafka.common.message.MetadataState;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 public interface BackingStore extends AutoCloseable {
     /**
