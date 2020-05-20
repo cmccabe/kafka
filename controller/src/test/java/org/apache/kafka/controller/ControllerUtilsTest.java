@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -35,6 +36,7 @@ public class ControllerUtilsTest {
         RuntimeException exception = new RuntimeException("foo");
         try {
             ControllerUtils.exceptionalFuture(exception).get();
+            Assert.fail("expected an execution exception.");
         } catch (ExecutionException e) {
             assertEquals(exception, e.getCause());
         }
