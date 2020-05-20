@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller;
 
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.Rule;
@@ -28,6 +29,16 @@ import static org.junit.Assert.assertEquals;
 public class ControllerUtilsTest {
     @Rule
     final public Timeout globalTimeout = Timeout.millis(120000);
+
+    @Test
+    public void testExceptionalFuture() throws Exception {
+        RuntimeException exception = new RuntimeException("foo");
+        try {
+            ControllerUtils.exceptionalFuture(exception).get();
+        } catch (ExecutionException e) {
+            assertEquals(exception, e.getCause());
+        }
+    }
 
     @Test
     public void testNanosToFractionalMillis() throws Exception {
