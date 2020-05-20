@@ -32,9 +32,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 
-public class KafkaControllerManagerTest {
+public class KafkaControllerManagerUnitTest {
     private static final Logger log =
-        LoggerFactory.getLogger(KafkaControllerManagerTest.class);
+        LoggerFactory.getLogger(KafkaControllerManagerUnitTest.class);
 
     @Rule
     final public Timeout globalTimeout = Timeout.seconds(40);

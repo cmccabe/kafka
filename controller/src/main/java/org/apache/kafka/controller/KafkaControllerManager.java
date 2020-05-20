@@ -162,7 +162,7 @@ public final class KafkaControllerManager implements ControllerManager {
                             lock.unlock();
                         }
                         lastUnexpectedError.set(e);
-                        return null;
+                        throw new RuntimeException(e);
                     }
                 });
         } catch (Exception e) {
