@@ -34,7 +34,7 @@ object ControllerManager {
  * functions in the Kafka cluster.  All brokers have a controller manager, but only
  * one node can be the controller.
  */
-trait ControllerManager {
+trait ControllerManager extends AutoCloseable {
   import ControllerManager._
 
   /**
@@ -43,6 +43,11 @@ trait ControllerManager {
    * @return A future that is completed when we finish registering with ZK.
    */
   def start(brokerInfo: BrokerInfo): CompletableFuture[Void]
+
+  /**
+   * Start the asynchronous process of shutting down this controller manager.
+   */
+  def shutdown(): Unit
 
   /**
    * Update the broker info.

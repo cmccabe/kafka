@@ -103,18 +103,18 @@ public interface EventQueue extends AutoCloseable {
 
     /**
      * Asynchronously shut down the event queue.
-     *
-     * No new events will be accepted, and the timeout will be initiated
-     * for all existing events.
-     *
-     * @param timeUnit      The time unit to use for the timeout.
-     * @param timeSpan      The amount of time to use for the timeout.
-     *                      Once the timeout elapses, any remaining queued
-     *                      events will get a
-     *                      @{org.apache.kafka.common.errors.TimeoutException}.
+     * See shutdown(Event<?>, TimeUnit, long);
      */
-    default void shutdown(TimeUnit timeUnit, long timeSpan) {
-        shutdown(new VoidEvent(), timeUnit, timeSpan);
+    default void shutdown() {
+        shutdown(new VoidEvent());
+    }
+
+    /**
+     * Asynchronously shut down the event queue.
+     * See shutdown(Event<?>, TimeUnit, long);
+     */
+    default void shutdown(Event<?> cleanupEvent) {
+        shutdown(cleanupEvent, TimeUnit.SECONDS, 0);
     }
 
     /**

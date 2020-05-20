@@ -30,6 +30,7 @@ import org.slf4j.Logger;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
@@ -74,6 +75,11 @@ public final class KafkaControllerManager implements ControllerManager {
         } finally {
             lock.unlock();
         }
+    }
+
+    @Override
+    public void close() throws Exception {
+
     }
 
     class KafkaActivator implements BackingStore.Activator {
@@ -156,6 +162,19 @@ public final class KafkaControllerManager implements ControllerManager {
         } finally {
             lock.unlock();
         }
+    }
+
+    @Override
+    public void shutdown() {
+        lock.lock();
+        try {
+            if (shutdown)
+                return;
+            shutdown = true;
+        } finally {
+            lock.unlock();
+        }
+        backingStore.shutdown();
     }
 
     @Override

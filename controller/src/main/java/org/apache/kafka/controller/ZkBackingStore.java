@@ -786,16 +786,16 @@ public class ZkBackingStore implements BackingStore {
     }
 
     @Override
-    public void shutdown(TimeUnit timeUnit, long timeSpan) {
-        log.debug("Shutting down with a timeout of {} {}.", timeSpan, timeUnit);
-        backingStoreQueue.shutdown(new StopEvent(), timeUnit, timeSpan);
+    public void shutdown() {
+        log.debug("Shutting down.");
+        backingStoreQueue.shutdown(new StopEvent());
     }
 
     @Override
     public void close() throws InterruptedException {
         log.debug("Initiating close..");
         try {
-            shutdown(TimeUnit.DAYS, 0);
+            shutdown();
         } catch (TimeoutException e) {
             // Ignore duplicate shutdown.
         }

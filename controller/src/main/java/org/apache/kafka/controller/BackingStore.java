@@ -89,19 +89,13 @@ public interface BackingStore extends AutoCloseable {
     CompletableFuture<Void> deactivateIfActive();
 
     /**
-     * Shut down the backing store after the given amount of time.
-     *
-     * @param timeUnit      The time unit to use for the timeout.
-     * @param timeSpan      The amount of time to use for the timeout.
-     *                      Once the timeout elapses, any remaining queued
-     *                      events will get a
-     *                      @{org.apache.kafka.common.errors.TimeoutException},
-     *                      as will any subsequent operations.
+     * Start the process of shutting down the backing store.
      */
-    void shutdown(TimeUnit timeUnit, long timeSpan);
+    void shutdown();
 
     /**
-     * Synchronously close the backing store and wait for any threads to be joined.
+     * Shut down the backing store and block until all resources and threads are
+     * cleaned up.
      */
     void close() throws InterruptedException;
 }

@@ -114,7 +114,7 @@ public class ZkBackingStoreTest {
                     CompletableFuture<Void> startFuture = store.start(broker0Info, listener);
                     startFuture.get();
                     listener.hasActivated.await();
-                    store.shutdown(TimeUnit.NANOSECONDS, 100);
+                    store.shutdown();
                     assertEquals(null, store.lastUnexpectedError());
                 }
             }
@@ -239,7 +239,7 @@ public class ZkBackingStoreTest {
         public void close() throws InterruptedException {
             for (ZkBackingStore store : stores) {
                 try {
-                    store.shutdown(TimeUnit.SECONDS, 0);
+                    store.shutdown();
                 } catch (TimeoutException e) {
                     // ignore
                 }
