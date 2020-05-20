@@ -79,7 +79,17 @@ public final class KafkaControllerManager implements ControllerManager {
 
     @Override
     public void close() throws Exception {
+        shutdown();
+        backingStore.close();
+    }
 
+    public boolean isShutdown() {
+        lock.lock();
+        try {
+            return shutdown;
+        } finally {
+            lock.unlock();
+        }
     }
 
     class KafkaActivator implements BackingStore.Activator {

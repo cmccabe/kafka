@@ -407,7 +407,9 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public Void execute() {
-            checkIsStarted();
+            if (!started) {
+                return null;
+            }
             zkClient.unregisterStateChangeHandler(zkStateChangeHandler.name());
             zkClient.unregisterZNodeChangeHandler(controllerChangeHandler.path());
             resignIfActive(true, "The backing store is shutting down.");

@@ -25,6 +25,7 @@ import org.apache.kafka.common.message.MetadataState.BrokerEndpoint;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.EventQueue;
+import org.junit.Assert;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.compat.java8.OptionConverters;
@@ -36,6 +37,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class ControllerTestUtils {
     private static final Logger log = LoggerFactory.getLogger(ControllerTestUtils.class);
@@ -126,5 +131,23 @@ public class ControllerTestUtils {
     public static CompletableFuture<Void> allOf(List<CompletableFuture<Void>> futures) {
         return CompletableFuture.allOf(futures.
             toArray(new CompletableFuture[futures.size()]));
+    }
+
+    public static void assertFutureExceptionEquals(Class<? extends Throwable> clazz,
+                                                   CompletableFuture<?> future) {
+        assertFutureExceptionEquals(clazz, null, future);
+    }
+
+    public static void assertFutureExceptionEquals(Class<? extends Throwable> clazz,
+                                                   String messageSubString,
+                                                   CompletableFuture<?> future) {
+        ExecutionException executionException = Assert.assertThrows(
+            ExecutionException.class, () -> future.get());
+        assertEquals(clazz, executionException.getCause().getClass());
+        if (messageSubString != null) {
+            String messageText = executionException.getCause().getMessage();
+            assertTrue("Expected exception message to include " + messageSubString +
+                ", but it was " + messageText, messageText.contains(messageSubString));
+        }
     }
 }

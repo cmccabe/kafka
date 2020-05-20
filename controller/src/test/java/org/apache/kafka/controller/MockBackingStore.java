@@ -46,6 +46,10 @@ public class MockBackingStore implements BackingStore {
         }
     }
 
+    private boolean started = false;
+    private boolean shutdown = false;
+    private boolean closed = false;
+
     private MockBackingStore(Builder builder) {
         this.startException = builder.startException;
     }
@@ -59,11 +63,20 @@ public class MockBackingStore implements BackingStore {
 
         }
         synchronized (this) {
+            if (started) {
+                throw new RuntimeException("Attempting to Start a BackingStore " +
+                    "which has already been started.");
+            }
             this.brokerInfo = brokerInfo;
             this.activator = activator;
+            this.started = true;
         }
         future.complete(null);
         return future;
+    }
+
+    public synchronized boolean isStarted() {
+        return started;
     }
 
     @Override
@@ -77,12 +90,17 @@ public class MockBackingStore implements BackingStore {
     }
 
     @Override
-    public void shutdown() {
+    public synchronized void shutdown() {
+        this.shutdown = true;
+    }
 
+    public synchronized boolean isShutdown() {
+        return this.shutdown;
     }
 
     @Override
-    public void close() throws InterruptedException {
-
+    public synchronized void close() throws InterruptedException {
+        shutdown();
+        this.closed = true;
     }
 }
