@@ -131,11 +131,17 @@ public final class ControllerUtils {
             MetadataState.Partition partition = new MetadataState.Partition();
             partition.setId(topicPartition.partition());
             ReplicaAssignment replicaAssignment = entry.getValue();
-            partition.setReplicas(CoreUtils.asJava(replicaAssignment.replicas()));
-            partition.setAddingReplicas(
-                CoreUtils.asJava(replicaAssignment.addingReplicas()));
-            partition.setRemovingReplicas(
-                CoreUtils.asJava(replicaAssignment.removingReplicas()));
+            for (int id : CoreUtils.asJava(replicaAssignment.replicas())) {
+                partition.replicas().getOrCreate(id);
+            }
+            for (int id : CoreUtils.asJava(replicaAssignment.addingReplicas())) {
+                MetadataState.Replica replica = partition.replicas().getOrCreate(id);
+                replica.setReassignmentState(ReassignmentState.ADDING.val());
+            }
+            for (int id : CoreUtils.asJava(replicaAssignment.removingReplicas())) {
+                MetadataState.Replica replica = partition.replicas().getOrCreate(id);
+                replica.setReassignmentState(ReassignmentState.REMOVING.val());
+            }
             topic.partitions().add(partition);
         }
         return newTopics;

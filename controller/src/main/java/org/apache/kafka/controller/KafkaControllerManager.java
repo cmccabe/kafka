@@ -41,6 +41,7 @@ public final class KafkaControllerManager implements ControllerManager {
     private final AtomicReference<Throwable> lastUnexpectedError;
     private final BackingStore backingStore;
     private final KafkaActivator activator;
+    private final KafkaDeactivator deactivator;
     private final ReentrantLock lock;
     private KafkaController controller;
     private boolean started;
@@ -95,7 +96,7 @@ public final class KafkaControllerManager implements ControllerManager {
         @Override
         public Controller activate(MetadataState state, int epoch) {
             KafkaController newController = new KafkaController(logContext,
-                threadNamePrefix, backingStore, state, epoch);
+                threadNamePrefix, deactivator, backingStore, state, epoch);
             lock.lock();
             try {
                 checkStartedAndNotShutdown();
@@ -107,6 +108,20 @@ public final class KafkaControllerManager implements ControllerManager {
                 lock.unlock();
             }
             return newController;
+        }
+    }
+
+    class KafkaDeactivator implements Deactivator {
+        @Override
+        public void deactivate(Controller oldController) {
+            lock.lock();
+            try {
+                if (controller == oldController) {
+                    controller = null;
+                }
+            } finally {
+                lock.unlock();
+            }
         }
     }
 
@@ -134,6 +149,7 @@ public final class KafkaControllerManager implements ControllerManager {
         this.lastUnexpectedError = lastUnexpectedError;
         this.backingStore = backingStore;
         this.activator = new KafkaActivator();
+        this.deactivator = new KafkaDeactivator();
         this.lock = new ReentrantLock();
         this.controller = null;
         this.started = false;

@@ -43,22 +43,25 @@
       "about": "The topics in this cluster.", "fields": [
         { "name": "Name", "type": "string", "versions": "0+", "mapKey": true,
           "about": "The topic name." },
+        { "name": "DeletionState", "type": "int8", "versions": "0+",
+          "about": "One of 0 = NONE, 1 = DELETION_REQUESTED, 2 = DELETING." },
         { "name": "Partitions", "type": "[]Partition", "versions": "0+",
           "about": "The partitions in this topic.", "fields": [
             { "name": "Id", "type": "int32", "versions": "0+", "mapKey": true,
               "about": "The partition id." },
-            { "name": "Replicas", "type": "[]int32", "versions": "0+",
-              "about": "The replicas." },
-            { "name": "AddingReplicas", "type": "[]int32", "versions": "0+",
-              "about": "The replicas we are adding." },
-            { "name": "RemovingReplicas", "type": "[]int32", "versions": "0+",
-              "about": "The replicas we are removing." },
-            { "name": "Isr", "type": "[]int32", "versions": "0+",
-              "about": "The in-sync replicas." },
+            { "name": "Replicas", "type": "[]Replica", "versions": "0+",
+              "about": "The replicas of this partition", "fields": [
+                { "name": "Id", "type": "int32", "versions": "0+", "mapKey": true,
+                  "about": "The ID of the broker that has this replica." },
+                { "name": "ReassignmentState", "type": "int8", "versions": "0+",
+                  "about": "One of 0 = NONE, 1 = ADDING, 2 = REMOVING" },
+                { "name": "State", "type": "int8", "versions": "0+",
+                  "about": "One of 0 = OFFLINE, 1 = ONLINE, 2 = INSYNC" }
+            ]},
             { "name": "Leader", "type": "int32", "versions": "0+",
-              "about": "The leader." },
+              "about": "The lead replica." },
             { "name": "LeaderEpoch", "type": "int32", "versions": "0+",
-              "about": "The leader epoch." }
+              "about": "The epoch of the lead replica." }
         ]}
     ]},
     { "name": "Clients", "type": "[]Clients", "versions": "0+",

@@ -17,15 +17,28 @@
 
 package org.apache.kafka.controller;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
+public enum ReplicaState {
+    UNKNOWN((byte) 0),
+    CREATING((byte) 1);
 
-public class ControllerManagerTest {
-    @Rule
-    final public Timeout globalTimeout = Timeout.millis(120000);
+    private final byte val;
 
-    @Test
-    public void testDoNothing() {
+    private final static ReplicaState[] VALUES = values();
+
+    static ReplicaState fromByte(byte val) {
+        for (ReplicaState state : VALUES) {
+            if (state.val == val) {
+                return state;
+            }
+        }
+        throw new RuntimeException("Unknown ReplicaState " + (int) val);
+    }
+
+    ReplicaState(byte val) {
+        this.val = val;
+    }
+
+    public byte val() {
+        return val;
     }
 }

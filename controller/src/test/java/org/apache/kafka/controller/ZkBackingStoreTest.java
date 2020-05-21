@@ -333,11 +333,20 @@ public class ZkBackingStoreTest {
                     CoreUtils.toImmutableMap(CollectionConverters.asScala(assignment)));
                 MetadataState.Topic foo = new MetadataState.Topic().setName("foo");
                 foo.partitions().add(new MetadataState.Partition().setId(0).
-                    setReplicas(Arrays.asList(0, 1, 2)));
+                    setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
+                            new MetadataState.Replica().setId(0),
+                            new MetadataState.Replica().setId(1),
+                            new MetadataState.Replica().setId(2)).iterator())));
                 foo.partitions().add(new MetadataState.Partition().setId(1).
-                    setReplicas(Arrays.asList(1, 2, 3)));
+                    setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
+                        new MetadataState.Replica().setId(1),
+                        new MetadataState.Replica().setId(2),
+                        new MetadataState.Replica().setId(3)).iterator())));
                 foo.partitions().add(new MetadataState.Partition().setId(2).
-                    setReplicas(Arrays.asList(2, 3, 0)));
+                    setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
+                        new MetadataState.Replica().setId(2),
+                        new MetadataState.Replica().setId(3),
+                        new MetadataState.Replica().setId(0)).iterator())));
                 ensemble.waitForTopics(Collections.singletonList(foo));
                 assignment.remove(new TopicPartition("foo", 2));
                 foo.partitions().remove(new MetadataState.Partition().setId(2));

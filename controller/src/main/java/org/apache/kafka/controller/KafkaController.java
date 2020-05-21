@@ -32,6 +32,7 @@ import java.util.concurrent.CompletableFuture;
 
 public final class KafkaController implements Controller {
     private final Logger log;
+    private final Deactivator deactivator;
     private final BackingStore backingStore;
     private final EventQueue controllerQueue;
     private final MetadataState state;
@@ -39,10 +40,12 @@ public final class KafkaController implements Controller {
 
     KafkaController(LogContext logContext,
                     String threadNamePrefix,
+                    Deactivator deactivator,
                     BackingStore backingStore,
                     MetadataState state,
                     int controllerEpoch) {
         this.log = logContext.logger(KafkaController.class);
+        this.deactivator = deactivator;
         this.backingStore = backingStore;
         this.controllerQueue = new KafkaEventQueue(logContext, threadNamePrefix);
         this.state = state;
@@ -56,7 +59,8 @@ public final class KafkaController implements Controller {
 
     @Override
     public void close() {
-
+        // TODO: put this on a KafkaQueue, or something?
+        deactivator.deactivate(this);
     }
 
     @Override
