@@ -25,7 +25,7 @@ public enum ReplicaState {
 
     private final static ReplicaState[] VALUES = values();
 
-    static ReplicaState fromByte(byte val) {
+    static ReplicaState fromVal(byte val) {
         for (ReplicaState state : VALUES) {
             if (state.val == val) {
                 return state;

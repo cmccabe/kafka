@@ -19,7 +19,7 @@
   "validVersions": "0",
   "fields": [
     { "name": "Magic", "type": "int64", "versions": "0+",
-      "default": "123", // TODO: use a better magic value 
+      "default": "123", // TODO: use a better magic value
       "about": "The magic number which prefixes this metadata state data." },
     { "name": "Brokers", "type": "[]Broker", "versions": "0+",
       "about": "The brokers in this cluster.", "fields": [
@@ -43,25 +43,29 @@
       "about": "The topics in this cluster.", "fields": [
         { "name": "Name", "type": "string", "versions": "0+", "mapKey": true,
           "about": "The topic name." },
-        { "name": "DeletionState", "type": "int8", "versions": "0+",
-          "about": "One of 0 = NONE, 1 = DELETION_REQUESTED, 2 = DELETING." },
+        { "name": "DeletionState", "type": "int8", "versions": "0+", "default": "0",
+          "about": "The state of deleting this topic, if it is being deleted." },
         { "name": "Partitions", "type": "[]Partition", "versions": "0+",
           "about": "The partitions in this topic.", "fields": [
-            { "name": "Id", "type": "int32", "versions": "0+", "mapKey": true,
+            { "name": "Id", "type": "int32", "versions": "0+", "mapKey": true, "default": "-1",
               "about": "The partition id." },
             { "name": "Replicas", "type": "[]Replica", "versions": "0+",
               "about": "The replicas of this partition", "fields": [
                 { "name": "Id", "type": "int32", "versions": "0+", "mapKey": true,
                   "about": "The ID of the broker that has this replica." },
-                { "name": "ReassignmentState", "type": "int8", "versions": "0+",
-                  "about": "One of 0 = NONE, 1 = ADDING, 2 = REMOVING" },
+                { "name": "InSync", "type": "bool", "versions": "0+", "default": "false",
+                  "about": "True if this replica is in sync." },
+                { "name": "ReassignmentState", "type": "int8", "versions": "0+", "default": "0",
+                  "about": "What role this replica is playing in an ongoing reassignment, if there is one" },
                 { "name": "State", "type": "int8", "versions": "0+",
-                  "about": "One of 0 = OFFLINE, 1 = ONLINE, 2 = INSYNC" }
+                  "about": "The replica state" }
             ]},
-            { "name": "Leader", "type": "int32", "versions": "0+",
-              "about": "The lead replica." },
-            { "name": "LeaderEpoch", "type": "int32", "versions": "0+",
-              "about": "The epoch of the lead replica." }
+            { "name": "Leader", "type": "int32", "versions": "0+", "default": "-1",
+              "about": "The lead replica, or -1 if there is no leader." },
+            { "name": "LeaderEpoch", "type": "int32", "versions": "0+", "default": "-1",
+              "about": "The epoch of the lead replica." },
+            { "name": "ControllerEpochOfLastIsrUpdate", "type": "int32", "versions": "0+", "default": "-1",
+              "about": "The controller epoch of the current ISR znode." }
         ]}
     ]},
     { "name": "Clients", "type": "[]Clients", "versions": "0+",

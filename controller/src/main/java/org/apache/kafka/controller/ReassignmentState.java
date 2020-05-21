@@ -26,7 +26,7 @@ public enum ReassignmentState {
 
     private final static ReassignmentState[] VALUES = values();
 
-    static ReassignmentState fromByte(byte val) {
+    static ReassignmentState fromVal(byte val) {
         for (ReassignmentState state : VALUES) {
             if (state.val == val) {
                 return state;

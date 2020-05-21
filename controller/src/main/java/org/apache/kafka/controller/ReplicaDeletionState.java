@@ -26,7 +26,7 @@ public enum ReplicaDeletionState {
 
     private final static ReplicaDeletionState[] VALUES = values();
 
-    static ReplicaDeletionState fromByte(byte val) {
+    static ReplicaDeletionState fromVal(byte val) {
         for (ReplicaDeletionState state : VALUES) {
             if (state.val == val) {
                 return state;

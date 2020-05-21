@@ -18,7 +18,9 @@
 package org.apache.kafka.controller;
 
 import kafka.cluster.Broker;
+import kafka.controller.LeaderIsrAndControllerEpoch;
 import kafka.controller.ReplicaAssignment;
+import kafka.utils.CoreUtils;
 import kafka.zk.BrokerIdZNode;
 import kafka.zk.BrokerIdsZNode;
 import kafka.zk.BrokerInfo;
@@ -701,6 +703,8 @@ public class ZkBackingStore implements BackingStore {
         state.setBrokers(loadBrokerChildren());
         log.info("Loaded broker(s) {}", state.brokers());
         state.setTopics(loadTopicChildren());
+        zkClient.deleteIsrChangeNotifications(epochZkVersion);
+        mergeIsrInformation(state.topics());
         log.info("Loaded topic(s) {}", state.topics());
         for (MetadataState.Broker broker : state.brokers()) {
             registerBrokerChangeHandler(broker.brokerId());
@@ -729,6 +733,34 @@ public class ZkBackingStore implements BackingStore {
         Map<TopicPartition, ReplicaAssignment> map = CollectionConverters.asJava(
             zkClient.getFullReplicaAssignmentForTopics(scalaTopics));
         return ControllerUtils.replicaAssignmentsToTopicStates(map);
+    }
+
+    private void mergeIsrInformation(MetadataState.TopicCollection topicStates) {
+        List<TopicPartition> partitions = new ArrayList<>();
+        for (MetadataState.Topic topic : topicStates) {
+            for (MetadataState.Partition partition : topic.partitions()) {
+                partitions.add(new TopicPartition(topic.name(), partition.id()));
+            }
+        }
+        Map<TopicPartition, LeaderIsrAndControllerEpoch> isrMap =
+            CollectionConverters.asJava(zkClient.getTopicPartitionStates(
+                CollectionConverters.asScala(partitions)));
+        for (Map.Entry<TopicPartition, LeaderIsrAndControllerEpoch> entry :
+                isrMap.entrySet()) {
+            TopicPartition partition = entry.getKey();
+            LeaderIsrAndControllerEpoch info = entry.getValue();
+            MetadataState.Topic topicState = topicStates.getOrCreate(partition.topic());
+            // TODO: check some epoch before loading?
+            MetadataState.Partition partitionState = topicState.partitions().
+                getOrCreate(partition.partition());
+            partitionState.setControllerEpochOfLastIsrUpdate(info.controllerEpoch());
+            partitionState.setLeader(info.leaderAndIsr().leader());
+            partitionState.setLeaderEpoch(info.leaderAndIsr().leaderEpoch());
+            for (int id : CoreUtils.asJava(info.leaderAndIsr().isr())) {
+                MetadataState.Replica replica = partitionState.replicas().getOrCreate(id);
+                replica.setInSync(true);
+            }
+        }
     }
 
     public static ZkBackingStore create(AtomicReference<Throwable> lastUnexpectedError,
