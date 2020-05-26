@@ -19,6 +19,7 @@ package org.apache.kafka.controller;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.stream.Collectors;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionReplica;
@@ -113,17 +114,44 @@ public class TopicDeltaTest {
     }
 
     @Test
-    public void testFromUpdatedTopicsWithRemovedReplica() {
+    public void testFromUpdatedTopics() {
         MetadataState.TopicCollection existingTopics = createTopics();
         MetadataState.TopicCollection updatedTopics = existingTopics.duplicate();
-        updatedTopics.find("bar").partitions().find(0).replicas().remove(new MetadataState.Replica().setId(3));
+        updatedTopics.find("bar").partitions().find(0).replicas().
+            remove(new MetadataState.Replica().setId(3));
+        updatedTopics.add(new MetadataState.Topic().setName("baz"));
+        updatedTopics.remove(new MetadataState.Topic().setName("foo"));
         TopicDelta topicDelta = TopicDelta.fromUpdatedTopics(existingTopics, updatedTopics);
-        assertEquals(Collections.emptyList(), topicDelta.addedTopics);
-        assertEquals(Collections.emptyList(), topicDelta.removedTopics);
+        assertEquals(Collections.singletonList("baz"),
+            topicDelta.addedTopics.stream().map(t -> t.name()).collect(Collectors.toList()));
+        assertEquals(Collections.singletonList("foo"), topicDelta.removedTopics);
         assertEquals(Collections.emptyMap(), topicDelta.addedParts);
         assertEquals(Collections.emptyList(), topicDelta.removedParts);
         assertEquals(Collections.emptyMap(), topicDelta.addedReplicas);
         assertEquals(Collections.singletonList(new TopicPartitionReplica("bar", 0, 3)),
             topicDelta.removedReplicas);
+    }
+
+    @Test
+    public void testFromUpdatedTopics2() {
+        MetadataState.TopicCollection existingTopics = createTopics();
+        MetadataState.TopicCollection updatedTopics = existingTopics.duplicate();
+        updatedTopics.find("bar").partitions().add(
+            new MetadataState.Partition().setId(2).setReplicas(
+                new MetadataState.ReplicaCollection(Arrays.asList(
+                    new MetadataState.Replica().setId(1),
+                    new MetadataState.Replica().setId(0),
+                    new MetadataState.Replica().setId(3)).iterator())));
+        updatedTopics.find("bar").partitions().find(0).replicas().
+            add(new MetadataState.Replica().setId(4));
+        TopicDelta topicDelta = TopicDelta.fromUpdatedTopics(existingTopics, updatedTopics);
+        assertEquals(Collections.emptyList(), topicDelta.addedTopics);
+        assertEquals(Collections.emptyList(), topicDelta.removedTopics);
+        assertEquals(Collections.singleton(new TopicPartition("bar", 2)),
+            topicDelta.addedParts.keySet());
+        assertEquals(Collections.emptyList(), topicDelta.removedParts);
+        assertEquals(Collections.singleton(new TopicPartitionReplica("bar", 0, 4)),
+            topicDelta.addedReplicas.keySet());
+        assertEquals(Collections.emptyList(), topicDelta.removedReplicas);
     }
 }
