@@ -41,6 +41,7 @@ import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import scala.compat.java8.OptionConverters;
 import scala.jdk.javaapi.CollectionConverters;
@@ -633,32 +634,50 @@ public class ZkBackingStore implements BackingStore {
         @Override
         public Void execute() {
             checkIsStartedAndActive();
-            // Unfortunately, the ZK watch does not say which child znode was created
-            // or deleted, so we have to re-read everything.
+            // If a new znode is created under /brokers/topics, or a znode is deleted
+            // from under /brokers/topics, we will execute this code. Unfortunately, ZK
+            // doesn't tell us which znode(s) were created or deleted, only that some
+            // change happened.  And of course, additional changes may happen in between
+            // the ZK watch triggering and our processing here.  So the end result is
+            // that we have to rescan every znode directly under /brokers/topics here.
+            //
+            // Topic creation uses this code path.  Someone creates the topic znode, and
+            // then this code triggers.  Later on, we will create the ISR znodes which
+            // are in /brokers/topics/<topic_name>/partitions/<partition>/state.
+            // We don't expect them to be present for a newly created topic-- we don't
+            // even check for them here, in fact.
+            //
+            // The last step for topic deletion also runs through here (but not the
+            // initial steps...)
+            //
+            // Finally, we may find some other arbitrary change to a topic znode.
+            // Normally these would be handled in the individual topic znode watcher
+            // callback.  However, this callback may get there first by chance.
+            // There are two main changes that can happen here: adding partitions,
+            // or changing the replica set.  (Removing partitions is not really
+            // supported by Kafka right now, but the code is here anyway...)
             MetadataState.TopicCollection newTopics = loadTopicChildren();
-            List<MetadataState.Topic> changed = new ArrayList<>();
-
-            for (MetadataState.Topic newTopic : newTopics) {
-                MetadataState.Topic existingTopic =
-                    activeState.metadata.topics().find(newTopic);
-                if (!newTopic.equals(existingTopic)) {
-                    if (existingTopic == null) {
-                        registerTopicChangeHandler(newTopic.name());
-                    }
-                    changed.add(newTopic.duplicate());
-                }
-            }
-            List<String> deleted = new ArrayList<>();
-            for (MetadataState.Topic existingTopic : activeState.metadata.topics()) {
-                if (newTopics.find(existingTopic) == null) {
-                    deleted.add(existingTopic.name());
-                    unregisterTopicChangeHandler(existingTopic.name());
-                }
-            }
-            activeState.metadata.setTopics(newTopics);
-            activeState.controller.handleTopicUpdates(changed, deleted);
+            TopicDelta delta = TopicDelta.
+                fromUpdatedTopics(activeState.metadata.topics(), newTopics);
+            applyDelta(delta);
+            activeState.controller.handleTopicUpdates(delta);
             return null;
         }
+    }
+
+    private void applyDelta(TopicDelta delta) {
+        for (MetadataState.Topic addedTopic : delta.addedTopics) {
+            registerTopicChangeHandler(addedTopic.name());
+        }
+        for (String removedTopic : delta.removedTopics) {
+            unregisterTopicChangeHandler(removedTopic);
+        }
+        // For most partitions, we don't watch the ISR znode.
+        // But in case we are, stop doing that when the partition goes away.
+//        for (TopicPartition removedPartition : removedParts) {
+//            unregisterPartitionStateChangeHandler(...);
+//        }
+        delta.apply(activeState.metadata.topics());
     }
 
     class TopicChangeEvent extends AbstractZkBackingStoreEvent<Void> {
@@ -672,25 +691,26 @@ public class ZkBackingStore implements BackingStore {
         @Override
         public Void execute() {
             checkIsStartedAndActive();
+            // This is a lot like the handler for TopicChildChangeEvent, execept that
+            // we have been notified about a change to a specific topic znode, rather than
+            // told to look at every topic znode in existence to see if any got added or
+            // removed.  So we can be more efficient.
             Map<TopicPartition, ReplicaAssignment> map = CollectionConverters.asJava(
-                zkClient.getFullReplicaAssignmentForTopics(
+               zkClient.getFullReplicaAssignmentForTopics(
                     CollectionConverters.asScala(Collections.singleton(topic)).toSet()));
-            MetadataState.TopicCollection newTopics = ControllerUtils.
+            MetadataState.TopicCollection updatedTopics = ControllerUtils.
                 replicaAssignmentsToTopicStates(map);
-            MetadataState.Topic newTopic = newTopics.find(topic);
-            if (newTopic == null) {
-                newTopic = new MetadataState.Topic().setName(topic);
+            MetadataState.Topic updatedTopic = updatedTopics.find(topic);
+            TopicDelta delta;
+            if (updatedTopic == null) {
+                // In theory the znode could have been deleted between the watch getting
+                // triggered and this code executing.  So we have to be prepared for that.
+                delta = TopicDelta.fromSingleTopicRemoval(topic);
+            } else {
+                delta = TopicDelta.fromUpdatedTopic(activeState.metadata.topics(), updatedTopic);
             }
-            MetadataState.Topic existingTopic =
-                activeState.metadata.topics().find(newTopic);
-            if (!newTopic.equals(existingTopic)) {
-                activeState.metadata.topics().remove(newTopic);
-                activeState.metadata.topics().add(newTopic.duplicate());
-                activeState.controller.handleTopicUpdates(
-                    Collections.singletonList(newTopic.duplicate()),
-                    Collections.emptyList());
-            }
-            // TODO: add "auto-revert changes to topics in deleting state" here?
+            applyDelta(delta);
+            activeState.controller.handleTopicUpdates(delta);
             return null;
         }
     }
@@ -703,6 +723,9 @@ public class ZkBackingStore implements BackingStore {
         state.setBrokers(loadBrokerChildren());
         log.info("Loaded broker(s) {}", state.brokers());
         state.setTopics(loadTopicChildren());
+        for (MetadataState.Topic topic : state.topics()) {
+            registerTopicChangeHandler(topic.name());
+        }
         zkClient.deleteIsrChangeNotifications(epochZkVersion);
         mergeIsrInformation(state.topics());
         log.info("Loaded topic(s) {}", state.topics());

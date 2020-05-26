@@ -39,6 +39,5 @@ public interface Controller extends AutoCloseable {
     /**
      * Handle changes to the topics in the cluster.
      */
-    void handleTopicUpdates(List<MetadataState.Topic> changed,
-                            List<String> deleted);
+    void handleTopicUpdates(TopicDelta topicDelta);
 }

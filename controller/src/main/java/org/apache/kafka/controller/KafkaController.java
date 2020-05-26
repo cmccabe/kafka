@@ -69,7 +69,7 @@ public final class KafkaController implements Controller {
     }
 
     @Override
-    public void handleTopicUpdates(List<MetadataState.Topic> changed, List<String> deleted) {
+    public void handleTopicUpdates(TopicDelta topicDelta) {
 
     }
 }

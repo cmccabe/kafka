@@ -320,8 +320,9 @@ object CoreUtils {
     elements.groupMapReduce(key)(f)(reduce)
   }
 
-  def asJava(x: Seq[Int]): java.util.List[Integer] =
-    x.map(Integer.valueOf).asJava
+  def asScala(x: java.util.List[Integer]): List[Int] = x.asScala.map(_.toInt).toList
+
+  def asJava(x: Seq[Int]): java.util.List[Integer] = x.map(Integer.valueOf).asJava
 
   def toImmutableMap[A, B](x: Map[A, B]): collection.immutable.Map[A, B] = x.toMap
 }

@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller;
 
+import kafka.api.LeaderAndIsr;
 import kafka.utils.CoreUtils;
 import kafka.zk.BrokerInfo;
 import kafka.zk.KafkaZkClient;
@@ -27,6 +28,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,6 +38,7 @@ import java.util.function.Consumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.test.TestUtils;
 import org.junit.Rule;
 import org.junit.Test;
@@ -89,8 +92,7 @@ public class ZkBackingStoreTest {
         }
 
         @Override
-        synchronized public void handleTopicUpdates(List<MetadataState.Topic> changed,
-                                                    List<String> deleted) {
+        synchronized public void handleTopicUpdates(TopicDelta topicDelta) {
         }
 
         synchronized boolean active() {
@@ -326,18 +328,42 @@ public class ZkBackingStoreTest {
         return assignment;
     }
 
-    private void createZkTopicAssignment(KafkaZkClient zkClient, String topicName,
-                                      List<List<Integer>> partitionReplicas) {
+    private static void createZkTopicAssignment(KafkaZkClient zkClient, String topicName,
+                                                List<List<Integer>> partitionReplicas) {
         zkClient.createTopicAssignment(topicName, CoreUtils.toImmutableMap(
             CollectionConverters.asScala(partitionReplicasToAssignment(
                 topicName, partitionReplicas))));
     }
 
-    private void setZkTopicAssignment(KafkaZkClient zkClient, String topicName,
-                                      List<List<Integer>> partitionReplicas) {
+    private static void setZkTopicAssignment(KafkaZkClient zkClient, String topicName,
+                                             List<List<Integer>> partitionReplicas) {
         zkClient.setTopicAssignment(topicName, CoreUtils.toImmutableMap(
             CollectionConverters.asScala(partitionReplicasToAssignment(
                 topicName, partitionReplicas))));
+    }
+
+    private static void createLeaderAndIsr(KafkaZkClient zkClient,
+                                           String topicName, int partitionId, List<Integer> isr,
+                                           int leader, int controllerEpoch, int leaderEpoch) {
+        Map<TopicPartition, Throwable> failures =
+            CollectionConverters.asJava(zkClient.createLeaderAndIsr(
+                CollectionConverters.asScala(Collections.singletonMap(
+                new TopicPartition(topicName, partitionId),
+                new LeaderAndIsr(leader, leaderEpoch, CoreUtils.asScala(isr), -1))),
+                controllerEpoch, -1));
+        if (!failures.isEmpty()) {
+            throw new RuntimeException("Failed to create partition state znode for " +
+                Utils.join(failures.keySet(), ", "));
+        }
+    }
+
+    private static void updateLeaderAndIsr(KafkaZkClient zkClient,
+                String topicName, int partitionId, List<Integer> isr,
+                int leader, int controllerEpoch, int leaderEpoch) {
+        zkClient.updateLeaderAndIsr(CollectionConverters.asScala(Collections.singletonMap(
+                new TopicPartition(topicName, partitionId),
+                new LeaderAndIsr(leader, leaderEpoch, CoreUtils.asScala(isr), -1))),
+            controllerEpoch, -1);
     }
 
     @Test
@@ -345,19 +371,21 @@ public class ZkBackingStoreTest {
         try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
             try (ZkBackingStoreEnsemble ensemble =
                      new ZkBackingStoreEnsemble(zooKeeper, 2)) {
-                ensemble.startAll().get();
-                ensemble.waitForTopics(Collections.emptyList());
                 KafkaZkClient zkClient = ensemble.stores.get(0).zkClient();
                 createZkTopicAssignment(zkClient, "foo",
                     Arrays.asList(Arrays.asList(0, 1, 2),
                         Arrays.asList(1, 2, 3),
                         Arrays.asList(2, 3, 0)));
+                createLeaderAndIsr(zkClient, "foo", 0, Arrays.asList(0, 1, 2), 0, 0, 100);
+                ensemble.startAll().get();
                 MetadataState.Topic foo = new MetadataState.Topic().setName("foo");
                 foo.partitions().add(new MetadataState.Partition().setId(0).
                     setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
-                            new MetadataState.Replica().setId(0),
-                            new MetadataState.Replica().setId(1),
-                            new MetadataState.Replica().setId(2)).iterator())));
+                            new MetadataState.Replica().setId(0).setInSync(true),
+                            new MetadataState.Replica().setId(1).setInSync(true),
+                            new MetadataState.Replica().setId(2).setInSync(true)).
+                                iterator())).
+                    setLeader(0).setControllerEpochOfLastIsrUpdate(0).setLeaderEpoch(100));
                 foo.partitions().add(new MetadataState.Partition().setId(1).
                     setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
                         new MetadataState.Replica().setId(1),
