@@ -31,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 public class TopicDeltaTest {
     private static final Logger log = LoggerFactory.getLogger(TopicDeltaTest.class);
@@ -130,6 +131,9 @@ public class TopicDeltaTest {
         assertEquals(Collections.emptyMap(), topicDelta.addedReplicas);
         assertEquals(Collections.singletonList(new TopicPartitionReplica("bar", 0, 3)),
             topicDelta.removedReplicas);
+        topicDelta.apply(existingTopics);
+        assertNotNull(existingTopics.find("baz"));
+        assertEquals(null, existingTopics.find("foo"));
     }
 
     @Test
@@ -153,5 +157,10 @@ public class TopicDeltaTest {
         assertEquals(Collections.singleton(new TopicPartitionReplica("bar", 0, 4)),
             topicDelta.addedReplicas.keySet());
         assertEquals(Collections.emptyList(), topicDelta.removedReplicas);
+        topicDelta.apply(existingTopics);
+        assertEquals(Arrays.asList(0, 1, 2), existingTopics.find("bar").partitions().
+            stream().map(p -> p.id()).collect(Collectors.toList()));
+        assertEquals(Arrays.asList(3, 2, 1, 4), existingTopics.find("bar").partitions().
+                find(0).replicas().stream().map(r -> r.id()).collect(Collectors.toList()));
     }
 }
