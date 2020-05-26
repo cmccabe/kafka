@@ -41,7 +41,6 @@ import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import scala.compat.java8.OptionConverters;
 import scala.jdk.javaapi.CollectionConverters;
@@ -696,7 +695,7 @@ public class ZkBackingStore implements BackingStore {
             // told to look at every topic znode in existence to see if any got added or
             // removed.  So we can be more efficient.
             Map<TopicPartition, ReplicaAssignment> map = CollectionConverters.asJava(
-               zkClient.getFullReplicaAssignmentForTopics(
+                    zkClient.getFullReplicaAssignmentForTopics(
                     CollectionConverters.asScala(Collections.singleton(topic)).toSet()));
             MetadataState.TopicCollection updatedTopics = ControllerUtils.
                 replicaAssignmentsToTopicStates(map);
