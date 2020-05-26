@@ -50,7 +50,7 @@ class TopicDelta {
                                        MetadataState.Topic updatedTopic) {
         TopicDelta topicDelta = new TopicDelta();
         MetadataState.TopicCollection updatedTopics = new MetadataState.TopicCollection();
-        updatedTopics.mustAdd(updatedTopic);
+        updatedTopics.mustAdd(updatedTopic.duplicate());
         topicDelta.calculateUpdates(existingTopics, updatedTopics);
         return topicDelta;
     }
@@ -85,10 +85,11 @@ class TopicDelta {
                 }
             }
             for (MetadataState.Partition existingPart : existingTopic.partitions()) {
+                //System.out.println("looping over existingTopic = " + existingTopic + ", existingPart = " + existingPart);
                 MetadataState.Partition updatedPart =
-                    existingTopic.partitions().find(existingPart);
+                    updatedTopic.partitions().find(existingPart);
                 if (updatedPart == null) {
-                    removedParts.add(new TopicPartition(updatedTopic.name(), updatedPart.id()));
+                    removedParts.add(new TopicPartition(existingTopic.name(), existingPart.id()));
                     continue;
                 }
                 for (MetadataState.Replica existingReplica : existingPart.replicas()) {
