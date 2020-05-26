@@ -250,6 +250,37 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
   }
 
   /**
+   * Create the partition states of multiple partitions in zookeeper.
+   * @param leaderAndIsrs The partition states to create.
+   * @param controllerEpoch The current controller epoch.
+   * @param expectedControllerEpochZkVersion expected controller epoch zkVersion.
+   * @return A map from topic partitions to exceptions, contanining only the partitions
+   *         that had an error.
+   */
+  def createLeaderAndIsr(leaderAndIsrs: Map[TopicPartition, LeaderAndIsr],
+                         controllerEpoch: Int,
+                         expectedControllerEpochZkVersion: Int): Map[TopicPartition, Throwable] = {
+    val leaderIsrAndControllerEpochs = leaderAndIsrs.map { case (partition, leaderAndIsr) =>
+      partition -> LeaderIsrAndControllerEpoch(leaderAndIsr, controllerEpoch)
+    }
+    val createDataResponses = try {
+      createTopicPartitionStatesRaw(leaderIsrAndControllerEpochs, expectedControllerEpochZkVersion)
+    } catch {
+      case e: ControllerMovedException => throw e
+      case e: Exception =>
+        return leaderAndIsrs.keys.iterator.map(_ -> e).toMap
+    }
+    createDataResponses.iterator.flatMap {
+      case createDataResponse =>
+        val partition = createDataResponse.ctx.get.asInstanceOf[TopicPartition]
+        createDataResponse.resultCode match {
+          case Code.OK => None
+          case _ => Some(partition -> createDataResponse.resultException.get)
+        }
+    }.toMap
+  }
+
+  /**
    * Update the partition states of multiple partitions in zookeeper.
    * @param leaderAndIsrs The partition states to update.
    * @param controllerEpoch The current controller epoch.
