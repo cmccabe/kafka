@@ -122,27 +122,14 @@ public final class ControllerUtils {
         MetadataState.TopicCollection newTopics =
             new MetadataState.TopicCollection();
         for (Map.Entry<TopicPartition, ReplicaAssignment> entry : map.entrySet()) {
-            TopicPartition topicPartition = entry.getKey();
-            MetadataState.Topic topic = newTopics.find(topicPartition.topic());
-            if (topic == null) {
-                topic = new MetadataState.Topic().setName(topicPartition.topic());
-                newTopics.add(topic);
-            }
-            MetadataState.Partition partition = new MetadataState.Partition();
-            partition.setId(topicPartition.partition());
-            ReplicaAssignment replicaAssignment = entry.getValue();
-            for (int id : CoreUtils.asJava(replicaAssignment.replicas())) {
-                partition.replicas().getOrCreate(id);
-            }
-            for (int id : CoreUtils.asJava(replicaAssignment.addingReplicas())) {
-                MetadataState.Replica replica = partition.replicas().getOrCreate(id);
-                replica.setReassignmentState(ReassignmentState.ADDING.val());
-            }
-            for (int id : CoreUtils.asJava(replicaAssignment.removingReplicas())) {
-                MetadataState.Replica replica = partition.replicas().getOrCreate(id);
-                replica.setReassignmentState(ReassignmentState.REMOVING.val());
-            }
-            topic.partitions().add(partition);
+            TopicPartition topicPart = entry.getKey();
+            ReplicaAssignment assignment = entry.getValue();
+            MetadataState.Topic topic = newTopics.getOrCreate(topicPart.topic());
+            MetadataState.Partition part =
+                topic.partitions().getOrCreate(topicPart.partition());
+            part.setReplicas(CoreUtils.asJava(assignment.replicas()));
+            part.setAddingReplicas(CoreUtils.asJava(assignment.addingReplicas()));
+            part.setRemovingReplicas(CoreUtils.asJava(assignment.removingReplicas()));
         }
         return newTopics;
     }

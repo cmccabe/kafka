@@ -18,6 +18,7 @@
 package org.apache.kafka.controller;
 
 import kafka.cluster.Broker;
+import kafka.controller.IsrChangeNotification;
 import kafka.controller.LeaderIsrAndControllerEpoch;
 import kafka.controller.ReplicaAssignment;
 import kafka.utils.CoreUtils;
@@ -25,6 +26,7 @@ import kafka.zk.BrokerIdZNode;
 import kafka.zk.BrokerIdsZNode;
 import kafka.zk.BrokerInfo;
 import kafka.zk.ControllerZNode;
+import kafka.zk.IsrChangeNotificationZNode;
 import kafka.zk.KafkaZkClient;
 import kafka.zk.KafkaZkClient.BrokerAndEpoch;
 import kafka.zk.StateChangeHandlers;
@@ -41,13 +43,16 @@ import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
+import scala.collection.Seq;
 import scala.compat.java8.OptionConverters;
 import scala.jdk.javaapi.CollectionConverters;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -70,6 +75,7 @@ public class ZkBackingStore implements BackingStore {
     private final BrokerChildChangeHandler brokerChildChangeHandler;
     private final Map<Integer, BrokerChangeHandler> brokerChangeHandlers;
     private final TopicChildChangeHandler topicChildChangeHandler;
+    private final IsrChangeNotificationChildHandler isrChangeNotificationChildHandler;
     private final Map<String, TopicChangeHandler> topicChangeHandlers;
     private boolean started;
     private Activator activator;
@@ -239,6 +245,18 @@ public class ZkBackingStore implements BackingStore {
         @Override
         public void handleDataChange() {
             backingStoreQueue.append(new TopicChangeEvent(topic));
+        }
+    }
+
+    class IsrChangeNotificationChildHandler implements ZNodeChildChangeHandler {
+        @Override
+        public String path() {
+            return IsrChangeNotificationZNode.path();
+        }
+
+        @Override
+        public void handleChildChange() {
+            backingStoreQueue.append(new IsrChangeNotificationChildEvent());
         }
     }
 
@@ -656,8 +674,8 @@ public class ZkBackingStore implements BackingStore {
             // or changing the replica set.  (Removing partitions is not really
             // supported by Kafka right now, but the code is here anyway...)
             MetadataState.TopicCollection newTopics = loadTopicChildren();
-            TopicDelta delta = TopicDelta.
-                fromUpdatedTopics(activeState.metadata.topics(), newTopics);
+            TopicDelta delta = TopicDelta.fromUpdatedTopicReplicas(
+                activeState.metadata.topics(), newTopics);
             applyDelta(delta);
             activeState.controller.handleTopicUpdates(delta);
             return null;
@@ -706,7 +724,8 @@ public class ZkBackingStore implements BackingStore {
                 // triggered and this code executing.  So we have to be prepared for that.
                 delta = TopicDelta.fromSingleTopicRemoval(topic);
             } else {
-                delta = TopicDelta.fromUpdatedTopic(activeState.metadata.topics(), updatedTopic);
+                delta = TopicDelta.fromUpdatedTopicReplicas(
+                    activeState.metadata.topics(), updatedTopic);
             }
             applyDelta(delta);
             activeState.controller.handleTopicUpdates(delta);
@@ -757,31 +776,60 @@ public class ZkBackingStore implements BackingStore {
         return ControllerUtils.replicaAssignmentsToTopicStates(map);
     }
 
-    private void mergeIsrInformation(MetadataState.TopicCollection topicStates) {
+    private void mergeIsrInformation(MetadataState.TopicCollection topics) {
         List<TopicPartition> partitions = new ArrayList<>();
-        for (MetadataState.Topic topic : topicStates) {
+        for (MetadataState.Topic topic : topics) {
             for (MetadataState.Partition partition : topic.partitions()) {
                 partitions.add(new TopicPartition(topic.name(), partition.id()));
             }
         }
-        Map<TopicPartition, LeaderIsrAndControllerEpoch> isrMap =
+        Map<TopicPartition, LeaderIsrAndControllerEpoch> isrUpdates =
             CollectionConverters.asJava(zkClient.getTopicPartitionStates(
                 CollectionConverters.asScala(partitions)));
-        for (Map.Entry<TopicPartition, LeaderIsrAndControllerEpoch> entry :
-                isrMap.entrySet()) {
-            TopicPartition partition = entry.getKey();
-            LeaderIsrAndControllerEpoch info = entry.getValue();
-            MetadataState.Topic topicState = topicStates.getOrCreate(partition.topic());
-            // TODO: check some epoch before loading?
-            MetadataState.Partition partitionState = topicState.partitions().
-                getOrCreate(partition.partition());
-            partitionState.setControllerEpochOfLastIsrUpdate(info.controllerEpoch());
-            partitionState.setLeader(info.leaderAndIsr().leader());
-            partitionState.setLeaderEpoch(info.leaderAndIsr().leaderEpoch());
-            for (int id : CoreUtils.asJava(info.leaderAndIsr().isr())) {
-                MetadataState.Replica replica = partitionState.replicas().getOrCreate(id);
-                replica.setInSync(true);
+        TopicDelta delta = TopicDelta.fromIsrUpdates(topics, isrUpdates);
+        delta.apply(topics);
+    }
+
+    class IsrChangeNotificationChildEvent extends AbstractZkBackingStoreEvent<Void> {
+        IsrChangeNotificationChildEvent() {
+            super(true);
+        }
+
+        @Override
+        public Void execute() {
+            checkIsStartedAndActive();
+            // The in-sync replica set of a partition is stored in
+            // /brokers/topics/<topic_name>/partitions/<partition>/state.
+            // However, there are too many partition state znodes to set up a separate
+            // ZooKeeper watch on each individual one, like we do with topics.
+            // So, instead, we create sort of a pub/sub system within Zookeeper.
+            // The way that it works is that the leader of a partition changes a
+            // partition state znode, and then writes a new entry underneath
+            // /isr_change_notification.  The entry tells us what partition state znode
+            // to re-read.
+            Seq<String> sequenceNumbers = zkClient.getAllIsrChangeNotifications();
+            try {
+                Seq<TopicPartition> parts =
+                    zkClient.getPartitionsFromIsrChangeNotifications(sequenceNumbers);
+                // Load the partitions into a set to remove duplicates
+                HashSet<TopicPartition> topicParts = new HashSet<>();
+                for (Iterator<TopicPartition> iter =
+                         CollectionConverters.asJava(parts.iterator()); iter.hasNext(); ) {
+                    topicParts.add(iter.next());
+                }
+                Map<TopicPartition, LeaderIsrAndControllerEpoch> isrUpdates =
+                    CollectionConverters.asJava(zkClient.getTopicPartitionStates(
+                        CollectionConverters.asScala(topicParts.iterator()).toSeq()));
+                TopicDelta delta = TopicDelta.
+                    fromIsrUpdates(activeState.metadata.topics(), isrUpdates);
+                applyDelta(delta);
+                activeState.controller.handleTopicUpdates(delta);
+            } finally {
+                // delete the notifications
+                zkClient.deleteIsrChangeNotifications(sequenceNumbers,
+                    activeState.epochZkVersion);
             }
+            return null;
         }
     }
 
@@ -816,6 +864,7 @@ public class ZkBackingStore implements BackingStore {
         this.brokerChangeHandlers = new HashMap<>();
         this.topicChildChangeHandler = new TopicChildChangeHandler();
         this.topicChangeHandlers = new HashMap<>();
+        this.isrChangeNotificationChildHandler = new IsrChangeNotificationChildHandler();
         this.started = false;
         this.activator = null;
         this.brokerEpoch = -1;

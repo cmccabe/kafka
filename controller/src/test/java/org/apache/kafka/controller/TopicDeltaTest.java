@@ -19,6 +19,8 @@ package org.apache.kafka.controller;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.apache.kafka.common.TopicPartition;
@@ -46,57 +48,43 @@ public class TopicDeltaTest {
         assertEquals(Arrays.asList("foo"), topicDelta.removedTopics);
         assertEquals(Collections.emptyMap(), topicDelta.addedParts);
         assertEquals(Collections.emptyList(), topicDelta.removedParts);
-        assertEquals(Collections.emptyMap(), topicDelta.addedReplicas);
-        assertEquals(Collections.emptyList(), topicDelta.removedReplicas);
+        assertEquals(Collections.emptyMap(), topicDelta.replicaChanges);
+        assertEquals(Collections.emptyMap(), topicDelta.isrChanges);
     }
 
     private static MetadataState.TopicCollection createTopics() {
         MetadataState.TopicCollection topics = new MetadataState.TopicCollection();
-        topics.add(new MetadataState.Topic().setName("foo").setPartitions(
+        topics.getOrCreate("foo").setPartitions(
             new MetadataState.PartitionCollection(Arrays.asList(
-                new MetadataState.Partition().setId(0).setReplicas(
-                    new MetadataState.ReplicaCollection(Arrays.asList(
-                        new MetadataState.Replica().setId(0),
-                        new MetadataState.Replica().setId(1),
-                        new MetadataState.Replica().setId(2)).iterator())),
-                new MetadataState.Partition().setId(1).setReplicas(
-                    new MetadataState.ReplicaCollection(Arrays.asList(
-                        new MetadataState.Replica().setId(1),
-                        new MetadataState.Replica().setId(2),
-                        new MetadataState.Replica().setId(3)).iterator())),
-                new MetadataState.Partition().setId(2).setReplicas(
-                    new MetadataState.ReplicaCollection(Arrays.asList(
-                        new MetadataState.Replica().setId(3),
-                        new MetadataState.Replica().setId(0),
-                        new MetadataState.Replica().setId(1)).iterator()))
-            ).iterator())));
-        topics.add(new MetadataState.Topic().setName("bar").setPartitions(
+                new MetadataState.Partition().setId(0).
+                    setReplicas(Arrays.asList(0, 1, 2)),
+                new MetadataState.Partition().setId(1).
+                    setReplicas(Arrays.asList(1, 2, 3)),
+                new MetadataState.Partition().setId(2).
+                    setReplicas(Arrays.asList(3, 0, 1))
+            ).iterator()));
+        topics.getOrCreate("bar").setPartitions(
             new MetadataState.PartitionCollection(Arrays.asList(
-                new MetadataState.Partition().setId(0).setReplicas(
-                    new MetadataState.ReplicaCollection(Arrays.asList(
-                        new MetadataState.Replica().setId(3),
-                        new MetadataState.Replica().setId(2),
-                        new MetadataState.Replica().setId(1)).iterator())),
-                new MetadataState.Partition().setId(1).setReplicas(
-                    new MetadataState.ReplicaCollection(Arrays.asList(
-                        new MetadataState.Replica().setId(2),
-                        new MetadataState.Replica().setId(1),
-                        new MetadataState.Replica().setId(0)).iterator()))
-            ).iterator())));
+                new MetadataState.Partition().setId(0).
+                    setReplicas(Arrays.asList(3, 2, 1)),
+                new MetadataState.Partition().setId(1).
+                    setReplicas(Arrays.asList(2, 1, 0))
+            ).iterator()));
         return topics;
     }
 
     @Test
-    public void testFromUpdatedTopicWithNoDifferences() {
+    public void testFromUpdatedTopicReplicasWithNoDifferences() {
         MetadataState.TopicCollection existingTopics = createTopics();
         MetadataState.Topic updatedTopic = existingTopics.find("foo").duplicate();
-        TopicDelta topicDelta = TopicDelta.fromUpdatedTopic(existingTopics, updatedTopic);
+        TopicDelta topicDelta = TopicDelta.
+            fromUpdatedTopicReplicas(existingTopics, updatedTopic);
         assertEquals(Collections.emptyList(), topicDelta.addedTopics);
         assertEquals(Collections.emptyList(), topicDelta.removedTopics);
         assertEquals(Collections.emptyMap(), topicDelta.addedParts);
         assertEquals(Collections.emptyList(), topicDelta.removedParts);
-        assertEquals(Collections.emptyMap(), topicDelta.addedReplicas);
-        assertEquals(Collections.emptyList(), topicDelta.removedReplicas);
+        assertEquals(Collections.emptyMap(), topicDelta.replicaChanges);
+        assertEquals(Collections.emptyMap(), topicDelta.isrChanges);
     }
 
     @Test
@@ -104,33 +92,35 @@ public class TopicDeltaTest {
         MetadataState.TopicCollection existingTopics = createTopics();
         MetadataState.Topic updatedTopic = existingTopics.find("foo").duplicate();
         updatedTopic.partitions().remove(new MetadataState.Partition().setId(2));
-        TopicDelta topicDelta = TopicDelta.fromUpdatedTopic(existingTopics, updatedTopic);
+        TopicDelta topicDelta = TopicDelta.
+            fromUpdatedTopicReplicas(existingTopics, updatedTopic);
         assertEquals(Collections.emptyList(), topicDelta.addedTopics);
         assertEquals(Collections.emptyList(), topicDelta.removedTopics);
         assertEquals(Collections.emptyMap(), topicDelta.addedParts);
         assertEquals(Collections.singletonList(new TopicPartition("foo", 2)),
             topicDelta.removedParts);
-        assertEquals(Collections.emptyMap(), topicDelta.addedReplicas);
-        assertEquals(Collections.emptyList(), topicDelta.removedReplicas);
+        assertEquals(Collections.emptyMap(), topicDelta.replicaChanges);
+        assertEquals(Collections.emptyMap(), topicDelta.isrChanges);
     }
 
     @Test
-    public void testFromUpdatedTopics() {
+    public void testFromUpdatedTopicReplicas() {
         MetadataState.TopicCollection existingTopics = createTopics();
         MetadataState.TopicCollection updatedTopics = existingTopics.duplicate();
-        updatedTopics.find("bar").partitions().find(0).replicas().
-            remove(new MetadataState.Replica().setId(3));
+        updatedTopics.find("bar").partitions().find(0).setReplicas(Arrays.asList(2, 1));
         updatedTopics.add(new MetadataState.Topic().setName("baz"));
         updatedTopics.remove(new MetadataState.Topic().setName("foo"));
-        TopicDelta topicDelta = TopicDelta.fromUpdatedTopics(existingTopics, updatedTopics);
+        TopicDelta topicDelta = TopicDelta.
+            fromUpdatedTopicReplicas(existingTopics, updatedTopics);
         assertEquals(Collections.singletonList("baz"),
             topicDelta.addedTopics.stream().map(t -> t.name()).collect(Collectors.toList()));
         assertEquals(Collections.singletonList("foo"), topicDelta.removedTopics);
         assertEquals(Collections.emptyMap(), topicDelta.addedParts);
         assertEquals(Collections.emptyList(), topicDelta.removedParts);
-        assertEquals(Collections.emptyMap(), topicDelta.addedReplicas);
-        assertEquals(Collections.singletonList(new TopicPartitionReplica("bar", 0, 3)),
-            topicDelta.removedReplicas);
+        assertEquals(Collections.singletonMap(new TopicPartition("bar", 0),
+            new TopicDelta.ReplicaChange(Arrays.asList(2, 1), Collections.emptyList(),
+                Collections.emptyList())), topicDelta.replicaChanges);
+        assertEquals(Collections.emptyMap(), topicDelta.isrChanges);
         topicDelta.apply(existingTopics);
         assertNotNull(existingTopics.find("baz"));
         assertEquals(null, existingTopics.find("foo"));
@@ -140,27 +130,25 @@ public class TopicDeltaTest {
     public void testFromUpdatedTopics2() {
         MetadataState.TopicCollection existingTopics = createTopics();
         MetadataState.TopicCollection updatedTopics = existingTopics.duplicate();
-        updatedTopics.find("bar").partitions().add(
-            new MetadataState.Partition().setId(2).setReplicas(
-                new MetadataState.ReplicaCollection(Arrays.asList(
-                    new MetadataState.Replica().setId(1),
-                    new MetadataState.Replica().setId(0),
-                    new MetadataState.Replica().setId(3)).iterator())));
-        updatedTopics.find("bar").partitions().find(0).replicas().
-            add(new MetadataState.Replica().setId(4));
-        TopicDelta topicDelta = TopicDelta.fromUpdatedTopics(existingTopics, updatedTopics);
+        updatedTopics.find("bar").partitions().getOrCreate(2).
+            setReplicas(Arrays.asList(1, 0, 3));
+        updatedTopics.find("bar").partitions().find(0).
+            setReplicas(Arrays.asList(3, 2, 1, 4));
+        TopicDelta topicDelta = TopicDelta.
+            fromUpdatedTopicReplicas(existingTopics, updatedTopics);
         assertEquals(Collections.emptyList(), topicDelta.addedTopics);
         assertEquals(Collections.emptyList(), topicDelta.removedTopics);
         assertEquals(Collections.singleton(new TopicPartition("bar", 2)),
             topicDelta.addedParts.keySet());
         assertEquals(Collections.emptyList(), topicDelta.removedParts);
-        assertEquals(Collections.singleton(new TopicPartitionReplica("bar", 0, 4)),
-            topicDelta.addedReplicas.keySet());
-        assertEquals(Collections.emptyList(), topicDelta.removedReplicas);
+        assertEquals(Collections.singletonMap(new TopicPartition("bar", 0),
+            new TopicDelta.ReplicaChange(Arrays.asList(3, 2, 1, 4), Collections.emptyList(),
+                Collections.emptyList())), topicDelta.replicaChanges);
+        assertEquals(Collections.emptyMap(), topicDelta.isrChanges);
         topicDelta.apply(existingTopics);
-        assertEquals(Arrays.asList(0, 1, 2), existingTopics.find("bar").partitions().
-            stream().map(p -> p.id()).collect(Collectors.toList()));
-        assertEquals(Arrays.asList(3, 2, 1, 4), existingTopics.find("bar").partitions().
-                find(0).replicas().stream().map(r -> r.id()).collect(Collectors.toList()));
+        assertEquals(Arrays.asList(3, 2, 1, 4),
+            existingTopics.find("bar").partitions().find(0).replicas());
+        assertEquals(Arrays.asList(1, 0, 3),
+            existingTopics.find("bar").partitions().find(2).replicas());
     }
 }

@@ -379,23 +379,13 @@ public class ZkBackingStoreTest {
                 createLeaderAndIsr(zkClient, "foo", 0, Arrays.asList(0, 1, 2), 0, 0, 100);
                 ensemble.startAll().get();
                 MetadataState.Topic foo = new MetadataState.Topic().setName("foo");
-                foo.partitions().add(new MetadataState.Partition().setId(0).
-                    setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
-                            new MetadataState.Replica().setId(0).setInSync(true),
-                            new MetadataState.Replica().setId(1).setInSync(true),
-                            new MetadataState.Replica().setId(2).setInSync(true)).
-                                iterator())).
-                    setLeader(0).setControllerEpochOfLastIsrUpdate(0).setLeaderEpoch(100));
-                foo.partitions().add(new MetadataState.Partition().setId(1).
-                    setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
-                        new MetadataState.Replica().setId(1),
-                        new MetadataState.Replica().setId(2),
-                        new MetadataState.Replica().setId(3)).iterator())));
-                foo.partitions().add(new MetadataState.Partition().setId(2).
-                    setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
-                        new MetadataState.Replica().setId(2),
-                        new MetadataState.Replica().setId(3),
-                        new MetadataState.Replica().setId(0)).iterator())));
+                foo.partitions().getOrCreate(0).
+                    setLeader(0).setControllerEpochOfLastIsrUpdate(0).setLeaderEpoch(100).
+                    setReplicas(Arrays.asList(0, 1, 2)).setIsr(Arrays.asList(0, 1, 2));
+                foo.partitions().getOrCreate(1).
+                    setReplicas(Arrays.asList(1, 2, 3));
+                foo.partitions().getOrCreate(2).
+                    setReplicas(Arrays.asList(2, 3, 0));
                 ensemble.waitForTopics(Collections.singletonList(foo));
                 foo.partitions().remove(new MetadataState.Partition().setId(2));
                 setZkTopicAssignment(zkClient, "foo",
