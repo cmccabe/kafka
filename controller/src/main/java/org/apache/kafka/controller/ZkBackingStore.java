@@ -18,10 +18,8 @@
 package org.apache.kafka.controller;
 
 import kafka.cluster.Broker;
-import kafka.controller.IsrChangeNotification;
 import kafka.controller.LeaderIsrAndControllerEpoch;
 import kafka.controller.ReplicaAssignment;
-import kafka.utils.CoreUtils;
 import kafka.zk.BrokerIdZNode;
 import kafka.zk.BrokerIdsZNode;
 import kafka.zk.BrokerInfo;
@@ -43,7 +41,6 @@ import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import scala.collection.Seq;
 import scala.compat.java8.OptionConverters;
