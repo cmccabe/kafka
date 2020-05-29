@@ -19,8 +19,13 @@ package org.apache.kafka.controller;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.stream.Collectors;
 
+import kafka.api.LeaderAndIsr;
+import kafka.controller.LeaderIsrAndControllerEpoch;
+import kafka.utils.CoreUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataState;
 import org.junit.Rule;
@@ -40,13 +45,13 @@ public class TopicDeltaTest {
 
     @Test
     public void testFromSingleTopicRemoval() {
-        TopicDelta topicDelta = TopicDelta.fromSingleTopicRemoval("foo");
-        assertEquals(Collections.emptyList(), topicDelta.addedTopics);
-        assertEquals(Arrays.asList("foo"), topicDelta.removedTopics);
-        assertEquals(Collections.emptyMap(), topicDelta.addedParts);
-        assertEquals(Collections.emptyList(), topicDelta.removedParts);
-        assertEquals(Collections.emptyMap(), topicDelta.replicaChanges);
-        assertEquals(Collections.emptyMap(), topicDelta.isrChanges);
+        TopicDelta delta = TopicDelta.fromSingleTopicRemoval("foo");
+        assertEquals(Collections.emptyList(), delta.addedTopics);
+        assertEquals(Arrays.asList("foo"), delta.removedTopics);
+        assertEquals(Collections.emptyMap(), delta.addedParts);
+        assertEquals(Collections.emptyList(), delta.removedParts);
+        assertEquals(Collections.emptyMap(), delta.replicaChanges);
+        assertEquals(Collections.emptyMap(), delta.isrChanges);
     }
 
     private static MetadataState.TopicCollection createTopics() {
@@ -74,14 +79,14 @@ public class TopicDeltaTest {
     public void testFromUpdatedTopicReplicasWithNoDifferences() {
         MetadataState.TopicCollection existingTopics = createTopics();
         MetadataState.Topic updatedTopic = existingTopics.find("foo").duplicate();
-        TopicDelta topicDelta = TopicDelta.
+        TopicDelta delta = TopicDelta.
             fromUpdatedTopicReplicas(existingTopics, updatedTopic);
-        assertEquals(Collections.emptyList(), topicDelta.addedTopics);
-        assertEquals(Collections.emptyList(), topicDelta.removedTopics);
-        assertEquals(Collections.emptyMap(), topicDelta.addedParts);
-        assertEquals(Collections.emptyList(), topicDelta.removedParts);
-        assertEquals(Collections.emptyMap(), topicDelta.replicaChanges);
-        assertEquals(Collections.emptyMap(), topicDelta.isrChanges);
+        assertEquals(Collections.emptyList(), delta.addedTopics);
+        assertEquals(Collections.emptyList(), delta.removedTopics);
+        assertEquals(Collections.emptyMap(), delta.addedParts);
+        assertEquals(Collections.emptyList(), delta.removedParts);
+        assertEquals(Collections.emptyMap(), delta.replicaChanges);
+        assertEquals(Collections.emptyMap(), delta.isrChanges);
     }
 
     @Test
@@ -89,15 +94,15 @@ public class TopicDeltaTest {
         MetadataState.TopicCollection existingTopics = createTopics();
         MetadataState.Topic updatedTopic = existingTopics.find("foo").duplicate();
         updatedTopic.partitions().remove(new MetadataState.Partition().setId(2));
-        TopicDelta topicDelta = TopicDelta.
+        TopicDelta delta = TopicDelta.
             fromUpdatedTopicReplicas(existingTopics, updatedTopic);
-        assertEquals(Collections.emptyList(), topicDelta.addedTopics);
-        assertEquals(Collections.emptyList(), topicDelta.removedTopics);
-        assertEquals(Collections.emptyMap(), topicDelta.addedParts);
+        assertEquals(Collections.emptyList(), delta.addedTopics);
+        assertEquals(Collections.emptyList(), delta.removedTopics);
+        assertEquals(Collections.emptyMap(), delta.addedParts);
         assertEquals(Collections.singletonList(new TopicPartition("foo", 2)),
-            topicDelta.removedParts);
-        assertEquals(Collections.emptyMap(), topicDelta.replicaChanges);
-        assertEquals(Collections.emptyMap(), topicDelta.isrChanges);
+            delta.removedParts);
+        assertEquals(Collections.emptyMap(), delta.replicaChanges);
+        assertEquals(Collections.emptyMap(), delta.isrChanges);
     }
 
     @Test
@@ -107,18 +112,18 @@ public class TopicDeltaTest {
         updatedTopics.find("bar").partitions().find(0).setReplicas(Arrays.asList(2, 1));
         updatedTopics.add(new MetadataState.Topic().setName("baz"));
         updatedTopics.remove(new MetadataState.Topic().setName("foo"));
-        TopicDelta topicDelta = TopicDelta.
+        TopicDelta delta = TopicDelta.
             fromUpdatedTopicReplicas(existingTopics, updatedTopics);
         assertEquals(Collections.singletonList("baz"),
-            topicDelta.addedTopics.stream().map(t -> t.name()).collect(Collectors.toList()));
-        assertEquals(Collections.singletonList("foo"), topicDelta.removedTopics);
-        assertEquals(Collections.emptyMap(), topicDelta.addedParts);
-        assertEquals(Collections.emptyList(), topicDelta.removedParts);
+            delta.addedTopics.stream().map(t -> t.name()).collect(Collectors.toList()));
+        assertEquals(Collections.singletonList("foo"), delta.removedTopics);
+        assertEquals(Collections.emptyMap(), delta.addedParts);
+        assertEquals(Collections.emptyList(), delta.removedParts);
         assertEquals(Collections.singletonMap(new TopicPartition("bar", 0),
             new TopicDelta.ReplicaChange(Arrays.asList(2, 1), Collections.emptyList(),
-                Collections.emptyList())), topicDelta.replicaChanges);
-        assertEquals(Collections.emptyMap(), topicDelta.isrChanges);
-        topicDelta.apply(existingTopics);
+                Collections.emptyList())), delta.replicaChanges);
+        assertEquals(Collections.emptyMap(), delta.isrChanges);
+        delta.apply(existingTopics);
         assertNotNull(existingTopics.find("baz"));
         assertEquals(null, existingTopics.find("foo"));
     }
@@ -131,21 +136,45 @@ public class TopicDeltaTest {
             setReplicas(Arrays.asList(1, 0, 3));
         updatedTopics.find("bar").partitions().find(0).
             setReplicas(Arrays.asList(3, 2, 1, 4));
-        TopicDelta topicDelta = TopicDelta.
+        TopicDelta delta = TopicDelta.
             fromUpdatedTopicReplicas(existingTopics, updatedTopics);
-        assertEquals(Collections.emptyList(), topicDelta.addedTopics);
-        assertEquals(Collections.emptyList(), topicDelta.removedTopics);
+        assertEquals(Collections.emptyList(), delta.addedTopics);
+        assertEquals(Collections.emptyList(), delta.removedTopics);
         assertEquals(Collections.singleton(new TopicPartition("bar", 2)),
-            topicDelta.addedParts.keySet());
-        assertEquals(Collections.emptyList(), topicDelta.removedParts);
+            delta.addedParts.keySet());
+        assertEquals(Collections.emptyList(), delta.removedParts);
         assertEquals(Collections.singletonMap(new TopicPartition("bar", 0),
             new TopicDelta.ReplicaChange(Arrays.asList(3, 2, 1, 4), Collections.emptyList(),
-                Collections.emptyList())), topicDelta.replicaChanges);
-        assertEquals(Collections.emptyMap(), topicDelta.isrChanges);
-        topicDelta.apply(existingTopics);
+                Collections.emptyList())), delta.replicaChanges);
+        assertEquals(Collections.emptyMap(), delta.isrChanges);
+        delta.apply(existingTopics);
         assertEquals(Arrays.asList(3, 2, 1, 4),
             existingTopics.find("bar").partitions().find(0).replicas());
         assertEquals(Arrays.asList(1, 0, 3),
             existingTopics.find("bar").partitions().find(2).replicas());
+        TopicDelta delta2 = TopicDelta.
+            fromUpdatedTopicReplicas(existingTopics, updatedTopics);
+        assertEquals(Collections.emptyMap(), delta2.replicaChanges);
+    }
+
+    @Test
+    public void testFromIsrUpdates() {
+        MetadataState.TopicCollection existingTopics = createTopics();
+        Map<TopicPartition, LeaderIsrAndControllerEpoch> updates = new HashMap<>();
+        updates.put(new TopicPartition("foo", 0),
+            new LeaderIsrAndControllerEpoch(new LeaderAndIsr(0, 100,
+                CoreUtils.asScala(Arrays.asList(0, 1)), 456), 123));
+        TopicDelta delta = TopicDelta.fromIsrUpdates(existingTopics, updates);
+        assertEquals(Collections.emptyList(), delta.addedTopics);
+        assertEquals(Collections.emptyList(), delta.removedTopics);
+        assertEquals(Collections.emptyMap(), delta.addedParts);
+        assertEquals(Collections.emptyList(), delta.removedParts);
+        assertEquals(Collections.emptyMap(), delta.replicaChanges);
+        assertEquals(Collections.singletonMap(new TopicPartition("foo", 0),
+            new TopicDelta.IsrChange(0, 100, Arrays.asList(0, 1), 123)),
+                delta.isrChanges);
+        delta.apply(existingTopics);
+        TopicDelta delta2 = TopicDelta.fromIsrUpdates(existingTopics, updates);
+        assertEquals(Collections.emptyMap(), delta2.isrChanges);
     }
 }
