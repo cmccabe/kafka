@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 public final class KafkaEventQueue implements EventQueue {
     /**
@@ -342,24 +343,36 @@ public final class KafkaEventQueue implements EventQueue {
         }
     }
 
+    private final ReentrantLock lock;
     private final Logger log;
-    private final ReentrantLock lock = new ReentrantLock();
+    private final Supplier<Throwable> closedExceptionSupplier;
     private final EventHandler eventHandler;
     private final Thread eventHandlerThread;
     private final TimeoutHandler timeoutHandler;
     private final Thread timeoutHandlerThread;
-    private long closingTimeNs = Long.MAX_VALUE;
-    private Event<?> cleanupEvent = null;
+    private long closingTimeNs;
+    private Event<?> cleanupEvent;
 
-    public KafkaEventQueue(LogContext logContext, String threadNamePrefix) {
+    public KafkaEventQueue(LogContext logContext,
+                           String threadNamePrefix) {
+        this(logContext, threadNamePrefix, TimeoutException::new);
+    }
+
+    public KafkaEventQueue(LogContext logContext,
+                           String threadNamePrefix,
+                           Supplier<Throwable> closedExceptionSupplier) {
+        this.lock = new ReentrantLock();
         this.log = logContext.logger(KafkaEventQueue.class);
+        this.closedExceptionSupplier = closedExceptionSupplier;
         this.eventHandler = new EventHandler();
-        this.eventHandlerThread =
-            new KafkaThread(threadNamePrefix + "EventHandler", this.eventHandler, false);
-        this.eventHandlerThread.start();
+        this.eventHandlerThread = new KafkaThread(threadNamePrefix + "EventHandler",
+            this.eventHandler, false);
         this.timeoutHandler = new TimeoutHandler();
-        this.timeoutHandlerThread =
-            new KafkaThread(threadNamePrefix + "TimeoutHandler", this.timeoutHandler, false);
+        this.timeoutHandlerThread = new KafkaThread(threadNamePrefix + "TimeoutHandler",
+            this.timeoutHandler, false);
+        this.closingTimeNs = Long.MAX_VALUE;
+        this.cleanupEvent = null;
+        this.eventHandlerThread.start();
         this.timeoutHandlerThread.start();
     }
 
@@ -372,7 +385,7 @@ public final class KafkaEventQueue implements EventQueue {
         try {
             EventContext<T> eventContext = new EventContext<>(event, canceller);
             if (closingTimeNs != Long.MAX_VALUE) {
-                eventContext.completeWithTimeout();
+                eventContext.completeWithException(closedExceptionSupplier.get());
                 return eventContext.future;
             }
             eventHandler.enqueue(append, eventContext);
