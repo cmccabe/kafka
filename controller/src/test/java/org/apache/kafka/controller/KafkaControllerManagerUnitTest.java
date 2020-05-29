@@ -88,7 +88,7 @@ public class KafkaControllerManagerUnitTest {
             Assert.assertFalse(backingStore.isStarted());
             ControllerTestUtils.assertFutureExceptionEquals(
                 RuntimeException.class, manager.start(brokerInfo));
-            Assert.assertTrue(manager.isShutdown());
+            assertEquals(KafkaControllerManager.State.SHUT_DOWN, manager.state());
         }
     }
 }

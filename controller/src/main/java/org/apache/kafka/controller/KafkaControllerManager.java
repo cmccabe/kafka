@@ -21,7 +21,6 @@ import kafka.controller.ControllerManagerFactory;
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.NotControllerException;
-import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.LogContext;
 import kafka.controller.ControllerManager;
@@ -44,14 +43,19 @@ public final class KafkaControllerManager implements ControllerManager {
     private final KafkaDeactivator deactivator;
     private final ReentrantLock lock;
     private KafkaController controller;
-    private boolean started;
-    private boolean shutdown;
+    private State state;
+
+    enum State {
+        NOT_STARTED,
+        RUNNING,
+        SHUT_DOWN
+    }
 
     private <T> CompletableFuture<T> makeControllerCall(
         Function<KafkaController, CompletableFuture<T>> fun) {
         lock.lock();
         try {
-            checkStartedAndNotShutdown();
+            checkRunning();
             if (controller == null) {
                 throw new NotControllerException("This node is not the controller.");
             }
@@ -63,30 +67,21 @@ public final class KafkaControllerManager implements ControllerManager {
         }
     }
 
-    private void checkStartedAndNotShutdown() {
+    private void checkRunning() {
         lock.lock();
         try {
-            if (!started) {
-                throw new RuntimeException("The ControllerManager was never started.");
-            }
-            if (shutdown) {
-                throw new TimeoutException("The ControllerManager has been shut down.");
+            if (state != State.RUNNING) {
+                throw new RuntimeException("The ControllerManager is not running.");
             }
         } finally {
             lock.unlock();
         }
     }
 
-    @Override
-    public void close() throws Exception {
-        shutdown();
-        backingStore.close();
-    }
-
-    public boolean isShutdown() {
+    State state() {
         lock.lock();
         try {
-            return shutdown;
+            return state;
         } finally {
             lock.unlock();
         }
@@ -99,7 +94,7 @@ public final class KafkaControllerManager implements ControllerManager {
                 threadNamePrefix, deactivator, backingStore, state, epoch);
             lock.lock();
             try {
-                checkStartedAndNotShutdown();
+                checkRunning();
                 controller = newController;
             } catch (Exception e) {
                 newController.close();
@@ -152,54 +147,38 @@ public final class KafkaControllerManager implements ControllerManager {
         this.deactivator = new KafkaDeactivator();
         this.lock = new ReentrantLock();
         this.controller = null;
-        this.started = false;
+        this.state = State.NOT_STARTED;
     }
 
     @Override
     public CompletableFuture<Void> start(BrokerInfo newBrokerInfo) {
         lock.lock();
         try {
-            if (started) {
+            if (state != State.NOT_STARTED) {
                 throw new RuntimeException("The ControllerManager has already been started.");
             }
-            if (shutdown) {
-                throw new TimeoutException("The ControllerManager has been shut down.");
-            }
-            started = true;
-            return backingStore.start(newBrokerInfo, activator).exceptionally(
-                new Function<Throwable, Void>() {
-                    @Override
-                    public Void apply(Throwable e) {
-                        log.warn("Unable to start BackingStore.  Shutting down.", e);
-                        lock.lock();
-                        try {
-                            shutdown = true;
-                        } finally {
-                            lock.unlock();
-                        }
-                        lastUnexpectedError.set(e);
-                        throw new RuntimeException(e);
-                    }
-                });
+            state = State.RUNNING;
         } catch (Exception e) {
             lastUnexpectedError.set(e);
             return ControllerUtils.exceptionalFuture(e);
         } finally {
             lock.unlock();
         }
-    }
-
-    @Override
-    public void shutdown() {
-        lock.lock();
-        try {
-            if (shutdown)
-                return;
-            shutdown = true;
-        } finally {
-            lock.unlock();
-        }
-        backingStore.shutdown();
+        return backingStore.start(newBrokerInfo, activator).exceptionally(
+            new Function<Throwable, Void>() {
+                @Override
+                public Void apply(Throwable e) {
+                    log.warn("Unable to start BackingStore. Shutting down.", e);
+                    lock.lock();
+                    try {
+                        state = State.SHUT_DOWN;
+                    } finally {
+                        lock.unlock();
+                    }
+                    lastUnexpectedError.set(e);
+                    throw new RuntimeException(e);
+                }
+            });
     }
 
     @Override
@@ -218,5 +197,23 @@ public final class KafkaControllerManager implements ControllerManager {
     public CompletableFuture<Set<TopicPartition>> controlledShutdown(int brokerId,
                                                                      int brokerEpoch) {
         return null;
+    }
+
+    @Override
+    public void shutdown() {
+        lock.lock();
+        try {
+            if (state == State.SHUT_DOWN) return;
+            state = State.SHUT_DOWN;
+        } finally {
+            lock.unlock();
+        }
+        backingStore.shutdown();
+    }
+
+    @Override
+    public void close() throws Exception {
+        shutdown();
+        backingStore.close();
     }
 }
