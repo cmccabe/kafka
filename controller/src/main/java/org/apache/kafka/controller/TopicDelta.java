@@ -76,7 +76,7 @@ class TopicDelta {
         @Override
         public boolean equals(Object o) {
             if (!(o instanceof ReplicaChange)) return false;
-            ReplicaChange other = (ReplicaChange)o;
+            ReplicaChange other = (ReplicaChange) o;
             return replicas.equals(other.replicas) &&
                 addingReplicas.equals(other.addingReplicas) &&
                 removingReplicas.equals(other.removingReplicas);
@@ -143,7 +143,7 @@ class TopicDelta {
         @Override
         public boolean equals(Object o) {
             if (!(o instanceof IsrChange)) return false;
-            IsrChange other = (IsrChange)o;
+            IsrChange other = (IsrChange) o;
             return leader == other.leader &&
                 leaderEpoch == other.leaderEpoch &&
                 isr.equals(other.isr) &&

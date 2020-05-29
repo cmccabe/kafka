@@ -19,12 +19,9 @@ package org.apache.kafka.controller;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.TopicPartitionReplica;
 import org.apache.kafka.common.message.MetadataState;
 import org.junit.Rule;
 import org.junit.Test;
