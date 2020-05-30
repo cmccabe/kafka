@@ -32,7 +32,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import org.apache.kafka.common.TopicPartition;
@@ -62,9 +61,9 @@ public class ZkBackingStoreTest {
         try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
             try (KafkaZkClient zkClient = zooKeeper.newKafkaZkClient()) {
                 zkClient.createTopLevelPaths();
-                try (ZkBackingStore store = ZkBackingStore.create(
-                        new AtomicReference<>(null), 0, "", zkClient)) {
-                    assertEquals(null, store.lastUnexpectedError());
+                try (ZkBackingStore store = ZkBackingStore.create(ControllerLogContext.
+                        fromPrefix("testCreateAndClose"), 0, zkClient)) {
+                    assertEquals(null, store.logContext().lastUnexpectedError());
                 }
             }
         }
@@ -105,8 +104,8 @@ public class ZkBackingStoreTest {
         try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
             try (KafkaZkClient zkClient = zooKeeper.newKafkaZkClient()) {
                 zkClient.createTopLevelPaths();
-                try (ZkBackingStore store = ZkBackingStore.create(
-                        new AtomicReference<>(null), 0, "", zkClient)) {
+                try (ZkBackingStore store = ZkBackingStore.create(ControllerLogContext.
+                        fromPrefix("testStartAndClose"), 0, zkClient)) {
                     BrokerInfo broker0Info = ControllerTestUtils.brokerToBrokerInfo(
                         ControllerTestUtils.newTestBroker(0));
                     TrackingActivationListener listener = new TrackingActivationListener();
@@ -114,7 +113,7 @@ public class ZkBackingStoreTest {
                     startFuture.get();
                     listener.hasActivated.await();
                     store.shutdown();
-                    assertEquals(null, store.lastUnexpectedError());
+                    assertEquals(null, store.logContext().lastUnexpectedError());
                 }
             }
         }
@@ -142,8 +141,8 @@ public class ZkBackingStoreTest {
                     if (i == 0) {
                         zkClient.createTopLevelPaths();
                     }
-                    stores.add(ZkBackingStore.create(new AtomicReference<>(null),
-                        i, String.format("Node%d_", i), zkClient));
+                    stores.add(ZkBackingStore.create(ControllerLogContext.
+                        fromPrefix(String.format("Node%d_", i)), i, zkClient));
                 }
             } catch (Exception e) {
                 for (ZkBackingStore store : stores) {

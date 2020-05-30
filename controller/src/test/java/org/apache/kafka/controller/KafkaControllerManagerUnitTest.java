@@ -18,7 +18,6 @@
 package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
-import org.apache.kafka.common.utils.LogContext;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -27,7 +26,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
@@ -41,24 +39,17 @@ public class KafkaControllerManagerUnitTest {
 
     @Test
     public void testCreateAndClose() throws Throwable {
-        AtomicReference<Throwable> lastUnexpectedError = new AtomicReference<>();
-        try (KafkaControllerManager manager =
-                 new KafkaControllerManager("testCreateAndClose_",
-                     new LogContext(String.format("[testCreateAndClose]")),
-                     lastUnexpectedError,
+        try (KafkaControllerManager manager = new KafkaControllerManager(
+            ControllerLogContext.fromPrefix("testCreateAndClose"),
                      new MockBackingStore.Builder().build())) {
         }
     }
 
     @Test
     public void testCreateStartAndClose() throws Throwable {
-        AtomicReference<Throwable> lastUnexpectedError = new AtomicReference<>();
         MockBackingStore backingStore = new MockBackingStore.Builder().build();
-        try (KafkaControllerManager manager =
-                 new KafkaControllerManager("testCreateStartAndClose_",
-                     new LogContext(String.format("[testCreateStartAndClose]")),
-                     lastUnexpectedError,
-                     backingStore)) {
+        try (KafkaControllerManager manager = new KafkaControllerManager(
+                ControllerLogContext.fromPrefix("testCreateStartAndClose"), backingStore)) {
             BrokerInfo brokerInfo = ControllerTestUtils.brokerToBrokerInfo(
                 ControllerTestUtils.newTestBroker(0));
             Assert.assertFalse(backingStore.isStarted());
@@ -75,14 +66,10 @@ public class KafkaControllerManagerUnitTest {
 
     @Test
     public void testStartError() throws Throwable {
-        AtomicReference<Throwable> lastUnexpectedError = new AtomicReference<>();
         MockBackingStore backingStore = new MockBackingStore.Builder().
             setStartException(new RuntimeException("start error")).build();
-        try (KafkaControllerManager manager =
-                 new KafkaControllerManager("testStartError_",
-                     new LogContext(String.format("[testStartError]")),
-                     lastUnexpectedError,
-                     backingStore)) {
+        try (KafkaControllerManager manager = new KafkaControllerManager(
+                ControllerLogContext.fromPrefix("testStartError"), backingStore)) {
             BrokerInfo brokerInfo = ControllerTestUtils.brokerToBrokerInfo(
                 ControllerTestUtils.newTestBroker(0));
             Assert.assertFalse(backingStore.isStarted());

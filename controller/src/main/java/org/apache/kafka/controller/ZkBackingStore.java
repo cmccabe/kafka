@@ -40,7 +40,6 @@ import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
-import org.apache.kafka.common.utils.LogContext;
 import org.slf4j.Logger;
 import scala.collection.Seq;
 import scala.compat.java8.OptionConverters;
@@ -54,15 +53,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 public class ZkBackingStore implements BackingStore {
-    private final AtomicReference<Throwable> lastUnexpectedError;
+    private final ControllerLogContext logContext;
     private final Logger log;
     private final int nodeId;
     private final EventQueue backingStoreQueue;
@@ -297,7 +294,7 @@ public class ZkBackingStore implements BackingStore {
                 resignIfActive(true, "The controller got a ControllerMovedException.");
                 return new NotControllerException(e.getMessage());
             } else {
-                lastUnexpectedError.set(e);
+                logContext.setLastUnexpectedError(log, "Unhandled event exception", e);
                 resignIfActive(true, "The controller had an unexpected error.");
                 return e;
             }
@@ -362,8 +359,8 @@ public class ZkBackingStore implements BackingStore {
             }
             activeState.controller.close();
         } catch (Throwable e) {
-            log.error("Unable to unregister ZkClient watches.", e);
-            lastUnexpectedError.set(e);
+            logContext.setLastUnexpectedError(log, "unable to unregister ZkClient " +
+                    "watches", e);
         }
         if (deleteZnode) {
             try {
@@ -372,9 +369,8 @@ public class ZkBackingStore implements BackingStore {
                 log.info("Tried to delete {} during resignation, but it has already " +
                     "been modified.", ControllerZNode.path());
             } catch (Throwable e) {
-                log.error("Unable to delete {} during resignation due to unexpected " +
-                    "error.", e);
-                lastUnexpectedError.set(e);
+                logContext.setLastUnexpectedError(log, "unable to unregister ZkClient " +
+                        "watches during controller resignation", e);
             }
         }
         activeId = -1;
@@ -830,30 +826,22 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
-    public static ZkBackingStore create(AtomicReference<Throwable> lastUnexpectedError,
+    public static ZkBackingStore create(ControllerLogContext logContext,
                                         int nodeId,
-                                        String threadNamePrefix,
                                         KafkaZkClient zkClient) {
-        LogContext logContext = new LogContext(String.format("[Node %d] ", nodeId));
-        return new ZkBackingStore(lastUnexpectedError,
-            logContext.logger(ZkBackingStore.class),
-            nodeId,
-            new KafkaEventQueue(logContext, threadNamePrefix),
+        return new ZkBackingStore(logContext, nodeId,
+            new KafkaEventQueue(logContext.logContext(), logContext.threadNamePrefix()),
             zkClient);
     }
 
-    ZkBackingStore(AtomicReference<Throwable> lastUnexpectedError,
-                   Logger log,
+    ZkBackingStore(ControllerLogContext logContext,
                    int nodeId,
                    EventQueue backingStoreQueue,
                    KafkaZkClient zkClient) {
-        this.lastUnexpectedError = lastUnexpectedError;
-        Objects.requireNonNull(log);
-        this.log = log;
+        this.logContext = logContext;
+        this.log = logContext.createLogger(ZkBackingStore.class);
         this.nodeId = nodeId;
-        Objects.requireNonNull(backingStoreQueue);
         this.backingStoreQueue = backingStoreQueue;
-        Objects.requireNonNull(zkClient);
         this.zkClient = zkClient;
         this.zkStateChangeHandler = new ZkStateChangeHandler();
         this.controllerChangeHandler = new ControllerChangeHandler();
@@ -905,8 +893,8 @@ public class ZkBackingStore implements BackingStore {
     }
 
     // Visible for testing.
-    Throwable lastUnexpectedError() {
-        return lastUnexpectedError.get();
+    ControllerLogContext logContext() {
+        return logContext;
     }
 
     // Visible for testing.

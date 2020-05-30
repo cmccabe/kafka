@@ -29,15 +29,12 @@ import org.slf4j.Logger;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 public final class KafkaControllerManager implements ControllerManager {
-    private final String threadNamePrefix;
-    private final LogContext logContext;
+    private final ControllerLogContext logContext;
     private final Logger log;
-    private final AtomicReference<Throwable> lastUnexpectedError;
     private final BackingStore backingStore;
     private final KafkaActivator activator;
     private final KafkaDeactivator deactivator;
@@ -90,8 +87,8 @@ public final class KafkaControllerManager implements ControllerManager {
     class KafkaActivator implements Activator {
         @Override
         public Controller activate(MetadataState state, int epoch) {
-            KafkaController newController = new KafkaController(logContext,
-                threadNamePrefix, deactivator, backingStore, state, epoch);
+            KafkaController newController = new KafkaController(
+                    logContext, deactivator, backingStore, state, epoch);
             lock.lock();
             try {
                 checkRunning();
@@ -121,27 +118,19 @@ public final class KafkaControllerManager implements ControllerManager {
     }
 
     public static KafkaControllerManager create(ControllerManagerFactory factory) {
-        LogContext logContext =
-            new LogContext(String.format("[Node %d]", factory.nodeId()));
-        AtomicReference<Throwable> lastUnexpectedError = new AtomicReference<>(null);
-        ZkBackingStore zkBackingStore = ZkBackingStore.create(lastUnexpectedError,
+        ControllerLogContext logContext = 
+            new ControllerLogContext(factory.threadNamePrefix(),
+                new LogContext(String.format("[Node %d]", factory.nodeId())));
+        ZkBackingStore zkBackingStore = ZkBackingStore.create(logContext,
                 factory.nodeId(),
-                factory.threadNamePrefix(),
                 factory.zkClient());
-        return new KafkaControllerManager(factory.threadNamePrefix(),
-                logContext,
-                lastUnexpectedError,
-                zkBackingStore);
+        return new KafkaControllerManager(logContext, zkBackingStore);
     }
 
-    KafkaControllerManager(String threadNamePrefix,
-                           LogContext logContext,
-                           AtomicReference<Throwable> lastUnexpectedError,
+    KafkaControllerManager(ControllerLogContext logContext,
                            BackingStore backingStore) {
-        this.threadNamePrefix = threadNamePrefix;
         this.logContext = logContext;
-        this.log = logContext.logger(KafkaControllerManager.class);
-        this.lastUnexpectedError = lastUnexpectedError;
+        this.log = logContext.createLogger(KafkaControllerManager.class);
         this.backingStore = backingStore;
         this.activator = new KafkaActivator();
         this.deactivator = new KafkaDeactivator();
@@ -159,7 +148,8 @@ public final class KafkaControllerManager implements ControllerManager {
             }
             state = State.RUNNING;
         } catch (Exception e) {
-            lastUnexpectedError.set(e);
+            logContext.setLastUnexpectedError(log, "error in when starting controller " +
+                "manager", e);
             return ControllerUtils.exceptionalFuture(e);
         } finally {
             lock.unlock();
@@ -175,7 +165,8 @@ public final class KafkaControllerManager implements ControllerManager {
                     } finally {
                         lock.unlock();
                     }
-                    lastUnexpectedError.set(e);
+                    logContext.setLastUnexpectedError(log, "error in when starting " +
+                        "controller manager", e);
                     throw new RuntimeException(e);
                 }
             });

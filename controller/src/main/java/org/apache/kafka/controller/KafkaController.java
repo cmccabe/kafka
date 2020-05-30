@@ -22,7 +22,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
-import org.apache.kafka.common.utils.LogContext;
 import org.slf4j.Logger;
 
 import java.util.List;
@@ -31,6 +30,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public final class KafkaController implements Controller {
+    private final ControllerLogContext logContext;
     private final Logger log;
     private final Deactivator deactivator;
     private final BackingStore backingStore;
@@ -38,16 +38,17 @@ public final class KafkaController implements Controller {
     private final MetadataState state;
     private final int controllerEpoch;
 
-    KafkaController(LogContext logContext,
-                    String threadNamePrefix,
+    KafkaController(ControllerLogContext logContext,
                     Deactivator deactivator,
                     BackingStore backingStore,
                     MetadataState state,
                     int controllerEpoch) {
-        this.log = logContext.logger(KafkaController.class);
+        this.logContext = logContext;
+        this.log = logContext.createLogger(KafkaController.class);
         this.deactivator = deactivator;
         this.backingStore = backingStore;
-        this.controllerQueue = new KafkaEventQueue(logContext, threadNamePrefix);
+        this.controllerQueue =
+            new KafkaEventQueue(logContext.logContext(), logContext.threadNamePrefix());
         this.state = state;
         this.controllerEpoch = controllerEpoch;
     }
