@@ -347,6 +347,7 @@ public class ZkBackingStore implements BackingStore {
         try {
             zkClient.unregisterZNodeChildChangeHandler(brokerChildChangeHandler.path());
             zkClient.unregisterZNodeChildChangeHandler(topicChildChangeHandler.path());
+            zkClient.unregisterZNodeChildChangeHandler(isrChangeNotificationChildHandler.path());
             for (Iterator<BrokerChangeHandler> iter =
                  brokerChangeHandlers.values().iterator(); iter.hasNext(); ) {
                 zkClient.unregisterZNodeChangeHandler(iter.next().path());
@@ -731,6 +732,7 @@ public class ZkBackingStore implements BackingStore {
         MetadataState state = new MetadataState();
         zkClient.registerZNodeChildChangeHandler(brokerChildChangeHandler);
         zkClient.registerZNodeChildChangeHandler(topicChildChangeHandler);
+        zkClient.registerZNodeChildChangeHandler(isrChangeNotificationChildHandler);
         state.setBrokers(loadBrokerChildren());
         log.info("Loaded broker(s) {}", state.brokers());
         state.setTopics(loadTopicChildren());

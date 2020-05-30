@@ -356,13 +356,15 @@ public class ZkBackingStoreTest {
         }
     }
 
-    private static void updateLeaderAndIsr(KafkaZkClient zkClient,
+    private static void setLeaderAndIsr(KafkaZkClient zkClient,
                 String topicName, int partitionId, List<Integer> isr,
                 int leader, int controllerEpoch, int leaderEpoch) {
         zkClient.updateLeaderAndIsr(CollectionConverters.asScala(Collections.singletonMap(
                 new TopicPartition(topicName, partitionId),
                 new LeaderAndIsr(leader, leaderEpoch, CoreUtils.asScala(isr), -1))),
             controllerEpoch, -1);
+        zkClient.propagateIsrChanges(CollectionConverters.asScala(Collections.
+            singleton(new TopicPartition(topicName, partitionId))));
     }
 
     @Test
@@ -397,48 +399,35 @@ public class ZkBackingStoreTest {
         }
     }
 
-//    @Test
-//    public void testIsrChanges() throws Exception {
-//        try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
-//            try (ZkBackingStoreEnsemble ensemble =
-//                     new ZkBackingStoreEnsemble(zooKeeper, 2)) {
-//                KafkaZkClient zkClient = ensemble.stores.get(0).zkClient();
-//                ensemble.startAll().get();
-//                ensemble.waitForTopics(Collections.emptyList());
-//                HashMap<TopicPartition, Seq<Object>> assignment = new HashMap<>();
-//                assignment.put(new TopicPartition("foo", 0),
-//                    CollectionConverters.asScala(Arrays.asList(0, 1, 2)));
-//                assignment.put(new TopicPartition("foo", 1),
-//                    CollectionConverters.asScala(Arrays.asList(1, 2, 3)));
-//                assignment.put(new TopicPartition("foo", 2),
-//                    CollectionConverters.asScala(Arrays.asList(2, 3, 0)));
-//                zkClient.createTopicAssignment("foo",
-//                    CoreUtils.toImmutableMap(CollectionConverters.asScala(assignment)));
-//                MetadataState.Topic foo = new MetadataState.Topic().setName("foo");
-//                foo.partitions().add(new MetadataState.Partition().setId(0).
-//                    setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
-//                        new MetadataState.Replica().setId(0),
-//                        new MetadataState.Replica().setId(1),
-//                        new MetadataState.Replica().setId(2)).iterator())));
-//                foo.partitions().add(new MetadataState.Partition().setId(1).
-//                    setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
-//                        new MetadataState.Replica().setId(1),
-//                        new MetadataState.Replica().setId(2),
-//                        new MetadataState.Replica().setId(3)).iterator())));
-//                foo.partitions().add(new MetadataState.Partition().setId(2).
-//                    setReplicas(new MetadataState.ReplicaCollection(Arrays.asList(
-//                        new MetadataState.Replica().setId(2),
-//                        new MetadataState.Replica().setId(3),
-//                        new MetadataState.Replica().setId(0)).iterator())));
-//                ensemble.waitForTopics(Collections.singletonList(foo));
-//                assignment.remove(new TopicPartition("foo", 2));
-//                foo.partitions().remove(new MetadataState.Partition().setId(2));
-//                zkClient.setTopicAssignment("foo",
-//                    CoreUtils.toImmutableMap(CollectionConverters.asScala(assignment)));
-//                ensemble.waitForTopics(Collections.singletonList(foo));
-//                zkClient.deleteTopicZNode("foo", -1);
-//                ensemble.waitForTopics(Collections.emptyList());
-//            }
-//        }
-//    }
+
+    @Test
+    public void testIsrChanges() throws Exception {
+        try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
+            try (ZkBackingStoreEnsemble ensemble =
+                     new ZkBackingStoreEnsemble(zooKeeper, 2)) {
+                KafkaZkClient zkClient = ensemble.stores.get(0).zkClient();
+                createZkTopicAssignment(zkClient, "foo",
+                    Arrays.asList(Arrays.asList(0, 1, 2),
+                        Arrays.asList(1, 2, 3)));
+                createLeaderAndIsr(zkClient, "foo", 0, Arrays.asList(0, 1), 0, 0, 100);
+                createLeaderAndIsr(zkClient, "foo", 1, Arrays.asList(1, 2, 3), 1, 0, 200);
+                ensemble.startAll().get();
+                MetadataState.Topic foo = new MetadataState.Topic().setName("foo");
+                foo.partitions().getOrCreate(0).setLeader(0).setLeaderEpoch(100).
+                    setControllerEpochOfLastIsrUpdate(0).
+                    setReplicas(Arrays.asList(0, 1, 2)).setIsr(Arrays.asList(0, 1));
+                foo.partitions().getOrCreate(1).setLeader(1).setLeaderEpoch(200).
+                    setControllerEpochOfLastIsrUpdate(0).
+                    setReplicas(Arrays.asList(1, 2, 3)).setIsr(Arrays.asList(1, 2, 3));
+                ensemble.waitForTopics(Collections.singletonList(foo));
+                setLeaderAndIsr(zkClient, "foo", 0, Arrays.asList(0, 1, 2), 0, 0, 101);
+                setLeaderAndIsr(zkClient, "foo", 1, Arrays.asList(1, 2, 3), 1, 0, 201);
+                foo.partitions().getOrCreate(0).setLeaderEpoch(101).
+                    setIsr(Arrays.asList(0, 1, 2));
+                foo.partitions().getOrCreate(1).setLeaderEpoch(201).
+                    setIsr(Arrays.asList(1, 2, 3));
+                ensemble.waitForTopics(Collections.singletonList(foo));
+            }
+        }
+    }
 }
