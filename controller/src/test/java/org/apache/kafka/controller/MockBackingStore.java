@@ -24,7 +24,7 @@ import java.util.concurrent.CompletableFuture;
 public class MockBackingStore implements BackingStore {
     private final Throwable startException;
     private BrokerInfo brokerInfo;
-    private Activator activator;
+    private BackingStoreCallbackHandler callbackHandler;
 
     public static class Builder {
         private Throwable startException;
@@ -48,7 +48,8 @@ public class MockBackingStore implements BackingStore {
     }
 
     @Override
-    public CompletableFuture<Void> start(BrokerInfo brokerInfo, Activator activator) {
+    public CompletableFuture<Void> start(BrokerInfo brokerInfo,
+                                         BackingStoreCallbackHandler callbackHandler) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         if (this.startException != null) {
             future.completeExceptionally(startException);
@@ -61,7 +62,7 @@ public class MockBackingStore implements BackingStore {
                     "which has already been started.");
             }
             this.brokerInfo = brokerInfo;
-            this.activator = activator;
+            this.callbackHandler = callbackHandler;
             this.started = true;
         }
         future.complete(null);

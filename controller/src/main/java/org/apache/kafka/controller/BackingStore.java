@@ -25,12 +25,14 @@ public interface BackingStore extends AutoCloseable {
     /**
      * Start this backing store.
      *
-     * @param brokerInfo    The broker that we're registering.
-     * @param activator     The callback object to use when activating.
+     * @param brokerInfo        The broker that we're registering.
+     * @param callbackHandler   The callback handler to register.
      *
-     * @return              A future that is completed when we finish registering with ZK.
+     * @return                  A future that is completed when we finish registering
+     *                          with ZK.
      */
-    CompletableFuture<Void> start(BrokerInfo brokerInfo, Activator activator);
+    CompletableFuture<Void> start(BrokerInfo brokerInfo,
+                                  BackingStoreCallbackHandler callbackHandler);
 
     /**
      * Change the broker information.

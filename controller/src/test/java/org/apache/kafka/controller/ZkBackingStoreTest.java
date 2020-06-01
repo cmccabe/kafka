@@ -29,6 +29,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -69,33 +70,36 @@ public class ZkBackingStoreTest {
         }
     }
 
-    private static class TrackingActivationListener implements Activator, Controller {
-        private boolean active;
+    private static class TrackingActivationListener implements BackingStoreCallbackHandler {
+        private Optional<Integer> controllerEpoch = Optional.empty();
         private final CountDownLatch hasActivated = new CountDownLatch(1);
 
         @Override
-        synchronized public Controller activate(MetadataState newState, int controllerEpoch) {
-            this.active = true;
+        synchronized public void activate(int newControllerEpoch, MetadataState newState) {
+            this.controllerEpoch = Optional.of(newControllerEpoch);
             hasActivated.countDown();
-            return this;
-        }
-
-        @Override
-        synchronized public void close() {
-            this.active = false;
-        }
-
-        @Override
-        synchronized public void handleBrokerUpdates(List<MetadataState.Broker> changedBrokers,
-                                                     List<Integer> deletedBrokerIds) {
-        }
-
-        @Override
-        synchronized public void handleTopicUpdates(TopicDelta topicDelta) {
         }
 
         synchronized boolean active() {
-            return active;
+            return controllerEpoch.isPresent();
+        }
+
+        @Override
+        synchronized public void deactivate(int controllerEpoch) {
+            if (this.controllerEpoch.equals(Optional.of(controllerEpoch))) {
+                this.controllerEpoch = Optional.empty();
+            }
+        }
+
+        @Override
+        synchronized public void handleBrokerUpdates(int controllerEpoch,
+                                        List<MetadataState.Broker> changedBrokers,
+                                        List<Integer> deletedBrokerIds) {
+        }
+
+        @Override
+        synchronized public void handleTopicUpdates(int controllerEpoch,
+                                                    TopicDelta topicDelta) {
         }
     }
 
@@ -183,7 +187,7 @@ public class ZkBackingStoreTest {
                 int numActive = 0;
                 activeNodeId.set(-1);
                 for (int i = 0; i < stores.size(); i++) {
-                    if (activationListeners.get(i).active) {
+                    if (activationListeners.get(i).active()) {
                         if (i != nodeIdToIgnore) {
                             numActive++;
                             activeNodeId.set(i);
@@ -200,7 +204,7 @@ public class ZkBackingStoreTest {
             TestUtils.retryOnExceptionWithTimeout(() -> {
                 int activeId = -1;
                 for (int i = 0; i < stores.size(); i++) {
-                    if (activationListeners.get(i).active) {
+                    if (activationListeners.get(i).active()) {
                         activeId = i;
                         break;
                     }

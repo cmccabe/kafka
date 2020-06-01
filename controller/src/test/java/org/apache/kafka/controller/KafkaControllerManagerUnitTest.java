@@ -18,6 +18,8 @@
 package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
+import org.apache.kafka.common.utils.KafkaEventQueue;
+import org.apache.kafka.common.utils.LogContext;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -37,27 +39,37 @@ public class KafkaControllerManagerUnitTest {
     @Rule
     final public Timeout globalTimeout = Timeout.seconds(40);
 
+    private KafkaControllerManager createControllerManager(String name,
+                                                           BackingStore backingStore) {
+        ControllerLogContext logContext = ControllerLogContext.fromPrefix(name);
+        if (backingStore == null) {
+            backingStore = new MockBackingStore.Builder().build();
+        }
+        KafkaEventQueue mainQueue =
+            new KafkaEventQueue(logContext.logContext(), logContext.threadNamePrefix());
+        return new KafkaControllerManager(logContext, backingStore, mainQueue);
+    }
+
     @Test
     public void testCreateAndClose() throws Throwable {
-        try (KafkaControllerManager manager = new KafkaControllerManager(
-            ControllerLogContext.fromPrefix("testCreateAndClose"),
-                     new MockBackingStore.Builder().build())) {
+        try (KafkaControllerManager manager =
+                 createControllerManager("testCreateAndClose", null)) {
         }
     }
 
     @Test
     public void testCreateStartAndClose() throws Throwable {
         MockBackingStore backingStore = new MockBackingStore.Builder().build();
-        try (KafkaControllerManager manager = new KafkaControllerManager(
-                ControllerLogContext.fromPrefix("testCreateStartAndClose"), backingStore)) {
+        try (KafkaControllerManager manager =
+                 createControllerManager("testCreateStartAndClose", backingStore)) {
             BrokerInfo brokerInfo = ControllerTestUtils.brokerToBrokerInfo(
                 ControllerTestUtils.newTestBroker(0));
             Assert.assertFalse(backingStore.isStarted());
             manager.start(brokerInfo).get();
             Assert.assertTrue(backingStore.isStarted());
-            assertEquals("The ControllerManager has already been started.",
-                assertThrows(ExecutionException.class, () -> manager.start(brokerInfo).get()).
-                    getCause().getMessage());
+            assertEquals("Attempting to Start a KafkaControllerManager which has " +
+                "already been started.", assertThrows(ExecutionException.class,
+                    () -> manager.start(brokerInfo).get()).getCause().getMessage());
             Assert.assertFalse(backingStore.isShutdown());
             manager.shutdown();
             Assert.assertTrue(backingStore.isShutdown());
@@ -68,14 +80,13 @@ public class KafkaControllerManagerUnitTest {
     public void testStartError() throws Throwable {
         MockBackingStore backingStore = new MockBackingStore.Builder().
             setStartException(new RuntimeException("start error")).build();
-        try (KafkaControllerManager manager = new KafkaControllerManager(
-                ControllerLogContext.fromPrefix("testStartError"), backingStore)) {
+        try (KafkaControllerManager manager =
+                 createControllerManager("testStartError", backingStore)) {
             BrokerInfo brokerInfo = ControllerTestUtils.brokerToBrokerInfo(
                 ControllerTestUtils.newTestBroker(0));
             Assert.assertFalse(backingStore.isStarted());
             ControllerTestUtils.assertFutureExceptionEquals(
                 RuntimeException.class, manager.start(brokerInfo));
-            assertEquals(KafkaControllerManager.State.SHUT_DOWN, manager.state());
         }
     }
 }

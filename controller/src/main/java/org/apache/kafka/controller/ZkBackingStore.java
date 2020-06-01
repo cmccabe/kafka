@@ -70,7 +70,7 @@ public class ZkBackingStore implements BackingStore {
     private final Map<Integer, BrokerChangeHandler> brokerChangeHandlers;
     private final Map<String, TopicChangeHandler> topicChangeHandlers;
     private boolean started;
-    private Activator activator;
+    private BackingStoreCallbackHandler callbackHandler;
     private long brokerEpoch;
     private BrokerInfo brokerInfo;
     private int activeId;
@@ -80,16 +80,13 @@ public class ZkBackingStore implements BackingStore {
         final int controllerEpoch;
         final int epochZkVersion;
         final MetadataState metadata;
-        final Controller controller;
 
         ActiveZkBackingStoreState(int controllerEpoch,
                                   int epochZkVersion,
-                                  MetadataState metadata,
-                                  Controller controller) {
+                                  MetadataState metadata) {
             this.controllerEpoch = controllerEpoch;
             this.epochZkVersion = epochZkVersion;
             this.metadata = metadata;
-            this.controller = controller;
         }
     }
 
@@ -364,7 +361,7 @@ public class ZkBackingStore implements BackingStore {
                 zkClient.unregisterZNodeChangeHandler(iter.next().path());
                 iter.remove();
             }
-            activeState.controller.close();
+            callbackHandler.deactivate(activeState.controllerEpoch);
         } catch (Throwable e) {
             logContext.setLastUnexpectedError(log, "unable to unregister ZkClient " +
                     "watches", e);
@@ -389,12 +386,12 @@ public class ZkBackingStore implements BackingStore {
      */
     class StartEvent extends AbstractZkBackingStoreEvent<Void> {
         private final BrokerInfo newBrokerInfo;
-        private final Activator newActivator;
+        private final BackingStoreCallbackHandler newCallbackHandler;
 
-        StartEvent(BrokerInfo newBrokerInfo, Activator newActivator) {
+        StartEvent(BrokerInfo newBrokerInfo, BackingStoreCallbackHandler newCallbackHandler) {
             super(Optional.empty());
             this.newBrokerInfo = newBrokerInfo;
-            this.newActivator = newActivator;
+            this.newCallbackHandler = newCallbackHandler;
         }
 
         @Override
@@ -408,7 +405,7 @@ public class ZkBackingStore implements BackingStore {
             zkClient.registerZNodeChangeHandlerAndCheckExistence(controllerChangeHandler);
             brokerInfo = newBrokerInfo;
             backingStoreQueue.append(new TryToActivateEvent(false));
-            activator = newActivator;
+            callbackHandler = newCallbackHandler;
             started = true;
             log.info("{}: initialized ZkBackingStore with brokerInfo {}.",
                 name(), newBrokerInfo);
@@ -433,7 +430,7 @@ public class ZkBackingStore implements BackingStore {
             zkClient.unregisterZNodeChangeHandler(controllerChangeHandler.path());
             resignIfActive(true, "The backing store is shutting down.");
             brokerInfo = null;
-            activator = null;
+            callbackHandler = null;
             return null;
         }
     }
@@ -595,7 +592,7 @@ public class ZkBackingStore implements BackingStore {
                 }
             }
             activeState.metadata.setBrokers(newBrokers);
-            activeState.controller.handleBrokerUpdates(changed, deleted);
+            callbackHandler.handleBrokerUpdates(activeState.controllerEpoch, changed, deleted);
             return null;
         }
     }
@@ -624,7 +621,7 @@ public class ZkBackingStore implements BackingStore {
                 // notification firing and this handler.  Handle the broker going away.
                 log.debug("{}: broker {} is now gone.", name(), brokerId);
                 activeState.metadata.brokers().remove(existingBroker);
-                activeState.controller.handleBrokerUpdates(
+                callbackHandler.handleBrokerUpdates(activeState.controllerEpoch,
                     Collections.emptyList(), Collections.singletonList(brokerId));
                 return null;
             }
@@ -637,7 +634,7 @@ public class ZkBackingStore implements BackingStore {
                     name(), brokerId, stateBroker);
                 activeState.metadata.brokers().remove(existingBroker);
                 activeState.metadata.brokers().add(stateBroker);
-                activeState.controller.handleBrokerUpdates(
+                callbackHandler.handleBrokerUpdates(activeState.controllerEpoch,
                     Collections.singletonList(stateBroker.duplicate()),
                     Collections.emptyList());
             } else {
@@ -682,7 +679,7 @@ public class ZkBackingStore implements BackingStore {
             TopicDelta delta = TopicDelta.fromUpdatedTopicReplicas(
                 activeState.metadata.topics(), newTopics);
             applyDelta(requiredControllerEpoch().get(), delta);
-            activeState.controller.handleTopicUpdates(delta);
+            callbackHandler.handleTopicUpdates(activeState.controllerEpoch, delta);
             return null;
         }
     }
@@ -733,7 +730,7 @@ public class ZkBackingStore implements BackingStore {
                     activeState.metadata.topics(), updatedTopic);
             }
             applyDelta(requiredControllerEpoch().get(), delta);
-            activeState.controller.handleTopicUpdates(delta);
+            callbackHandler.handleTopicUpdates(activeState.controllerEpoch, delta);
             return null;
         }
     }
@@ -757,9 +754,8 @@ public class ZkBackingStore implements BackingStore {
         for (MetadataState.Broker broker : state.brokers()) {
             registerBrokerChangeHandler(controllerEpoch, broker.brokerId());
         }
-        Controller controller = activator.activate(state, controllerEpoch);
-        return new ActiveZkBackingStoreState(controllerEpoch,
-            epochZkVersion, state, controller);
+        callbackHandler.activate(controllerEpoch, state);
+        return new ActiveZkBackingStoreState(controllerEpoch, epochZkVersion, state);
     }
 
     private MetadataState.BrokerCollection loadBrokerChildren() {
@@ -830,7 +826,7 @@ public class ZkBackingStore implements BackingStore {
                 TopicDelta delta = TopicDelta.
                     fromIsrUpdates(activeState.metadata.topics(), isrUpdates);
                 applyDelta(requiredControllerEpoch().get(), delta);
-                activeState.controller.handleTopicUpdates(delta);
+                callbackHandler.handleTopicUpdates(activeState.controllerEpoch, delta);
             } finally {
                 // delete the notifications
                 zkClient.deleteIsrChangeNotifications(sequenceNumbers,
@@ -845,7 +841,7 @@ public class ZkBackingStore implements BackingStore {
                                         KafkaZkClient zkClient) {
         return new ZkBackingStore(logContext, nodeId,
             new KafkaEventQueue(new LogContext(logContext.logContext().logPrefix() +
-                " [zkQueue] "), logContext.threadNamePrefix()),
+                " [storeQueue] "), logContext.threadNamePrefix()),
             zkClient);
     }
 
@@ -864,7 +860,7 @@ public class ZkBackingStore implements BackingStore {
         this.brokerChangeHandlers = new HashMap<>();
         this.topicChangeHandlers = new HashMap<>();
         this.started = false;
-        this.activator = null;
+        this.callbackHandler = null;
         this.brokerEpoch = -1;
         this.brokerInfo = null;
         this.activeId = -1;
@@ -873,8 +869,8 @@ public class ZkBackingStore implements BackingStore {
 
     @Override
     public CompletableFuture<Void> start(BrokerInfo newBrokerInfo,
-                                         Activator newActivator) {
-        return backingStoreQueue.append(new StartEvent(newBrokerInfo, newActivator));
+                                         BackingStoreCallbackHandler newCallbackHandler) {
+        return backingStoreQueue.append(new StartEvent(newBrokerInfo, newCallbackHandler));
     }
 
     @Override
@@ -895,12 +891,8 @@ public class ZkBackingStore implements BackingStore {
 
     @Override
     public void close() throws InterruptedException {
-        log.debug("Initiating close..");
-        try {
-            shutdown();
-        } catch (TimeoutException e) {
-            // Ignore duplicate shutdown.
-        }
+        log.debug("Initiating close.");
+        shutdown();
         backingStoreQueue.close();
         log.debug("Close complete.");
     }

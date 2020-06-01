@@ -22,22 +22,36 @@ import org.apache.kafka.common.message.MetadataState;
 import java.util.List;
 
 /**
- * Handles changes to the controller state.
+ * Handles events from the BackingStore.
  */
-public interface Controller extends AutoCloseable {
+public interface BackingStoreCallbackHandler {
     /**
-     * Stop this change listener because this node is no longer the active controller.
+     * Activate this node as the controller.
+     *
+     * @param newControllerEpoch    The new controller epoch.
+     * @param newState              The current state.
+     *
+     * @return                  The new controller object.
      */
-    void close();
+    void activate(int newControllerEpoch, MetadataState newState);
+
+    /**
+     * Deactivate this node as the controller.
+     *
+     * @param controllerEpoch       The current controller epoch.
+     */
+    void deactivate(int controllerEpoch);
 
     /**
      * Handle changes to the brokers in the cluster.
      */
-    void handleBrokerUpdates(List<MetadataState.Broker> changedBrokers,
+    void handleBrokerUpdates(int controllerEpoch,
+                             List<MetadataState.Broker> changedBrokers,
                              List<Integer> deletedBrokerIds);
 
     /**
      * Handle changes to the topics in the cluster.
      */
-    void handleTopicUpdates(TopicDelta topicDelta);
+    void handleTopicUpdates(int controllerEpoch,
+                            TopicDelta topicDelta);
 }

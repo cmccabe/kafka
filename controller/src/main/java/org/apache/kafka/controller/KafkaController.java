@@ -17,60 +17,34 @@
 
 package org.apache.kafka.controller;
 
-import kafka.controller.ControllerManager;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
-import org.apache.kafka.common.utils.KafkaEventQueue;
+import org.apache.kafka.common.utils.LogContext;
 import org.slf4j.Logger;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-
-public final class KafkaController implements Controller {
+public final class KafkaController {
     private final ControllerLogContext logContext;
     private final Logger log;
-    private final Deactivator deactivator;
-    private final BackingStore backingStore;
-    private final EventQueue controllerQueue;
-    private final MetadataState state;
     private final int controllerEpoch;
+    private final BackingStore backingStore;
+    private final EventQueue mainQueue;
+    private final MetadataState state;
 
     KafkaController(ControllerLogContext logContext,
-                    Deactivator deactivator,
+                    int controllerEpoch,
                     BackingStore backingStore,
-                    MetadataState state,
-                    int controllerEpoch) {
+                    EventQueue mainQueue,
+                    MetadataState state) {
         this.logContext = logContext;
-        this.log = logContext.createLogger(KafkaController.class);
-        this.deactivator = deactivator;
-        this.backingStore = backingStore;
-        this.controllerQueue =
-            new KafkaEventQueue(logContext.logContext(), logContext.threadNamePrefix());
-        this.state = state;
+        this.log = new LogContext(logContext.logContext().logPrefix() +
+            " [epoch " + controllerEpoch + "] ").logger(KafkaController.class);
         this.controllerEpoch = controllerEpoch;
+        this.backingStore = backingStore;
+        this.mainQueue = mainQueue;
+        this.state = state;
     }
 
-    public CompletableFuture<Map<TopicPartition, ControllerManager.PartitionLeaderElectionResult>>
-                electLeaders(int timeoutMs, Set<TopicPartition> parts) {
-        return null;
-    }
-
-    @Override
-    public void close() {
-        // TODO: put this on a KafkaQueue, or something?
-        deactivator.deactivate(this);
-    }
-
-    @Override
-    public void handleBrokerUpdates(List<MetadataState.Broker> changedBrokers, List<Integer> deletedBrokerIds) {
-
-    }
-
-    @Override
-    public void handleTopicUpdates(TopicDelta topicDelta) {
-
+    public int controllerEpoch() {
+        return controllerEpoch;
     }
 }
