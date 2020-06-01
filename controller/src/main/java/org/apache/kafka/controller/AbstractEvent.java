@@ -17,26 +17,34 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.common.errors.NotControllerException;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 abstract class AbstractEvent<T> implements EventQueue.Event<T> {
     private final Logger log;
-    final String name;
+    private final Optional<Integer> requiredControllerEpoch;
+    private final String name;
 
-    AbstractEvent(Logger log) {
+    AbstractEvent(Logger log, Optional<Integer> requiredControllerEpoch) {
         this.log = log;
+        this.requiredControllerEpoch = requiredControllerEpoch;
         this.name = getClass().getSimpleName();
     }
 
     @Override
-    final public T run() throws Throwable {
+    public T run() throws Throwable {
         long startNs = Time.SYSTEM.nanoseconds();
         log.info("{}: starting", name);
         try {
+            if (controllerEpochMismatch()) {
+                throw new NotControllerException("This node is no longer the active " +
+                    "controller with epoch " + requiredControllerEpoch.get());
+            }
             T value = execute();
             log.info("{}: finished after {} ms",
                 name, executionTimeToString(startNs));
@@ -56,7 +64,23 @@ abstract class AbstractEvent<T> implements EventQueue.Event<T> {
         return ControllerUtils.nanosToFractionalMillis(endNs - startNs);
     }
 
+    public boolean controllerEpochMismatch() {
+        return requiredControllerEpoch.isPresent() &&
+            (!currentControllerEpoch().isPresent() ||
+                !currentControllerEpoch().get().equals(requiredControllerEpoch.get()));
+    }
+
+    public abstract Optional<Integer> currentControllerEpoch();
+
     public abstract T execute() throws Throwable;
 
     public abstract Throwable handleException(Throwable e) throws Throwable;
+
+    public Optional<Integer> requiredControllerEpoch() {
+        return requiredControllerEpoch;
+    }
+
+    public String name() {
+        return name;
+    }
 }

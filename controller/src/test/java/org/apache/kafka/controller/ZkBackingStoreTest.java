@@ -142,7 +142,7 @@ public class ZkBackingStoreTest {
                         zkClient.createTopLevelPaths();
                     }
                     stores.add(ZkBackingStore.create(ControllerLogContext.
-                        fromPrefix(String.format("Node%d_", i)), i, zkClient));
+                        fromPrefix(String.format("Node%d", i)), i, zkClient));
                 }
             } catch (Exception e) {
                 for (ZkBackingStore store : stores) {

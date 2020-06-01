@@ -56,7 +56,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.function.Function;
 
 public class ZkBackingStore implements BackingStore {
     private final ControllerLogContext logContext;
@@ -66,10 +65,8 @@ public class ZkBackingStore implements BackingStore {
     private final KafkaZkClient zkClient;
     private final ZkStateChangeHandler zkStateChangeHandler;
     private final ControllerChangeHandler controllerChangeHandler;
-    private final BrokerChildChangeHandler brokerChildChangeHandler;
+    private final Map<String, ZNodeChildChangeHandler> childChangeHandlers;
     private final Map<Integer, BrokerChangeHandler> brokerChangeHandlers;
-    private final TopicChildChangeHandler topicChildChangeHandler;
-    private final IsrChangeNotificationChildHandler isrChangeNotificationChildHandler;
     private final Map<String, TopicChangeHandler> topicChangeHandlers;
     private boolean started;
     private Activator activator;
@@ -106,14 +103,9 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void beforeInitializingSession() {
-            // Handle the ZooKeeper session dropping.  We immediately cancel all events
-            // that would require us to be the controller.  We can't be the controller
-            // without a ZK session.  Then we prepend the SessionExpirationEvent to the
-            // queue, so that it is handled first.  It will trigger our resignation, if
-            // needed.
-            CompletableFuture<Void> future = backingStoreQueue.enqueue(false,
-                ZkSessionDropCanceller.INSTANCE,
-                null,
+            // Prepend the SessionExpirationEvent to the queue, so that it will be
+            // handled as soon as possible.
+            CompletableFuture<Void> future = backingStoreQueue.prepend(
                 new SessionExpirationEvent());
             // Block until the SessionExpirationEvent is handled.  This ensures that we
             // have resigned and cleared the controller state before we try to
@@ -125,23 +117,6 @@ public class ZkBackingStore implements BackingStore {
         public void afterInitializingSession() {
             // Once we have a new ZK session, try to become the active controller.
             backingStoreQueue.append(new TryToActivateEvent(true));
-        }
-    }
-
-    static class ZkSessionDropCanceller implements Function<EventQueue.Event<?>, Throwable> {
-        final static ZkSessionDropCanceller INSTANCE = new ZkSessionDropCanceller();
-
-        @Override
-        public Throwable apply(EventQueue.Event<?> event) {
-            if (!(event instanceof AbstractZkBackingStoreEvent)) {
-                return null;
-            }
-            AbstractZkBackingStoreEvent<?> e = (AbstractZkBackingStoreEvent<?>) event;
-            if (e.cancelIfZkSessionDrops) {
-                return new NotControllerException("Zookeeper session expired");
-            } else {
-                return null;
-            }
         }
     }
 
@@ -174,6 +149,12 @@ public class ZkBackingStore implements BackingStore {
      * Handles changes to the children of the /broker path.
      */
     class BrokerChildChangeHandler implements ZNodeChildChangeHandler {
+        private final int controllerEpoch;
+
+        BrokerChildChangeHandler(int controllerEpoch) {
+            this.controllerEpoch = controllerEpoch;
+        }
+
         @Override
         public String path() {
             return BrokerIdsZNode.path();
@@ -181,7 +162,7 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void handleChildChange() {
-            backingStoreQueue.append(new BrokerChildChangeEvent());
+            backingStoreQueue.append(new BrokerChildChangeEvent(controllerEpoch));
         }
     }
 
@@ -189,9 +170,11 @@ public class ZkBackingStore implements BackingStore {
      * Handles changes to a specific broker ZNode /broker/$ID
      */
     class BrokerChangeHandler implements ZNodeChangeHandler {
+        private final int controllerEpoch;
         private final int brokerId;
 
-        BrokerChangeHandler(int brokerId) {
+        BrokerChangeHandler(int controllerEpoch, int brokerId) {
+            this.controllerEpoch = controllerEpoch;
             this.brokerId = brokerId;
         }
 
@@ -202,7 +185,7 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void handleDataChange() {
-            backingStoreQueue.append(new BrokerChangeEvent(brokerId));
+            backingStoreQueue.append(new BrokerChangeEvent(controllerEpoch, brokerId));
         }
     }
 
@@ -210,6 +193,12 @@ public class ZkBackingStore implements BackingStore {
      * Handles changes to the children of the /broker/topics path.
      */
     class TopicChildChangeHandler implements ZNodeChildChangeHandler {
+        private final int controllerEpoch;
+
+        TopicChildChangeHandler(int controllerEpoch) {
+            this.controllerEpoch = controllerEpoch;
+        }
+
         @Override
         public String path() {
             return TopicsZNode.path();
@@ -217,7 +206,7 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void handleChildChange() {
-            backingStoreQueue.append(new TopicChildChangeEvent());
+            backingStoreQueue.append(new TopicChildChangeEvent(controllerEpoch));
         }
     }
 
@@ -225,9 +214,11 @@ public class ZkBackingStore implements BackingStore {
      * Handles changes to a /broker/topics/$topic path.
      */
     class TopicChangeHandler implements ZNodeChangeHandler {
+        private final int controllerEpoch;
         private final String topic;
 
-        TopicChangeHandler(String topic) {
+        TopicChangeHandler(int controllerEpoch, String topic) {
+            this.controllerEpoch = controllerEpoch;
             this.topic = topic;
         }
 
@@ -238,11 +229,17 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void handleDataChange() {
-            backingStoreQueue.append(new TopicChangeEvent(topic));
+            backingStoreQueue.append(new TopicChangeEvent(controllerEpoch, topic));
         }
     }
 
     class IsrChangeNotificationChildHandler implements ZNodeChildChangeHandler {
+        private final int controllerEpoch;
+
+        IsrChangeNotificationChildHandler(int controllerEpoch) {
+            this.controllerEpoch = controllerEpoch;
+        }
+
         @Override
         public String path() {
             return IsrChangeNotificationZNode.path();
@@ -250,12 +247,18 @@ public class ZkBackingStore implements BackingStore {
 
         @Override
         public void handleChildChange() {
-            backingStoreQueue.append(new IsrChangeNotificationChildEvent());
+            backingStoreQueue.append(new IsrChangeNotificationChildEvent(controllerEpoch));
         }
     }
 
-    private void registerBrokerChangeHandler(int brokerId) {
-        BrokerChangeHandler changeHandler = new BrokerChangeHandler(brokerId);
+    private void registerZnodeChildChangeHandler(ZNodeChildChangeHandler handler) {
+        childChangeHandlers.put(handler.path(), handler);
+        zkClient.registerZNodeChildChangeHandler(handler);
+    }
+
+    private void registerBrokerChangeHandler(int controllerEpoch, int brokerId) {
+        BrokerChangeHandler changeHandler =
+            new BrokerChangeHandler(controllerEpoch, brokerId);
         zkClient.registerZNodeChangeHandlerAndCheckExistence(changeHandler);
         brokerChangeHandlers.put(brokerId, changeHandler);
     }
@@ -267,8 +270,9 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
-    private void registerTopicChangeHandler(String name) {
-        TopicChangeHandler changeHandler = new TopicChangeHandler(name);
+    private void registerTopicChangeHandler(int controllerEpoch, String name) {
+        TopicChangeHandler changeHandler =
+            new TopicChangeHandler(controllerEpoch, name);
         zkClient.registerZNodeChangeHandlerAndCheckExistence(changeHandler);
         topicChangeHandlers.put(name, changeHandler);
     }
@@ -281,19 +285,35 @@ public class ZkBackingStore implements BackingStore {
     }
 
     abstract class AbstractZkBackingStoreEvent<T> extends AbstractEvent<T> {
-        private final boolean cancelIfZkSessionDrops;
+        public AbstractZkBackingStoreEvent(Optional<Integer> controllerEpoch) {
+            super(log, controllerEpoch);
+        }
 
-        public AbstractZkBackingStoreEvent(boolean cancelIfZkSessionDrops) {
-            super(log);
-            this.cancelIfZkSessionDrops = cancelIfZkSessionDrops;
+        @Override
+        public Optional<Integer> currentControllerEpoch() {
+            if (activeState == null) {
+                return Optional.empty();
+            }
+            return Optional.of(activeState.controllerEpoch);
         }
 
         @Override
         public Throwable handleException(Throwable e) throws Throwable {
-            if (e instanceof ControllerMovedException) {
+            if (e instanceof NotControllerException) {
+                if (!controllerEpochMismatch()) {
+                    // If the controller epoch that this event was prepared for is
+                    // different than the current one, we don't want to resign.  In
+                    // theory, we could be active again with a different epoch.
+                    resignIfActive(true, "The controller got a NotControllerException.");
+                }
+                return e;
+            } else if (e instanceof ControllerMovedException) {
+                // ControllerMovedException is thrown by some of the ZK fencing routines
+                // inside ZkBackingStore.
                 resignIfActive(true, "The controller got a ControllerMovedException.");
                 return new NotControllerException(e.getMessage());
             } else {
+                // Other exception types are not expected by ZkBackingStore.
                 logContext.setLastUnexpectedError(log, "Unhandled event exception", e);
                 resignIfActive(true, "The controller had an unexpected error.");
                 return e;
@@ -308,24 +328,6 @@ public class ZkBackingStore implements BackingStore {
     private void checkIsStarted() {
         if (!started) {
             throw new RuntimeException("The ZkBackingStore has not been started.");
-        }
-    }
-
-    /**
-     * Check that the ZkBackingStore has been started and is currently active.
-     * Of course, there is a race condition here: we may think that we are still
-     * active when actually another node has already been elected.  To prevent problems
-     * resulting from this, we use the controllerEpochZkVersion to fence certain updates
-     * we make to ZooKeeper.
-     *
-     * So think of this check as a way to avoid unecessary load on ZooKeeper, but not as
-     * something essential to correctness.
-     */
-    private void checkIsStartedAndActive() {
-        checkIsStarted();
-        if (activeState == null) {
-            throw new ControllerMovedException("This node is not the " +
-                "active controller.");
         }
     }
 
@@ -345,9 +347,12 @@ public class ZkBackingStore implements BackingStore {
             logSuffix.substring(0, 1).toLowerCase(Locale.ROOT),
             logSuffix.substring(1));
         try {
-            zkClient.unregisterZNodeChildChangeHandler(brokerChildChangeHandler.path());
-            zkClient.unregisterZNodeChildChangeHandler(topicChildChangeHandler.path());
-            zkClient.unregisterZNodeChildChangeHandler(isrChangeNotificationChildHandler.path());
+            for (Iterator<String> iter = childChangeHandlers.keySet().iterator();
+                     iter.hasNext(); ) {
+                String path = iter.next();
+                zkClient.unregisterZNodeChildChangeHandler(path);
+                iter.remove();
+            }
             for (Iterator<BrokerChangeHandler> iter =
                  brokerChangeHandlers.values().iterator(); iter.hasNext(); ) {
                 zkClient.unregisterZNodeChangeHandler(iter.next().path());
@@ -386,7 +391,7 @@ public class ZkBackingStore implements BackingStore {
         private final Activator newActivator;
 
         StartEvent(BrokerInfo newBrokerInfo, Activator newActivator) {
-            super(false);
+            super(Optional.empty());
             this.newBrokerInfo = newBrokerInfo;
             this.newActivator = newActivator;
         }
@@ -405,7 +410,7 @@ public class ZkBackingStore implements BackingStore {
             activator = newActivator;
             started = true;
             log.info("{}: initialized ZkBackingStore with brokerInfo {}.",
-                name, newBrokerInfo);
+                name(), newBrokerInfo);
             return null;
         }
     }
@@ -415,7 +420,7 @@ public class ZkBackingStore implements BackingStore {
      */
     class StopEvent extends AbstractZkBackingStoreEvent<Void> {
         StopEvent() {
-            super(false);
+            super(Optional.empty());
         }
 
         @Override
@@ -437,7 +442,7 @@ public class ZkBackingStore implements BackingStore {
      */
     class SessionExpirationEvent extends AbstractZkBackingStoreEvent<Void> {
         SessionExpirationEvent() {
-            super(false);
+            super(Optional.empty());
         }
 
         @Override
@@ -453,7 +458,7 @@ public class ZkBackingStore implements BackingStore {
      */
     class ControllerChangeEvent extends AbstractZkBackingStoreEvent<Void> {
         ControllerChangeEvent() {
-            super(true);
+            super(Optional.empty());
         }
 
         @Override
@@ -490,7 +495,7 @@ public class ZkBackingStore implements BackingStore {
         private final boolean registerBroker;
 
         TryToActivateEvent(boolean registerBroker) {
-            super(true);
+            super(Optional.empty());
             this.registerBroker = registerBroker;
         }
 
@@ -499,15 +504,16 @@ public class ZkBackingStore implements BackingStore {
             checkIsStarted();
             if (registerBroker) {
                 brokerEpoch = zkClient.registerBroker(brokerInfo);
-                log.info("{}: registered brokerInfo {}.", name, brokerInfo);
+                log.info("{}: registered brokerInfo {}.", name(), brokerInfo);
             }
+            // This will throw ControllerMovedException if we don't get the leadership.
             KafkaZkClient.RegistrationResult result =
                 zkClient.registerControllerAndIncrementControllerEpoch2(nodeId);
             zkClient.registerZNodeChangeHandlerAndCheckExistence(
                 controllerChangeHandler);
             activeId = nodeId;
             log.info("{}, {} successfully elected as the controller. Epoch " +
-                "incremented to {} and epoch zk version is now {}", name,
+                "incremented to {} and epoch zk version is now {}", name(),
                 nodeId, result.controllerEpoch(), result.epochZkVersion());
             activeState = loadActiveState(
                 result.controllerEpoch(), result.epochZkVersion());
@@ -523,7 +529,7 @@ public class ZkBackingStore implements BackingStore {
         private final BrokerInfo newBrokerInfo;
 
         UpdateBrokerInfoEvent(BrokerInfo newBrokerInfo) {
-            super(false);
+            super(Optional.empty());
             this.newBrokerInfo = newBrokerInfo;
         }
 
@@ -539,11 +545,11 @@ public class ZkBackingStore implements BackingStore {
     }
 
     /**
-     * Deactivate the ZkBackingStore if it is active.
+     * Resign as controller.
      */
-    class DeactivateIfActiveEvent extends AbstractZkBackingStoreEvent<Void> {
-        DeactivateIfActiveEvent() {
-            super(true);
+    class ResignEvent extends AbstractZkBackingStoreEvent<Void> {
+        ResignEvent(int requiredControllerEpoch) {
+            super(Optional.of(requiredControllerEpoch));
         }
 
         @Override
@@ -554,14 +560,17 @@ public class ZkBackingStore implements BackingStore {
         }
     }
 
+    /**
+     * Handle a change to a znode directly under /brokers
+     */
     class BrokerChildChangeEvent extends AbstractZkBackingStoreEvent<Void> {
-        BrokerChildChangeEvent() {
-            super(true);
+        BrokerChildChangeEvent(int requiredControllerEpoch) {
+            super(Optional.of(requiredControllerEpoch));
         }
 
         @Override
         public Void execute() {
-            checkIsStartedAndActive();
+            checkIsStarted();
             // Unfortunately, the ZK watch does not say which child znode was created
             // or deleted, so we have to re-read everything.
             List<MetadataState.Broker> changed = new ArrayList<>();
@@ -571,7 +580,8 @@ public class ZkBackingStore implements BackingStore {
                     activeState.metadata.brokers().find(newBroker);
                 if (!newBroker.equals(existingBroker)) {
                     if (existingBroker == null) {
-                        registerBrokerChangeHandler(newBroker.brokerId());
+                        registerBrokerChangeHandler(activeState.controllerEpoch,
+                                newBroker.brokerId());
                     }
                     changed.add(newBroker.duplicate());
                 }
@@ -592,14 +602,14 @@ public class ZkBackingStore implements BackingStore {
     class BrokerChangeEvent extends AbstractZkBackingStoreEvent<Void> {
         private final int brokerId;
 
-        BrokerChangeEvent(int brokerId) {
-            super(true);
+        BrokerChangeEvent(int controllerEpoch, int brokerId) {
+            super(Optional.of(controllerEpoch));
             this.brokerId = brokerId;
         }
 
         @Override
         public Void execute() {
-            checkIsStartedAndActive();
+            checkIsStarted();
             MetadataState.Broker existingBroker =
                 activeState.metadata.brokers().find(brokerId);
             if (existingBroker == null) {
@@ -611,7 +621,7 @@ public class ZkBackingStore implements BackingStore {
             if (!brokerInfo.isPresent()) {
                 // The broker znode must have been deleted between the change
                 // notification firing and this handler.  Handle the broker going away.
-                log.debug("{}: broker {} is now gone.", name, brokerId);
+                log.debug("{}: broker {} is now gone.", name(), brokerId);
                 activeState.metadata.brokers().remove(existingBroker);
                 activeState.controller.handleBrokerUpdates(
                     Collections.emptyList(), Collections.singletonList(brokerId));
@@ -623,7 +633,7 @@ public class ZkBackingStore implements BackingStore {
 
             if (!stateBroker.equals(existingBroker)) {
                 log.debug("{}: The information for broker {} is now {}",
-                    name, brokerId, stateBroker);
+                    name(), brokerId, stateBroker);
                 activeState.metadata.brokers().remove(existingBroker);
                 activeState.metadata.brokers().add(stateBroker);
                 activeState.controller.handleBrokerUpdates(
@@ -631,20 +641,20 @@ public class ZkBackingStore implements BackingStore {
                     Collections.emptyList());
             } else {
                 log.debug("{}: The information for broker {} is unchanged.",
-                    name, brokerId);
+                    name(), brokerId);
             }
             return null;
         }
     }
 
     class TopicChildChangeEvent extends AbstractZkBackingStoreEvent<Void> {
-        TopicChildChangeEvent() {
-            super(true);
+        TopicChildChangeEvent(int controllerEpoch) {
+            super(Optional.of(controllerEpoch));
         }
 
         @Override
         public Void execute() {
-            checkIsStartedAndActive();
+            checkIsStarted();
             // If a new znode is created under /brokers/topics, or a znode is deleted
             // from under /brokers/topics, we will execute this code. Unfortunately, ZK
             // doesn't tell us which znode(s) were created or deleted, only that some
@@ -670,15 +680,15 @@ public class ZkBackingStore implements BackingStore {
             MetadataState.TopicCollection newTopics = loadTopicChildren();
             TopicDelta delta = TopicDelta.fromUpdatedTopicReplicas(
                 activeState.metadata.topics(), newTopics);
-            applyDelta(delta);
+            applyDelta(requiredControllerEpoch().get(), delta);
             activeState.controller.handleTopicUpdates(delta);
             return null;
         }
     }
 
-    private void applyDelta(TopicDelta delta) {
+    private void applyDelta(int controllerEpoch, TopicDelta delta) {
         for (MetadataState.Topic addedTopic : delta.addedTopics) {
-            registerTopicChangeHandler(addedTopic.name());
+            registerTopicChangeHandler(controllerEpoch, addedTopic.name());
         }
         for (String removedTopic : delta.removedTopics) {
             unregisterTopicChangeHandler(removedTopic);
@@ -694,14 +704,14 @@ public class ZkBackingStore implements BackingStore {
     class TopicChangeEvent extends AbstractZkBackingStoreEvent<Void> {
         private final String topic;
 
-        TopicChangeEvent(String topic) {
-            super(true);
+        TopicChangeEvent(int controllerEpoch, String topic) {
+            super(Optional.of(controllerEpoch));
             this.topic = topic;
         }
 
         @Override
         public Void execute() {
-            checkIsStartedAndActive();
+            checkIsStarted();
             // This is a lot like the handler for TopicChildChangeEvent, execept that
             // we have been notified about a change to a specific topic znode, rather than
             // told to look at every topic znode in existence to see if any got added or
@@ -721,7 +731,7 @@ public class ZkBackingStore implements BackingStore {
                 delta = TopicDelta.fromUpdatedTopicReplicas(
                     activeState.metadata.topics(), updatedTopic);
             }
-            applyDelta(delta);
+            applyDelta(requiredControllerEpoch().get(), delta);
             activeState.controller.handleTopicUpdates(delta);
             return null;
         }
@@ -730,20 +740,21 @@ public class ZkBackingStore implements BackingStore {
     private ActiveZkBackingStoreState loadActiveState(int controllerEpoch,
                                                       int epochZkVersion) {
         MetadataState state = new MetadataState();
-        zkClient.registerZNodeChildChangeHandler(brokerChildChangeHandler);
-        zkClient.registerZNodeChildChangeHandler(topicChildChangeHandler);
-        zkClient.registerZNodeChildChangeHandler(isrChangeNotificationChildHandler);
+        registerZnodeChildChangeHandler(new BrokerChildChangeHandler(controllerEpoch));
+        registerZnodeChildChangeHandler(new TopicChildChangeHandler(controllerEpoch));
+        registerZnodeChildChangeHandler(
+            new IsrChangeNotificationChildHandler(controllerEpoch));
         state.setBrokers(loadBrokerChildren());
         log.info("Loaded broker(s) {}", state.brokers());
         state.setTopics(loadTopicChildren());
         for (MetadataState.Topic topic : state.topics()) {
-            registerTopicChangeHandler(topic.name());
+            registerTopicChangeHandler(controllerEpoch, topic.name());
         }
         zkClient.deleteIsrChangeNotifications(epochZkVersion);
         mergeIsrInformation(state.topics());
         log.info("Loaded topic(s) {}", state.topics());
         for (MetadataState.Broker broker : state.brokers()) {
-            registerBrokerChangeHandler(broker.brokerId());
+            registerBrokerChangeHandler(controllerEpoch, broker.brokerId());
         }
         Controller controller = activator.activate(state, controllerEpoch);
         return new ActiveZkBackingStoreState(controllerEpoch,
@@ -786,13 +797,13 @@ public class ZkBackingStore implements BackingStore {
     }
 
     class IsrChangeNotificationChildEvent extends AbstractZkBackingStoreEvent<Void> {
-        IsrChangeNotificationChildEvent() {
-            super(true);
+        IsrChangeNotificationChildEvent(int controllerEpoch) {
+            super(Optional.of(controllerEpoch));
         }
 
         @Override
         public Void execute() {
-            checkIsStartedAndActive();
+            checkIsStarted();
             // The in-sync replica set of a partition is stored in
             // /brokers/topics/<topic_name>/partitions/<partition>/state.
             // However, there are too many partition state znodes to set up a separate
@@ -817,7 +828,7 @@ public class ZkBackingStore implements BackingStore {
                         CollectionConverters.asScala(topicParts.iterator()).toSeq()));
                 TopicDelta delta = TopicDelta.
                     fromIsrUpdates(activeState.metadata.topics(), isrUpdates);
-                applyDelta(delta);
+                applyDelta(requiredControllerEpoch().get(), delta);
                 activeState.controller.handleTopicUpdates(delta);
             } finally {
                 // delete the notifications
@@ -847,11 +858,9 @@ public class ZkBackingStore implements BackingStore {
         this.zkClient = zkClient;
         this.zkStateChangeHandler = new ZkStateChangeHandler();
         this.controllerChangeHandler = new ControllerChangeHandler();
-        this.brokerChildChangeHandler = new BrokerChildChangeHandler();
+        this.childChangeHandlers = new HashMap<>();
         this.brokerChangeHandlers = new HashMap<>();
-        this.topicChildChangeHandler = new TopicChildChangeHandler();
         this.topicChangeHandlers = new HashMap<>();
-        this.isrChangeNotificationChildHandler = new IsrChangeNotificationChildHandler();
         this.started = false;
         this.activator = null;
         this.brokerEpoch = -1;
@@ -872,8 +881,8 @@ public class ZkBackingStore implements BackingStore {
     }
 
     @Override
-    public CompletableFuture<Void> deactivateIfActive() {
-        return backingStoreQueue.append(new DeactivateIfActiveEvent());
+    public CompletableFuture<Void> resign(int controllerEpoch) {
+        return backingStoreQueue.append(new ResignEvent(controllerEpoch));
     }
 
     @Override

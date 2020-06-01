@@ -43,12 +43,14 @@ public interface BackingStore extends AutoCloseable {
     CompletableFuture<Void> updateBrokerInfo(BrokerInfo newBrokerInfo);
 
     /**
-     * Deactivate this BackingStore if it is active.
+     * Deactivate this BackingStore.
+     *
+     * @param controllerEpoch   The epoch of the controller to deactivate.
      *
      * @return                  A future that is completed once we know the deactivation
      *                          has been done.
      */
-    CompletableFuture<Void> deactivateIfActive();
+    CompletableFuture<Void> resign(int controllerEpoch);
 
     /**
      * Start the process of shutting down the backing store.

@@ -78,7 +78,7 @@ public class MockBackingStore implements BackingStore {
     }
 
     @Override
-    public CompletableFuture<Void> deactivateIfActive() {
+    public CompletableFuture<Void> resign(int controllerEpoch) {
         return null;
     }
 

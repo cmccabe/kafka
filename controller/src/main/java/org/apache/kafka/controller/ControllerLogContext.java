@@ -29,7 +29,7 @@ public final class ControllerLogContext {
 
     public static ControllerLogContext fromPrefix(String prefix) {
         return new ControllerLogContext(prefix + "_",
-                new LogContext(String.format("[%s]", prefix)));
+                new LogContext(String.format("[%s] ", prefix)));
     }
 
     public ControllerLogContext(String threadNamePrefix, LogContext logContext) {
