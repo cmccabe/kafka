@@ -77,11 +77,13 @@ public final class KafkaControllerManager implements ControllerManager {
         public void handleBrokerUpdates(int controllerEpoch,
                                         List<MetadataState.Broker> changedBrokers,
                                         List<Integer> deletedBrokerIds) {
+            mainQueue.append(new HandleBrokerUpdates(controllerEpoch, changedBrokers,
+                deletedBrokerIds));
         }
 
         @Override
         public void handleTopicUpdates(int controllerEpoch, TopicDelta topicDelta) {
-
+            mainQueue.append(new HandleTopicUpdates(controllerEpoch, topicDelta));
         }
     }
 
@@ -149,6 +151,38 @@ public final class KafkaControllerManager implements ControllerManager {
         @Override
         public Void execute() throws Throwable {
             controller = null;
+            return null;
+        }
+    }
+
+    class HandleBrokerUpdates extends AbstractControllerManagerEvent<Void> {
+        private final List<MetadataState.Broker> changedBrokers;
+        private final List<Integer> deletedBrokerIds;
+
+        public HandleBrokerUpdates(int controllerEpoch,
+                List<MetadataState.Broker> changedBrokers,
+                List<Integer> deletedBrokerIds) {
+            super(Optional.of(controllerEpoch));
+            this.changedBrokers = changedBrokers;
+            this.deletedBrokerIds = deletedBrokerIds;
+        }
+
+        @Override
+        public Void execute() throws Throwable {
+            return null;
+        }
+    }
+
+    class HandleTopicUpdates extends AbstractControllerManagerEvent<Void> {
+        private final TopicDelta topicDelta;
+
+        public HandleTopicUpdates(int controllerEpoch, TopicDelta topicDelta) {
+            super(Optional.of(controllerEpoch));
+            this.topicDelta = topicDelta;
+        }
+
+        @Override
+        public Void execute() throws Throwable {
             return null;
         }
     }
