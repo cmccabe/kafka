@@ -40,6 +40,7 @@ import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
+import org.apache.kafka.common.utils.LogContext;
 import org.slf4j.Logger;
 import scala.collection.Seq;
 import scala.compat.java8.OptionConverters;
@@ -843,7 +844,8 @@ public class ZkBackingStore implements BackingStore {
                                         int nodeId,
                                         KafkaZkClient zkClient) {
         return new ZkBackingStore(logContext, nodeId,
-            new KafkaEventQueue(logContext.logContext(), logContext.threadNamePrefix()),
+            new KafkaEventQueue(new LogContext(logContext.logContext().logPrefix() +
+                " [zkQueue] "), logContext.threadNamePrefix()),
             zkClient);
     }
 
