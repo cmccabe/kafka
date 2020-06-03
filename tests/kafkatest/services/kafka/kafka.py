@@ -242,7 +242,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     def alive(self, node):
         return len(self.pids(node)) > 0
 
-    def start(self, add_principals="", use_zk_to_create_topic=True):
+    def start(self, add_principals=""):
         if self.zk_client_secure and not self.zk.zk_client_secure_port:
             raise Exception("Unable to start Kafka: TLS to Zookeeper requested but Zookeeper secure port not enabled")
         self.open_port(self.security_protocol)
@@ -269,7 +269,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                     topic_cfg = {}
 
                 topic_cfg["topic"] = topic
-                self.create_topic(topic_cfg, use_zk_to_create_topic=use_zk_to_create_topic)
+                self.create_topic(topic_cfg)
 
     def _ensure_zk_chroot(self):
         self.logger.info("Ensuring zk_chroot %s exists", self.zk_chroot)
@@ -437,19 +437,23 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         set. If Admin client is not going to be used, don't set the environment variable.
         """
         kafka_topic_script = self.path.script("kafka-topics.sh", node)
-        skip_security_settings = use_zk_connection or not node.version.topic_command_supports_bootstrap_server()
+        skip_security_settings = use_zk_connection or not node.version.use_bootstrap_server_for_topic_command()
         return kafka_topic_script if skip_security_settings else \
             "KAFKA_OPTS='-D%s -D%s' %s" % (KafkaService.JAAS_CONF_PROPERTY, KafkaService.KRB5_CONF, kafka_topic_script)
 
-    def _kafka_topics_cmd_config(self, node, use_zk_connection=True):
+    def _kafka_topics_cmd_config(self, node, use_zk_connection):
         """
         Return --command-config parameter to the kafka-topics.sh command. The config parameter specifies
         the security settings that AdminClient uses to connect to a secure kafka server.
         """
-        skip_command_config = use_zk_connection or not node.version.topic_command_supports_bootstrap_server()
-        return "" if skip_command_config else " --command-config <(echo '%s')" % (self.security_config.client_config())
+        return "" if use_zk_connection else " --command-config <(echo '%s')" % (self.security_config.client_config())
 
-    def create_topic(self, topic_cfg, node=None, use_zk_to_create_topic=True):
+    def create_topic(self, topic_cfg, node=None):
+        if node is None:
+            node = self.nodes[0]
+        self._create_topic_internal(topic_cfg, node, node.version.use_bootstrap_server_for_topic_command())
+
+    def _create_topic_internal(self, topic_cfg, node, use_zk_connection):
         """Run the admin tool create topic command.
         Specifying node is optional, and may be done if for different kafka nodes have different versions,
         and we care where command gets run.
@@ -460,8 +464,6 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             node = self.nodes[0]
         self.logger.info("Creating topic %s with settings %s",
                          topic_cfg["topic"], topic_cfg)
-
-        use_zk_connection = topic_cfg.get('if-not-exists', False) or use_zk_to_create_topic
 
         cmd = fix_opts_for_new_jvm(node)
         cmd += "%(kafka_topics_cmd)s %(connection_string)s --create --topic %(topic)s " % {
@@ -512,14 +514,17 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         self.logger.info("Running topic delete command...\n%s" % cmd)
         node.account.ssh(cmd)
 
-    def describe_topic(self, topic, node=None, use_zk_to_describe_topic=True):
+    def describe_topic(self, topic, node=None):
         if node is None:
             node = self.nodes[0]
+        self._describe_topic_internal(self, topic, node, node.version.use_bootstrap_server_for_topic_command())
+
+    def _describe_topic_internal(self, topic, node, use_zk_connection):
         cmd = fix_opts_for_new_jvm(node)
         cmd += "%s %s --topic %s --describe %s" % \
-              (self._kafka_topics_cmd(node=node, use_zk_connection=use_zk_to_describe_topic),
-               self._connect_setting(node=node, use_zk_connection=use_zk_to_describe_topic),
-               topic, self._kafka_topics_cmd_config(node=node, use_zk_connection=use_zk_to_describe_topic))
+               (self._kafka_topics_cmd(node=node, use_zk_connection=use_zk_connection),
+                self._connect_setting(node=node, use_zk_connection=use_zk_connection),
+                topic, self._kafka_topics_cmd_config(node=node, use_zk_connection=use_zk_connection))
 
         self.logger.info("Running topic describe command...\n%s" % cmd)
         output = ""
@@ -527,14 +532,19 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             output += line
         return output
 
-    def list_topics(self, node=None, use_zk_to_list_topic=True):
+    def list_topics(self, node=None):
+        if node is None:
+            node = self.nodes[0]
+        self._list_topics_internal(self, node, node.version.use_bootstrap_server_for_topic_command())
+
+    def _list_topics_internal(self, node, use_zk_connection):
         if node is None:
             node = self.nodes[0]
 
         cmd = fix_opts_for_new_jvm(node)
-        cmd += "%s %s --list %s" % (self._kafka_topics_cmd(node, use_zk_to_list_topic),
-                                   self._connect_setting(node, use_zk_to_list_topic),
-                                   self._kafka_topics_cmd_config(node, use_zk_to_list_topic))
+        cmd += "%s %s --list %s" % (self._kafka_topics_cmd(node, use_zk_connection),
+                                   self._connect_setting(node, use_zk_connection),
+                                   self._kafka_topics_cmd_config(node, use_zk_connection))
         for line in node.account.ssh_capture(cmd):
             if not line.startswith("SLF4J"):
                 yield line.rstrip()
@@ -609,7 +619,10 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         cmd = fix_opts_for_new_jvm(node)
         cmd += "echo %s > %s && " % (json_str, json_file)
         cmd += "%s " % self.path.script("kafka-reassign-partitions.sh", node)
-        cmd += "--zookeeper %s " % self.zk_connect_setting()
+        if node.use_bootstrap_server_for_reassign_partitions():
+            cmd += "--bootstrap-server %s " % self.bootstrap_servers(self.security_protocol)
+        else:
+            cmd += "--zookeeper %s " % self.zk_connect_setting()
         cmd += "--reassignment-json-file %s " % json_file
         cmd += "--verify "
         cmd += "&& sleep 1 && rm -f %s" % json_file
@@ -649,7 +662,10 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         cmd = fix_opts_for_new_jvm(node)
         cmd += "echo %s > %s && " % (json_str, json_file)
         cmd += "%s " % self.path.script( "kafka-reassign-partitions.sh", node)
-        cmd += "--zookeeper %s " % self.zk_connect_setting()
+        if node.use_bootstrap_server_for_reassign_partitions():
+            cmd += "--bootstrap-server %s " % self.bootstrap_servers(self.security_protocol)
+        else:
+            cmd += "--zookeeper %s " % self.zk_connect_setting()
         cmd += "--reassignment-json-file %s " % json_file
         cmd += "--execute"
         if throttle is not None:
@@ -846,7 +862,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         Checks if --bootstrap-server config is supported, if yes then returns a string with
         bootstrap server, otherwise returns zookeeper connection string.
         """
-        if node.version.topic_command_supports_bootstrap_server() and not use_zk_connection:
+        if node.version.use_bootstrap_server_for_topic_command() and not use_zk_connection:
             connection_setting = "--bootstrap-server %s" % (self.bootstrap_servers(self.security_protocol))
         else:
             connection_setting = "--zookeeper %s" % (self.zk_connect_setting())

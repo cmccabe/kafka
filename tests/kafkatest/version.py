@@ -52,8 +52,13 @@ class KafkaVersion(LooseVersion):
     def supports_named_listeners(self):
         return self >= V_0_10_2_0
 
-    def topic_command_supports_bootstrap_server(self):
-        return self >= V_2_3_0
+    def use_bootstrap_server_for_reassign_partitions(self):
+        return self >= V_2_5_0
+
+    def use_bootstrap_server_for_topic_command(self):
+        # Note: some earlier versions supported --bootstrap-server for the topic command,
+        # but there were some limitations prior to 2.6.0.
+        return self >= V_2_6_0
 
     def supports_tls_to_zookeeper(self):
         # indicate if KIP-515 is available
@@ -147,3 +152,7 @@ LATEST_2_4 = V_2_4_1
 # 2.5.x versions
 V_2_5_0 = KafkaVersion("2.5.0")
 LATEST_2_5 = V_2_5_0
+
+# 2.6.x versions
+V_2_6_0 = KafkaVersion("2.6.0")
+LATEST_2_6 = V_2_6_0
