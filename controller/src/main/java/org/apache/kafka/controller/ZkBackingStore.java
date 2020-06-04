@@ -36,7 +36,6 @@ import kafka.zookeeper.ZNodeChildChangeHandler;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ControllerMovedException;
 import org.apache.kafka.common.errors.NotControllerException;
-import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;

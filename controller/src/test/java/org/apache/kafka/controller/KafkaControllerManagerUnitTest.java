@@ -19,7 +19,6 @@ package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.utils.KafkaEventQueue;
-import org.apache.kafka.common.utils.LogContext;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;

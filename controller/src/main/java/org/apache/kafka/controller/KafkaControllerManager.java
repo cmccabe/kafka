@@ -43,7 +43,7 @@ public final class KafkaControllerManager implements ControllerManager {
     private KafkaController controller;
     private boolean started;
 
-   abstract class AbstractControllerManagerEvent<T> extends AbstractEvent<T> {
+    abstract class AbstractControllerManagerEvent<T> extends AbstractEvent<T> {
         public AbstractControllerManagerEvent(Optional<Integer> requiredControllerEpoch) {
             super(log, requiredControllerEpoch);
         }
