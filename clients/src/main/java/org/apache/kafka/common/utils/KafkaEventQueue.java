@@ -20,8 +20,6 @@ package org.apache.kafka.common.utils;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
@@ -29,7 +27,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 public final class KafkaEventQueue implements EventQueue {
@@ -45,14 +42,14 @@ public final class KafkaEventQueue implements EventQueue {
         private final Event<T> event;
 
         /**
-         * If non-null, the canceller that we should apply to all subsequent events.
+         * How this event was inserted.
          */
-        private final Function<Event<?>, Throwable> canceller;
+        private final EventInsertionType insertionType;
 
         /**
          * The CompletableFuture that the caller can listen on.
          */
-        private final CompletableFuture<T> future;
+        private final CompletableFuture<T> future = new CompletableFuture<>();
 
         /**
          * The previous pointer of our circular doubly-linked list.
@@ -65,15 +62,14 @@ public final class KafkaEventQueue implements EventQueue {
         private EventContext<?> next = this;
 
         /**
-         * The time in monotonic nanoseconds when this even should be timed out, or
-         * Long.MAX_VALUE if there is no timeout.
+         * If this event is in the delay map, this is the key it is there under.
+         * If it is not in the map, this is 0.
          */
-        private long timeoutNs = Long.MAX_VALUE;
+        private long deadlineNs = -1;
 
-        EventContext(Event<T> event, Function<Event<?>, Throwable> canceller) {
+        EventContext(Event<T> event, EventInsertionType insertionType) {
             this.event = event;
-            this.canceller = canceller;
-            this.future = new CompletableFuture<>();
+            this.insertionType = insertionType;
         }
 
         /**
@@ -159,6 +155,11 @@ public final class KafkaEventQueue implements EventQueue {
         private final EventContext<Void> head = new EventContext<>(null, null);
 
         /**
+         * An ordered map of times in monotonic nanoseconds to events to time out.
+         */
+        private final TreeMap<Long, EventContext<?>> delayMap = new TreeMap<>();
+
+        /**
          * A condition variable for waking up the event handler thread.
          */
         private final Condition cond = lock.newCondition();
@@ -173,169 +174,109 @@ public final class KafkaEventQueue implements EventQueue {
             }
         }
 
+        private void remove(EventContext<?> eventContext) {
+            eventContext.remove();
+            if (eventContext.deadlineNs != -1) {
+                delayMap.remove(eventContext.deadlineNs);
+                eventContext.deadlineNs = -1;
+            }
+        }
+
         private void handleEvents() throws Throwable {
+            EventContext<?> timedEventContext = null;
+            EventContext<?> queuedEventContext = null;
             while (true) {
-                EventContext<?> eventContext;
-                Function<Event<?>, Throwable> canceller = null;
+                if (timedEventContext != null) {
+                    if (timedEventContext.insertionType == EventInsertionType.DEFERRED) {
+                        timedEventContext.run();
+                    } else {
+                        timedEventContext.completeWithTimeout();
+                    }
+                    timedEventContext = null;
+                } else if (queuedEventContext != null) {
+                    queuedEventContext.run();
+                    queuedEventContext = null;
+                }
                 lock.lock();
                 try {
-                    while (head.isSingleton()) {
-                        // If there are no more events to process, and the queue is
-                        // shutting down, exit the event handler thread.
+                    long awaitNs = Long.MAX_VALUE;
+                    Map.Entry<Long, EventContext<?>> entry = delayMap.firstEntry();
+                    if (entry != null) {
+                        long now = SystemTime.SYSTEM.nanoseconds();
+                        if (entry.getKey() <= now || closingTimeNs <= now) {
+                            timedEventContext = entry.getValue();
+                            remove(timedEventContext);
+                            continue;
+                        }
+                        awaitNs = entry.getKey() - now;
+                    }
+                    if (head.next == head) {
                         if (closingTimeNs != Long.MAX_VALUE) {
+                            // If there are no more entries to process, and the queue is
+                            // closing, exit the thread.
                             return;
                         }
-                        cond.await();
+                    } else {
+                        queuedEventContext = head.next;
+                        remove(queuedEventContext);
+                        continue;
                     }
-                    eventContext = head.next;
-                    canceller = eventContext.canceller;
-                    eventContext.remove();
-                    timeoutHandler.removeTimeout(eventContext);
+                    if (closingTimeNs != Long.MAX_VALUE) {
+                        long now = SystemTime.SYSTEM.nanoseconds();
+                        if (awaitNs > closingTimeNs - now) {
+                            awaitNs = closingTimeNs - now;
+                        }
+                    }
+                    if (awaitNs == Long.MAX_VALUE) {
+                        cond.await();
+                    } else {
+                        cond.awaitNanos(awaitNs);
+                    }
                 } finally {
                     lock.unlock();
                 }
-                if (canceller != null) {
-                    applyCanceller(canceller);
-                }
-                eventContext.run();
             }
         }
 
-        private void applyCanceller(Function<Event<?>, Throwable> canceller) {
-            EventContext<?> cur, next;
-            List<ToCancel> toCancel = new ArrayList<>();
+        void enqueue(EventContext<?> eventContext, long deadlineNs) {
             lock.lock();
             try {
-                cur = head.next;
-                while (cur != head) {
-                    next = cur.next;
-                    Throwable e = canceller.apply(cur.event);
-                    if (e != null) {
-                        cur.remove();
-                        timeoutHandler.removeTimeout(cur);
-                        toCancel.add(new ToCancel(cur, e));
+                boolean queueWasEmpty = head.isSingleton();
+                boolean shouldSignal = false;
+                switch (eventContext.insertionType) {
+                    case APPEND:
+                        head.insertBefore(eventContext);
+                        if (queueWasEmpty) {
+                            shouldSignal = true;
+                        }
+                        break;
+                    case PREPEND:
+                        head.insertAfter(eventContext);
+                        if (queueWasEmpty) {
+                            shouldSignal = true;
+                        }
+                        break;
+                    case DEFERRED:
+                        if (deadlineNs == -1) {
+                            throw new RuntimeException("Deferred event must have a deadline.");
+                        }
+                        break;
+                }
+                if (deadlineNs != -1) {
+                    long prevStartNs = delayMap.isEmpty() ? Long.MAX_VALUE : delayMap.firstKey();
+                    // If the time in nanoseconds is already taken, take the next one.
+                    while (delayMap.putIfAbsent(deadlineNs, eventContext) != null) {
+                        deadlineNs++;
                     }
-                    cur = next;
+                    eventContext.deadlineNs = deadlineNs;
+                    // If the new timeout is before all the existing ones, wake up the
+                    // timeout thread.
+                    if (deadlineNs <= prevStartNs) {
+                        shouldSignal = true;
+                    }
                 }
-            } finally {
-                lock.unlock();
-            }
-            // Complete the exceptions after dropping the lock, in case the completions
-            // take some time.
-            for (ToCancel c : toCancel) {
-                c.eventContext.completeWithException(c.exception);
-            }
-        }
-
-        void enqueue(boolean append, EventContext<?> eventContext) {
-            lock.lock();
-            try {
-                boolean wasEmpty = head.isSingleton();
-                if (append) {
-                    head.insertBefore(eventContext);
-                } else {
-                    head.insertAfter(eventContext);
-                }
-                if (wasEmpty) {
-                    // If the queue is going from empty to non-empty, then signal to
-                    // make sure that the event handler thread will make progress.
+                if (shouldSignal) {
                     cond.signal();
-                }
-            } finally {
-                lock.unlock();
-            }
-        }
-    }
-
-    private class TimeoutHandler implements Runnable {
-        /**
-         * An ordered map of times in monotonic nanoseconds to events to time out.
-         */
-        private final TreeMap<Long, EventContext<?>> timeouts = new TreeMap<>();
-
-        /**
-         * A condition variable for waking up the timeout handler thread.
-         */
-        private final Condition cond = lock.newCondition();
-
-        @Override
-        public void run() {
-            try {
-                handleTimeouts();
-            } catch (Throwable e) {
-                log.warn("Timeout handler thread exiting with exception.", e);
-            }
-        }
-
-        private void handleTimeouts() throws Throwable {
-            lock.lock();
-            try {
-                while (true) {
-                    EventContext<?> toTimeout = null;
-                    long nowNs = Time.SYSTEM.nanoseconds();
-                    long toDelay = closingTimeNs - nowNs;
-                    Map.Entry<Long, EventContext<?>> entry = timeouts.firstEntry();
-                    if (entry != null) {
-                        if (nowNs >= closingTimeNs || nowNs >= entry.getKey()) {
-                            timeouts.remove(entry.getKey(), entry.getValue());
-                            toTimeout = entry.getValue();
-                        } else {
-                            toDelay = Math.min(toDelay, entry.getKey() - nowNs);
-                        }
-                    } else {
-                        // If there are no more entries in the timeout map, and the
-                        // event queue is closing, the timeout handler thread should exit.
-                        if (closingTimeNs != Long.MAX_VALUE) {
-                            return;
-                        }
-                    }
-                    if (toTimeout != null) {
-                        // Unlink this element from its linked list, drop the lock, and
-                        // complete it with an exception.
-                        toTimeout.remove();
-                        lock.unlock();
-                        try {
-                            toTimeout.completeWithTimeout();
-                        } finally {
-                            lock.lock();
-                        }
-                    } else {
-                        cond.awaitNanos(toDelay);
-                    }
-                }
-            } finally {
-                lock.unlock();
-            }
-        }
-
-        void setTimeout(EventContext eventContext, long timeoutNs) {
-            lock.lock();
-            try {
-                if (eventContext.timeoutNs != Long.MAX_VALUE) {
-                    throw new IllegalArgumentException("Timeout was already set.");
-                }
-                long prevStartNs = timeouts.isEmpty() ? Long.MAX_VALUE : timeouts.firstKey();
-                // If the time in nanoseconds is already taken, take the next one.
-                while (timeouts.putIfAbsent(timeoutNs, eventContext) != null) {
-                    timeoutNs++;
-                }
-                eventContext.timeoutNs = timeoutNs;
-                // If the new timeout is before all the existing ones, wake up the
-                // timeout thread.
-                if (timeoutNs <= prevStartNs) {
-                    cond.signal();
-                }
-            } finally {
-                lock.unlock();
-            }
-        }
-
-        void removeTimeout(EventContext eventContext) {
-            lock.lock();
-            try {
-                if (eventContext.timeoutNs != Long.MAX_VALUE) {
-                    timeouts.remove(eventContext.timeoutNs, eventContext);
-                    eventContext.timeoutNs = Long.MAX_VALUE;
                 }
             } finally {
                 lock.unlock();
@@ -348,8 +289,6 @@ public final class KafkaEventQueue implements EventQueue {
     private final Supplier<Throwable> closedExceptionSupplier;
     private final EventHandler eventHandler;
     private final Thread eventHandlerThread;
-    private final TimeoutHandler timeoutHandler;
-    private final Thread timeoutHandlerThread;
     private long closingTimeNs;
     private Event<?> cleanupEvent;
 
@@ -367,31 +306,23 @@ public final class KafkaEventQueue implements EventQueue {
         this.eventHandler = new EventHandler();
         this.eventHandlerThread = new KafkaThread(threadNamePrefix + "EventHandler",
             this.eventHandler, false);
-        this.timeoutHandler = new TimeoutHandler();
-        this.timeoutHandlerThread = new KafkaThread(threadNamePrefix + "TimeoutHandler",
-            this.timeoutHandler, false);
         this.closingTimeNs = Long.MAX_VALUE;
         this.cleanupEvent = null;
         this.eventHandlerThread.start();
-        this.timeoutHandlerThread.start();
     }
 
     @Override
-    public <T> CompletableFuture<T> enqueue(boolean append,
-                                            Function<Event<?>, Throwable> canceller,
-                                            Long deadlineNs,
+    public <T> CompletableFuture<T> enqueue(EventInsertionType insertionType,
+                                            long deadlineNs,
                                             Event<T> event) {
         lock.lock();
         try {
-            EventContext<T> eventContext = new EventContext<>(event, canceller);
+            EventContext<T> eventContext = new EventContext<>(event, insertionType);
             if (closingTimeNs != Long.MAX_VALUE) {
                 eventContext.completeWithException(closedExceptionSupplier.get());
                 return eventContext.future;
             }
-            eventHandler.enqueue(append, eventContext);
-            if (deadlineNs != null) {
-                timeoutHandler.setTimeout(eventContext, deadlineNs);
-            }
+            eventHandler.enqueue(eventContext, deadlineNs);
             return eventContext.future;
         } finally {
             lock.unlock();
@@ -415,7 +346,6 @@ public final class KafkaEventQueue implements EventQueue {
             long newClosingTimeNs = Time.SYSTEM.nanoseconds() + timeUnit.toNanos(timeSpan);
             if (closingTimeNs >= newClosingTimeNs)
                 closingTimeNs = newClosingTimeNs;
-            timeoutHandler.cond.signal();
             eventHandler.cond.signal();
         } finally {
             lock.unlock();
@@ -425,7 +355,6 @@ public final class KafkaEventQueue implements EventQueue {
     @Override
     public void close() throws InterruptedException {
         shutdown();
-        timeoutHandlerThread.join();
         eventHandlerThread.join();
     }
 }

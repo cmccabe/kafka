@@ -22,14 +22,11 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
@@ -116,74 +113,21 @@ public class KafkaEventQueueTest {
         assertEquals(3, numEventsExecuted.get());
     }
 
-    private static class TestEvent implements EventQueue.Event<Integer> {
-        private final int i;
-        private final Throwable cancellationException;
-
-        TestEvent(int i, Throwable cancellationException) {
-            this.i = i;
-            this.cancellationException = cancellationException;
-        }
-
-        @Override
-        public Integer run() throws Throwable {
-            return i;
-        }
-    }
-
-    private static class TestEventCanceller
-            implements Function<EventQueue.Event<?>, Throwable> {
-        final static TestEventCanceller INSTANCE = new TestEventCanceller();
-
-        @Override
-        public Throwable apply(EventQueue.Event<?> event) {
-            if (!(event instanceof TestEvent)) {
-                return null;
-            }
-            TestEvent testEvent = (TestEvent) event;
-            return testEvent.cancellationException;
-        }
-    }
-
     @Test
-    public void testCanceller() throws Exception {
+    public void testAppendDeferred() throws Exception {
         KafkaEventQueue queue =
-            new KafkaEventQueue(new LogContext(), "testCanceller");
-        final CountDownLatch setupLatch = new CountDownLatch(1);
-        queue.append(() -> {
-            try {
-                setupLatch.await();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-            return null;
-        });
-        List<CompletableFuture<Integer>> futures = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            Throwable e = null;
-            if ((i % 3) != 0) {
-                e = new RuntimeException();
-            }
-            futures.add(queue.append(new TestEvent(i, e)));
-        }
-        CompletableFuture<Integer> clearFuture = queue.enqueue(false,
-            TestEventCanceller.INSTANCE, null, () -> 123);
-        setupLatch.countDown();
-        for (int i = 0; i < futures.size(); i++) {
-            if ((i % 3) == 0) {
-                assertEquals(Integer.valueOf(i), futures.get(i).get());
-            } else {
-                final int j = i;
-                assertEquals(RuntimeException.class,
-                    assertThrows(ExecutionException.class,
-                        () -> futures.get(j).get()).getCause().getClass());
-            }
-        }
-        assertEquals(Integer.valueOf(123), clearFuture.get());
-        for (int i = 0; i < 10; i++) {
-            assertEquals(Integer.valueOf(i),
-                queue.append(new TestEvent(i, new RuntimeException())).get());
-        }
-        queue.close();
+            new KafkaEventQueue(new LogContext(), "testAppendDeferred");
+
+        // Wait for the deferred event to happen after the non-deferred event.
+        // It may not happpen every time, so we keep trying until it does.
+        AtomicLong counter = new AtomicLong(0);
+        CompletableFuture<Boolean> future1;
+        do {
+            counter.addAndGet(1);
+            future1 = queue.appendDeferred(Time.SYSTEM.nanoseconds() + 1000000,
+                () -> counter.get() % 2 == 0);
+            CompletableFuture<Long> future2 = queue.append(() -> counter.addAndGet(1));
+            future2.get();
+        } while (!future1.get());
     }
 }
