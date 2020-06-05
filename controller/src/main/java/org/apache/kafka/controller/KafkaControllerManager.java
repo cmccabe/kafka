@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import kafka.controller.ControllerManagerFactory;
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
@@ -34,6 +35,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * The KafkaControllerManager is the entry point for communication with the Kafka
+ * controller, as well as the container object which owns the components that make up
+ * the controller.
+ */
 public final class KafkaControllerManager implements ControllerManager {
     private final ControllerLogContext logContext;
     private final Logger log;
@@ -58,7 +64,20 @@ public final class KafkaControllerManager implements ControllerManager {
 
         @Override
         public Throwable handleException(Throwable e) throws Throwable {
+            if (e instanceof ApiException) {
+                throw e;
+            } else {
+                logContext.setLastUnexpectedError(log, "Unhandled event exception", e);
+                resignIfActive();
+            }
             return e;
+        }
+    }
+
+    private void resignIfActive() {
+        if (controller != null) {
+            backingStore.resign(controller.controllerEpoch());
+            controller = null;
         }
     }
 
@@ -117,7 +136,8 @@ public final class KafkaControllerManager implements ControllerManager {
             if (!started) {
                 return null;
             }
-            controller = null;
+            resignIfActive();
+            backingStore.close();
             return null;
         }
     }
@@ -252,7 +272,6 @@ public final class KafkaControllerManager implements ControllerManager {
     public void shutdown() {
         log.debug("Shutting down.");
         mainQueue.shutdown(new StopEvent());
-        backingStore.shutdown();
     }
 
     @Override
@@ -260,7 +279,6 @@ public final class KafkaControllerManager implements ControllerManager {
         log.debug("Initiating close.");
         shutdown();
         mainQueue.close();
-        backingStore.close();
         log.debug("Close complete.");
     }
 }

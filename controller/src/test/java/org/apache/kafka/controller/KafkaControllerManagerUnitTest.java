@@ -19,6 +19,7 @@ package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.utils.KafkaEventQueue;
+import org.apache.kafka.test.TestUtils;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -71,7 +72,8 @@ public class KafkaControllerManagerUnitTest {
                     () -> manager.start(brokerInfo).get()).getCause().getMessage());
             Assert.assertFalse(backingStore.isShutdown());
             manager.shutdown();
-            Assert.assertTrue(backingStore.isShutdown());
+            TestUtils.waitForCondition(() -> backingStore.isShutdown(),
+                "BackingStore shut down");
         }
     }
 
