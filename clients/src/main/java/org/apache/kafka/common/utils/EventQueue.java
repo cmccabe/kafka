@@ -19,6 +19,7 @@ package org.apache.kafka.common.utils;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 public interface EventQueue extends AutoCloseable {
     interface Event<T> {
@@ -43,7 +44,7 @@ public interface EventQueue extends AutoCloseable {
      *                          with the result of Event#run.
      */
     default <T> CompletableFuture<T> prepend(Event<T> event) {
-        return enqueue(EventInsertionType.PREPEND, -1, event);
+        return enqueue(EventInsertionType.PREPEND, null, null, event);
     }
 
     /**
@@ -55,7 +56,7 @@ public interface EventQueue extends AutoCloseable {
      *                          with the result of Event#run.
      */
     default <T> CompletableFuture<T> append(Event<T> event) {
-        return enqueue(EventInsertionType.APPEND, -1, event);
+        return enqueue(EventInsertionType.APPEND, null, null, event);
     }
 
     /**
@@ -73,22 +74,30 @@ public interface EventQueue extends AutoCloseable {
      */
     default <T> CompletableFuture<T> appendWithDeadline(long deadlineNs, Event<T> event) {
 
-        return enqueue(EventInsertionType.APPEND, deadlineNs, event);
+        return enqueue(EventInsertionType.APPEND, null, __ -> deadlineNs, event);
     }
 
     /**
-     * Enqueue an event to be run at a specific time.
+     * Schedule an event to be run at a specific time.
      *
-     * @param deadlineNs        The time in monotonic nanoseconds after which the event is
-     *                          run.
-     * @param event             The event to append.
+     * @param tag                   If this is non-null, the unique tag to use for this
+     *                              event.  If an event with this tag already exists, it
+     *                              will be cancelled.
+     * @param deadlineNsCalculator  If this is non-null, it is a function which takes as
+     *                              an argument the existing deadline for the event with
+     *                              this tag (or null if the event has no tag, or if
+     *                              there is none such), and produces the deadline to use
+     *                              for this event (or null to use none.)
+     * @param event                 The event to schedule.
      *
-     * @return                  A future which is completed with an exception or
-     *                          with the result of Event#run.  If there was a
-     *                          timeout, the event will not be run.
+     * @return                      A future which is completed with an exception or
+     *                              with the result of Event#run.  If there was a
+     *                              timeout, the event will not be run.
      */
-    default <T> CompletableFuture<T> appendDeferred(long deadlineNs, Event<T> event) {
-        return enqueue(EventInsertionType.DEFERRED, deadlineNs, event);
+    default <T> CompletableFuture<T> scheduleDeferred(String tag,
+                                                      Function<Long, Long> deadlineNsCalculator,
+                                                      Event<T> event) {
+        return enqueue(EventInsertionType.DEFERRED, tag, deadlineNsCalculator, event);
     }
 
     enum EventInsertionType {
@@ -100,23 +109,29 @@ public interface EventQueue extends AutoCloseable {
     /**
      * Enqueue an event to be run in FIFO order.
      *
-     * @param insertionType     How to insert the event.
-     *                          PREPEND means insert the event as the first thing to run.
-     *                          APPEND means insert the event as the last thing to run.
-     *                          DEFERRED means insert the event to run after a delay.
-     * @param deadlineNs        For deferred events, the time in monotonic nanoseconds
-     *                          after which the event is run.  For non-deferred events,
-     *                          the time at which the event is timed out without being
-     *                          run.  When the event is timed out, the future will get
-     *                          a TimeoutException.  -1 if there is no deadline.
-     * @param event             The event to enqueue.
+     * @param insertionType         How to insert the event.
+     *                              PREPEND means insert the event as the first thing
+     *                              to run.  APPEND means insert the event as the last
+     *                              thing to run.  DEFERRED means insert the event to
+     *                              run after a delay.
+     * @param tag                   If this is non-null, the unique tag to use for
+     *                              this event.  If an event with this tag already
+     *                              exists, it will be cancelled.
+     * @param deadlineNsCalculator  If this is non-null, it is a function which takes
+     *                              as an argument the existing deadline for the
+     *                              event with this tag (or null if the event has no
+     *                              tag, or if there is none such), and produces the
+     *                              deadline to use for this event (or null to use
+     *                              none.)
+     * @param event                 The event to enqueue.
      *
-     * @return                  A future which is completed with an exception or
-     *                          with the result of Event#run.  If there was a
-     *                          timeout, the event will not be run.
+     * @return                      A future which is completed with an exception or
+     *                              with the result of Event#run.  If there was a
+     *                              timeout or the event was cancelled, it will not run.
      */
     <T> CompletableFuture<T> enqueue(EventInsertionType insertionType,
-                                     long deadlineNs,
+                                     String tag,
+                                     Function<Long, Long> deadlineNsCalculator,
                                      Event<T> event);
 
     /**

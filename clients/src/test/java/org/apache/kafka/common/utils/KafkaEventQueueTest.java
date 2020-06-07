@@ -18,10 +18,12 @@
 package org.apache.kafka.common.utils;
 
 import org.apache.kafka.common.errors.TimeoutException;
+import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
 
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -114,7 +116,7 @@ public class KafkaEventQueueTest {
     }
 
     @Test
-    public void testAppendDeferred() throws Exception {
+    public void testScheduleDeferred() throws Exception {
         KafkaEventQueue queue =
             new KafkaEventQueue(new LogContext(), "testAppendDeferred");
 
@@ -124,10 +126,31 @@ public class KafkaEventQueueTest {
         CompletableFuture<Boolean> future1;
         do {
             counter.addAndGet(1);
-            future1 = queue.appendDeferred(Time.SYSTEM.nanoseconds() + 1000000,
+            future1 = queue.scheduleDeferred(null, __ -> Time.SYSTEM.nanoseconds() + 1000000,
                 () -> counter.get() % 2 == 0);
             CompletableFuture<Long> future2 = queue.append(() -> counter.addAndGet(1));
             future2.get();
         } while (!future1.get());
+        queue.close();
+    }
+
+    private final static long ONE_HOUR_NS = TimeUnit.NANOSECONDS.convert(1, TimeUnit.HOURS);
+
+    @Test
+    public void testScheduleDeferredWithTagReplacement() throws Exception {
+        KafkaEventQueue queue =
+            new KafkaEventQueue(new LogContext(), "testScheduleDeferredWithTagReplacement");
+
+        AtomicInteger ai = new AtomicInteger(0);
+        CompletableFuture<Integer> future1 = queue.
+            scheduleDeferred("foo", __ -> Time.SYSTEM.nanoseconds() + ONE_HOUR_NS,
+                () -> ai.addAndGet(1000));
+        CompletableFuture<Integer> future2 = queue.
+            scheduleDeferred("foo", prev -> prev - ONE_HOUR_NS,
+                () -> ai.addAndGet(1));
+            assertThrows(CancellationException.class, () -> future1.get());
+        assertEquals(Integer.valueOf(1), future2.get());
+        assertEquals(1, ai.get());
+        queue.close();
     }
 }

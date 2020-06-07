@@ -20,6 +20,7 @@ package org.apache.kafka.common.utils;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.slf4j.Logger;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
@@ -27,6 +28,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 public final class KafkaEventQueue implements EventQueue {
@@ -65,11 +67,17 @@ public final class KafkaEventQueue implements EventQueue {
          * If this event is in the delay map, this is the key it is there under.
          * If it is not in the map, this is 0.
          */
-        private long deadlineNs = -1;
+        private Long deadlineNs = null;
 
-        EventContext(Event<T> event, EventInsertionType insertionType) {
+        /**
+         * The tag associated with this event.
+         */
+        private String tag;
+
+        EventContext(Event<T> event, EventInsertionType insertionType, String tag) {
             this.event = event;
             this.insertionType = insertionType;
+            this.tag = tag;
         }
 
         /**
@@ -130,6 +138,13 @@ public final class KafkaEventQueue implements EventQueue {
         }
 
         /**
+         * Complete the event associated with this EventContext with a cancellation exception.
+         */
+        void cancel() {
+            future.cancel(false);
+        }
+
+        /**
          * Complete the event associated with this EventContext with the specified
          * exception.
          */
@@ -150,9 +165,14 @@ public final class KafkaEventQueue implements EventQueue {
 
     private class EventHandler implements Runnable {
         /**
+         * Event contexts indexed by tag.  Events without a tag are not included here.
+         */
+        private final Map<String, EventContext<?>> tagToEventContext = new HashMap<>();
+
+        /**
          * The head of the event queue.
          */
-        private final EventContext<Void> head = new EventContext<>(null, null);
+        private final EventContext<Void> head = new EventContext<>(null, null, null);
 
         /**
          * An ordered map of times in monotonic nanoseconds to events to time out.
@@ -176,9 +196,13 @@ public final class KafkaEventQueue implements EventQueue {
 
         private void remove(EventContext<?> eventContext) {
             eventContext.remove();
-            if (eventContext.deadlineNs != -1) {
+            if (eventContext.deadlineNs != null) {
                 delayMap.remove(eventContext.deadlineNs);
-                eventContext.deadlineNs = -1;
+                eventContext.deadlineNs = null;
+            }
+            if (eventContext.tag != null) {
+                tagToEventContext.remove(eventContext.tag, eventContext);
+                eventContext.tag = null;
             }
         }
 
@@ -238,9 +262,21 @@ public final class KafkaEventQueue implements EventQueue {
             }
         }
 
-        void enqueue(EventContext<?> eventContext, long deadlineNs) {
+        void enqueue(EventContext<?> eventContext,
+                     Function<Long, Long> deadlineNsCalculator) {
             lock.lock();
             try {
+                Long existingDeadlineNs = null;
+                if (eventContext.tag != null) {
+                    EventContext<?> toRemove =
+                        tagToEventContext.put(eventContext.tag, eventContext);
+                    if (toRemove != null) {
+                        existingDeadlineNs = toRemove.deadlineNs;
+                        remove(toRemove);
+                        toRemove.cancel();
+                    }
+                }
+                Long deadlineNs = deadlineNsCalculator.apply(existingDeadlineNs);
                 boolean queueWasEmpty = head.isSingleton();
                 boolean shouldSignal = false;
                 switch (eventContext.insertionType) {
@@ -257,21 +293,22 @@ public final class KafkaEventQueue implements EventQueue {
                         }
                         break;
                     case DEFERRED:
-                        if (deadlineNs == -1) {
+                        if (deadlineNs == null) {
                             throw new RuntimeException("Deferred event must have a deadline.");
                         }
                         break;
                 }
-                if (deadlineNs != -1) {
+                if (deadlineNs != null) {
+                    long insertNs =  deadlineNs;
                     long prevStartNs = delayMap.isEmpty() ? Long.MAX_VALUE : delayMap.firstKey();
                     // If the time in nanoseconds is already taken, take the next one.
-                    while (delayMap.putIfAbsent(deadlineNs, eventContext) != null) {
-                        deadlineNs++;
+                    while (delayMap.putIfAbsent(insertNs, eventContext) != null) {
+                        insertNs++;
                     }
-                    eventContext.deadlineNs = deadlineNs;
+                    eventContext.deadlineNs = insertNs;
                     // If the new timeout is before all the existing ones, wake up the
                     // timeout thread.
-                    if (deadlineNs <= prevStartNs) {
+                    if (insertNs <= prevStartNs) {
                         shouldSignal = true;
                     }
                 }
@@ -313,16 +350,18 @@ public final class KafkaEventQueue implements EventQueue {
 
     @Override
     public <T> CompletableFuture<T> enqueue(EventInsertionType insertionType,
-                                            long deadlineNs,
+                                            String tag,
+                                            Function<Long, Long> deadlineNsCalculator,
                                             Event<T> event) {
         lock.lock();
         try {
-            EventContext<T> eventContext = new EventContext<>(event, insertionType);
+            EventContext<T> eventContext = new EventContext<>(event, insertionType, tag);
             if (closingTimeNs != Long.MAX_VALUE) {
                 eventContext.completeWithException(closedExceptionSupplier.get());
                 return eventContext.future;
             }
-            eventHandler.enqueue(eventContext, deadlineNs);
+            eventHandler.enqueue(eventContext,
+                deadlineNsCalculator == null ? __ -> null : deadlineNsCalculator);
             return eventContext.future;
         } finally {
             lock.unlock();
