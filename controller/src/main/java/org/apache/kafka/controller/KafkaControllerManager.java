@@ -27,12 +27,10 @@ import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
 import kafka.controller.ControllerManager;
-import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -125,6 +123,11 @@ public final class KafkaControllerManager implements ControllerManager {
         int controllerEpoch() {
             return controllerEpoch;
         }
+
+        void resign() {
+            backingStore.resign(controllerEpoch);
+            propagationManager.close();
+        }
     }
 
     abstract class AbstractControllerManagerEvent<T> extends AbstractEvent<T> {
@@ -154,7 +157,7 @@ public final class KafkaControllerManager implements ControllerManager {
 
     private void resignIfActive() {
         if (controller != null) {
-            backingStore.resign(controller.controllerEpoch);
+            controller.resign();
             controller = null;
         }
     }
@@ -186,16 +189,13 @@ public final class KafkaControllerManager implements ControllerManager {
         }
 
         @Override
-        public void handleBrokerUpdates(int controllerEpoch,
-                                        List<MetadataState.Broker> changedBrokers,
-                                        List<Integer> deletedBrokerIds) {
-            mainQueue.append(new HandleBrokerUpdates(controllerEpoch, changedBrokers,
-                deletedBrokerIds));
+        public void handleBrokerUpdates(int controllerEpoch, BrokerDelta delta) {
+            mainQueue.append(new HandleBrokerUpdates(controllerEpoch, delta));
         }
 
         @Override
-        public void handleTopicUpdates(int controllerEpoch, TopicDelta topicDelta) {
-            mainQueue.append(new HandleTopicUpdates(controllerEpoch, topicDelta));
+        public void handleTopicUpdates(int controllerEpoch, TopicDelta delta) {
+            mainQueue.append(new HandleTopicUpdates(controllerEpoch, delta));
         }
     }
 
@@ -280,38 +280,32 @@ public final class KafkaControllerManager implements ControllerManager {
     }
 
     class HandleBrokerUpdates extends AbstractControllerManagerEvent<Void> {
-        private final List<MetadataState.Broker> changedBrokers;
-        private final List<Integer> deletedBrokerIds;
+        private final BrokerDelta delta;
 
-        public HandleBrokerUpdates(int controllerEpoch,
-                List<MetadataState.Broker> changedBrokers,
-                List<Integer> deletedBrokerIds) {
+        public HandleBrokerUpdates(int controllerEpoch, BrokerDelta delta) {
             super(Optional.of(controllerEpoch));
-            this.changedBrokers = changedBrokers;
-            this.deletedBrokerIds = deletedBrokerIds;
+            this.delta = delta;
         }
 
         @Override
         public Void execute() throws Throwable {
-            controller.propagationManager.
-                handleBrokerUpdates(changedBrokers, deletedBrokerIds);
+            controller.propagationManager.handleBrokerUpdates(delta);
             maybePropagate();
             return null;
         }
     }
 
     class HandleTopicUpdates extends AbstractControllerManagerEvent<Void> {
-        private final TopicDelta topicDelta;
+        private final TopicDelta delta;
 
-        public HandleTopicUpdates(int controllerEpoch, TopicDelta topicDelta) {
+        public HandleTopicUpdates(int controllerEpoch, TopicDelta delta) {
             super(Optional.of(controllerEpoch));
-            this.topicDelta = topicDelta;
+            this.delta = delta;
         }
 
         @Override
         public Void execute() throws Throwable {
-            controller.propagationManager.
-                handleTopicUpdates(topicDelta);
+            controller.propagationManager.handleTopicUpdates(delta);
             maybePropagate();
             return null;
         }

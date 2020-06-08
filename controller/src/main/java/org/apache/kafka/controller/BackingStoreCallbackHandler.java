@@ -44,14 +44,17 @@ public interface BackingStoreCallbackHandler {
 
     /**
      * Handle changes to the brokers in the cluster.
+     *
+     * @param controllerEpoch       The current controller epoch.
+     * @param delta                 The change in the set of brokers.
      */
-    void handleBrokerUpdates(int controllerEpoch,
-                             List<MetadataState.Broker> changedBrokers,
-                             List<Integer> deletedBrokerIds);
+    void handleBrokerUpdates(int controllerEpoch, BrokerDelta delta);
 
     /**
      * Handle changes to the topics in the cluster.
+     *
+     * @param controllerEpoch       The current controller epoch.
+     * @param delta                 The change in the set of topics.
      */
-    void handleTopicUpdates(int controllerEpoch,
-                            TopicDelta topicDelta);
+    void handleTopicUpdates(int controllerEpoch, TopicDelta delta);
 }

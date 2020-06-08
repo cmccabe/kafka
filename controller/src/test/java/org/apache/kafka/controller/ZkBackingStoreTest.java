@@ -93,8 +93,7 @@ public class ZkBackingStoreTest {
 
         @Override
         synchronized public void handleBrokerUpdates(int controllerEpoch,
-                                        List<MetadataState.Broker> changedBrokers,
-                                        List<Integer> deletedBrokerIds) {
+                                                     BrokerDelta delta) {
         }
 
         @Override

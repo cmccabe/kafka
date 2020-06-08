@@ -17,14 +17,17 @@
 
 package org.apache.kafka.controller;
 
-public class PropagationManager implements AutoCloseable {
-    public void handleBrokerUpdates(BrokerDelta delta) {
-    }
+import org.apache.kafka.common.message.MetadataState;
 
-    public void handleTopicUpdates(TopicDelta topicDelta) {
-    }
+import java.util.List;
 
-    @Override
-    public void close() {
+class BrokerDelta {
+    private final List<MetadataState.Broker> changedBrokers;
+    private final List<Integer> deletedBrokerIds;
+
+    BrokerDelta(List<MetadataState.Broker> changedBrokers,
+                List<Integer> deletedBrokerIds) {
+        this.changedBrokers = changedBrokers;
+        this.deletedBrokerIds = deletedBrokerIds;
     }
 }
