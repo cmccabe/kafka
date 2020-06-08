@@ -22,10 +22,13 @@ import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.requests.LeaderAndIsrResponse;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
 import kafka.controller.ControllerManager;
+import org.apache.kafka.common.utils.SystemTime;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 
@@ -39,15 +42,90 @@ import java.util.concurrent.CompletableFuture;
  * The KafkaControllerManager is the entry point for communication with the Kafka
  * controller, as well as the container object which owns the components that make up
  * the controller.
+ *
+ * The Kafka controller handles electing leaders for partitions in the cluster, as well
+ * as some other duties.  At any given time, only one node can be the active controller.
+ *
+ * The controller relies on two other very important components in order to do its job:
+ * the BackingStore, and the Propagator.  The BackingStore is responsible for persisting
+ * the metadata durably to disk, and also for choosing which node is the active
+ * controller.  The Propagator is responsible for sending out updates from the controller
+ * to the other nodes in the cluster.
+ *
+ * Part of the reason why the BackingStore is decoupled from the Controller is to make
+ * it possible to use two different metadata stores for Kafka.  One is ZooKeeper; the
+ * other is the metadata partition specified by KIP-500.  Therefore, ZooKeeper access is
+ * contained entirely in the ZkBackingStore.
+ *
+ * <pre>
+ *                                  KafkaApis
+ *                                     ^
+ *                                     |
+ *                                     V
+ *         +--------------+      +------------+       +------------+
+ *         |              |      |            |       |            |
+ * ZK <--> | BackingStore |<---> | Controller | <---> | Propagator | <--> Cluster
+ *         |              |      |  Manager   |       |            |
+ *         +--------------+      +------------+       +------------+
+ *         `                           ^
+ *                                     |
+ *                                     V
+ *                               +------------+
+ *                               |            |
+ *                               | Controller |
+ *                               |            |
+ * </pre>                        +------------+
+ *
+ * Sometimes, a node will lose the active controllership without realizing it.  In this
+ * case, the BackingStore will handle fencing.  Updates from a fenced controller will not
+ * take effect, and the node that tried to make them will be notified that it was no
+ * longer active.  We also have fencing on the propagation side, in the form of the
+ * controller epoch.
+ *
+ * In the interest of performance, the controller does not write to the BackingStore in
+ * a blocking fashion.  Instead, when the controller wants to change something, it first
+ * makes the change in its own memory, and then schedules the update to happen in the
+ * BackingStore at some time in the future.  This means that the in-memory state of the
+ * controller contains uncommitted changes, that have not yet been persisted to disk.
+ * However, we do not propagate uncomitted changes to the rest of the cluster.
+ *
+ * Once KIP-500 is completed, all updates to the BackingStore will go through the active
+ * controller.  However, in the meantime, the BackingStore may be updated outside of the
+ * active controller, either by other brokers or even by tools external to the cluster.
+ * Therefore, when the controller receives an update from the BackingStore, it must check
+ * to see if it already applied this update, or not.
+ *
+ * The Propagator maintains its own cache of the cluster state, as well as what messages
+ * need to be sent out to the cluster.  Unlike the controller's cache, the Propagator's
+ * cache is not "dirty": it does not contain uncommitted state.
  */
 public final class KafkaControllerManager implements ControllerManager {
+    private static final String MAYBE_PROPAGATE = "maybePropagate";
+
     private final ControllerLogContext logContext;
     private final Logger log;
     private final BackingStore backingStore;
+    private final Propagator propagator;
     private final EventQueue mainQueue;
     private final KafkaBackingStoreCallbackHandler backingStoreCallbackHandler;
-    private KafkaController controller;
+    private Controller controller;
     private boolean started;
+
+    class Controller {
+        private final int controllerEpoch;
+        private final ReplicationManager replicationManager;
+        private final PropagationManager propagationManager;
+
+        Controller(int controllerEpoch, MetadataState newState) {
+            this.controllerEpoch = controllerEpoch;
+            this.replicationManager = new ReplicationManager();
+            this.propagationManager = new PropagationManager();
+        }
+
+        int controllerEpoch() {
+            return controllerEpoch;
+        }
+    }
 
     abstract class AbstractControllerManagerEvent<T> extends AbstractEvent<T> {
         public AbstractControllerManagerEvent(Optional<Integer> requiredControllerEpoch) {
@@ -76,8 +154,23 @@ public final class KafkaControllerManager implements ControllerManager {
 
     private void resignIfActive() {
         if (controller != null) {
-            backingStore.resign(controller.controllerEpoch());
+            backingStore.resign(controller.controllerEpoch);
             controller = null;
+        }
+    }
+
+    class KafkaPropagationManagerCallbackHandler implements PropagationManagerCallbackHandler {
+        @Override
+        public void schedulePropagationManagerCheck(long delayNs) {
+            long nextDeadlineNs = Time.SYSTEM.nanoseconds() + delayNs;
+            mainQueue.scheduleDeferred(MAYBE_PROPAGATE,
+                prevDeadlineNs -> prevDeadlineNs == null ?
+                    nextDeadlineNs : Math.min(prevDeadlineNs, nextDeadlineNs),
+                new MaybePropagateEvent(controller.controllerEpoch));
+        }
+
+        @Override
+        public void handleLeaderAndIsrResponse(int brokerId, LeaderAndIsrResponse response) {
         }
     }
 
@@ -137,6 +230,8 @@ public final class KafkaControllerManager implements ControllerManager {
                 return null;
             }
             resignIfActive();
+            backingStore.shutdown();
+            propagator.close();
             backingStore.close();
             return null;
         }
@@ -154,13 +249,25 @@ public final class KafkaControllerManager implements ControllerManager {
 
         @Override
         public Void execute() throws Throwable {
-            controller = new KafkaController(logContext,
-                newControllerEpoch,
-                backingStore,
-                mainQueue,
-                newState);
+            controller = new Controller(newControllerEpoch, newState);
+            maybePropagate();
             return null;
         }
+    }
+
+    class MaybePropagateEvent extends AbstractControllerManagerEvent<Void> {
+        public MaybePropagateEvent(int controllerEpoch) {
+            super(Optional.of(controllerEpoch));
+        }
+
+        @Override
+        public Void execute() throws Throwable {
+            maybePropagate();
+            return null;
+        }
+    }
+
+    private void maybePropagate() {
     }
 
     class DeactivateEvent extends AbstractControllerManagerEvent<Void> {
@@ -189,6 +296,9 @@ public final class KafkaControllerManager implements ControllerManager {
 
         @Override
         public Void execute() throws Throwable {
+            controller.propagationManager.
+                handleBrokerUpdates(changedBrokers, deletedBrokerIds);
+            maybePropagate();
             return null;
         }
     }
@@ -203,6 +313,9 @@ public final class KafkaControllerManager implements ControllerManager {
 
         @Override
         public Void execute() throws Throwable {
+            controller.propagationManager.
+                handleTopicUpdates(topicDelta);
+            maybePropagate();
             return null;
         }
     }
@@ -213,21 +326,24 @@ public final class KafkaControllerManager implements ControllerManager {
                 new LogContext(String.format("[Node %d]", factory.nodeId())));
         boolean success = false;
         ZkBackingStore zkBackingStore = null;
+        KafkaPropagator kafkaPropagator = null;
         KafkaEventQueue mainQueue = null;
         KafkaControllerManager controllerManager = null;
         try {
             zkBackingStore = ZkBackingStore.create(logContext,
                 factory.nodeId(),
                 factory.zkClient());
+            kafkaPropagator = new KafkaPropagator(logContext);
             mainQueue = new KafkaEventQueue(new LogContext(
                 logContext.logContext().logPrefix() + " [mainQueue] "),
                 logContext.threadNamePrefix());
-            controllerManager = new KafkaControllerManager(logContext,
-                zkBackingStore, mainQueue);
+            controllerManager = new KafkaControllerManager(logContext, zkBackingStore,
+                kafkaPropagator, mainQueue);
             success = true;
         } finally {
             if (!success) {
                 Utils.closeQuietly(zkBackingStore, "zkBackingStore");
+                Utils.closeQuietly(kafkaPropagator, "kafkaPropagator");
                 Utils.closeQuietly(mainQueue, "mainQueue");
             }
         }
@@ -236,10 +352,12 @@ public final class KafkaControllerManager implements ControllerManager {
 
     KafkaControllerManager(ControllerLogContext logContext,
                            BackingStore backingStore,
+                           Propagator propagator,
                            EventQueue mainQueue) {
         this.logContext = logContext;
         this.log = logContext.createLogger(KafkaControllerManager.class);
         this.backingStore = backingStore;
+        this.propagator = propagator;
         this.mainQueue = mainQueue;
         this.backingStoreCallbackHandler = new KafkaBackingStoreCallbackHandler();
         this.controller = null;

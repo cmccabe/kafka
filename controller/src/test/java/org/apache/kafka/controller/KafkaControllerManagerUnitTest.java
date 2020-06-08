@@ -19,6 +19,7 @@ package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.utils.KafkaEventQueue;
+import org.apache.kafka.test.MockPartitioner;
 import org.apache.kafka.test.TestUtils;
 import org.junit.Assert;
 import org.junit.Rule;
@@ -45,9 +46,11 @@ public class KafkaControllerManagerUnitTest {
         if (backingStore == null) {
             backingStore = new MockBackingStore.Builder().build();
         }
+        MockPropagator mockPropagator = new MockPropagator();
         KafkaEventQueue mainQueue =
             new KafkaEventQueue(logContext.logContext(), logContext.threadNamePrefix());
-        return new KafkaControllerManager(logContext, backingStore, mainQueue);
+        return new KafkaControllerManager(logContext, backingStore, mockPropagator,
+            mainQueue);
     }
 
     @Test
