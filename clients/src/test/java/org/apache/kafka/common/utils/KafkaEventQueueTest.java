@@ -18,7 +18,6 @@
 package org.apache.kafka.common.utils;
 
 import org.apache.kafka.common.errors.TimeoutException;
-import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -148,7 +147,7 @@ public class KafkaEventQueueTest {
         CompletableFuture<Integer> future2 = queue.
             scheduleDeferred("foo", prev -> prev - ONE_HOUR_NS,
                 () -> ai.addAndGet(1));
-            assertThrows(CancellationException.class, () -> future1.get());
+        assertThrows(CancellationException.class, () -> future1.get());
         assertEquals(Integer.valueOf(1), future2.get());
         assertEquals(1, ai.get());
         queue.close();
