@@ -17,8 +17,17 @@
 
 package org.apache.kafka.controller;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 public class MockPropagator implements Propagator {
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+
     @Override
     public void close() throws Exception {
+        closed.set(true);
+    }
+
+    boolean closed() {
+        return closed.get();
     }
 }

@@ -19,9 +19,7 @@ package org.apache.kafka.controller;
 
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.utils.KafkaEventQueue;
-import org.apache.kafka.test.MockPartitioner;
 import org.apache.kafka.test.TestUtils;
-import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -31,7 +29,9 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 public class KafkaControllerManagerUnitTest {
     private static final Logger log =
@@ -41,39 +41,45 @@ public class KafkaControllerManagerUnitTest {
     final public Timeout globalTimeout = Timeout.seconds(40);
 
     private KafkaControllerManager createControllerManager(String name,
-                                                           BackingStore backingStore) {
+                                                           BackingStore backingStore,
+                                                           Propagator propagator) {
         ControllerLogContext logContext = ControllerLogContext.fromPrefix(name);
         if (backingStore == null) {
             backingStore = new MockBackingStore.Builder().build();
         }
-        MockPropagator mockPropagator = new MockPropagator();
+        if (propagator == null) {
+            propagator = new MockPropagator();
+        }
         KafkaEventQueue mainQueue =
             new KafkaEventQueue(logContext.logContext(), logContext.threadNamePrefix());
-        return new KafkaControllerManager(logContext, backingStore, mockPropagator,
+        return new KafkaControllerManager(logContext, backingStore, propagator,
             mainQueue);
     }
 
     @Test
     public void testCreateAndClose() throws Throwable {
+        MockPropagator mockPropagator = new MockPropagator();
+        assertFalse(mockPropagator.closed());
         try (KafkaControllerManager manager =
-                 createControllerManager("testCreateAndClose", null)) {
+                 createControllerManager("testCreateAndClose", null, mockPropagator)) {
         }
+        assertTrue(mockPropagator.closed());
     }
 
     @Test
     public void testCreateStartAndClose() throws Throwable {
         MockBackingStore backingStore = new MockBackingStore.Builder().build();
         try (KafkaControllerManager manager =
-                 createControllerManager("testCreateStartAndClose", backingStore)) {
+                 createControllerManager("testCreateStartAndClose", backingStore, null)) {
             BrokerInfo brokerInfo = ControllerTestUtils.brokerToBrokerInfo(
                 ControllerTestUtils.newTestBroker(0));
-            Assert.assertFalse(backingStore.isStarted());
+            assertFalse(backingStore.isStarted());
             manager.start(brokerInfo).get();
-            Assert.assertTrue(backingStore.isStarted());
+            assertTrue(backingStore.isStarted());
             assertEquals("Attempting to Start a KafkaControllerManager which has " +
                 "already been started.", assertThrows(ExecutionException.class,
                     () -> manager.start(brokerInfo).get()).getCause().getMessage());
-            Assert.assertFalse(backingStore.isShutdown());
+            assertFalse(backingStore.isShutdown());
             manager.shutdown();
             TestUtils.waitForCondition(() -> backingStore.isShutdown(),
                 "BackingStore shut down");
@@ -85,10 +91,10 @@ public class KafkaControllerManagerUnitTest {
         MockBackingStore backingStore = new MockBackingStore.Builder().
             setStartException(new RuntimeException("start error")).build();
         try (KafkaControllerManager manager =
-                 createControllerManager("testStartError", backingStore)) {
+                 createControllerManager("testStartError", backingStore, null)) {
             BrokerInfo brokerInfo = ControllerTestUtils.brokerToBrokerInfo(
                 ControllerTestUtils.newTestBroker(0));
-            Assert.assertFalse(backingStore.isStarted());
+            assertFalse(backingStore.isStarted());
             ControllerTestUtils.assertFutureExceptionEquals(
                 RuntimeException.class, manager.start(brokerInfo));
         }

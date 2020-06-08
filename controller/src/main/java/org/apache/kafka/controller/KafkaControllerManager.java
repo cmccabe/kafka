@@ -226,9 +226,6 @@ public final class KafkaControllerManager implements ControllerManager {
 
         @Override
         public Void execute() throws Throwable {
-            if (!started) {
-                return null;
-            }
             resignIfActive();
             backingStore.shutdown();
             propagator.close();
