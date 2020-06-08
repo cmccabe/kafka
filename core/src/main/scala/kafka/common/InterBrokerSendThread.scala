@@ -20,7 +20,7 @@ import java.util.{ArrayDeque, ArrayList, Collection, Collections, HashMap, Itera
 import java.util.Map.Entry
 
 import kafka.utils.ShutdownableThread
-import org.apache.kafka.clients.{ClientRequest, ClientResponse, NetworkClient, RequestCompletionHandler}
+import org.apache.kafka.clients.{ClientRequest, ClientResponse, KafkaClient, RequestCompletionHandler}
 import org.apache.kafka.common.Node
 import org.apache.kafka.common.errors.AuthenticationException
 import org.apache.kafka.common.internals.FatalExitError
@@ -33,7 +33,7 @@ import scala.jdk.CollectionConverters._
  *  Class for inter-broker send thread that utilize a non-blocking network client.
  */
 abstract class InterBrokerSendThread(name: String,
-                                     networkClient: NetworkClient,
+                                     networkClient: KafkaClient,
                                      time: Time,
                                      isInterruptible: Boolean = true)
   extends ShutdownableThread(name, isInterruptible) {
