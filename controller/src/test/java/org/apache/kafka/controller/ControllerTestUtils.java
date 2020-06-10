@@ -154,13 +154,20 @@ public class ControllerTestUtils {
         }
     }
 
-    public static KafkaConfig newKafkaConfig(int brokerId) {
+    public static KafkaConfig newKafkaConfig(int brokerId, String... keysAndValues) {
         Properties props = new Properties();
         props.put(KafkaConfig$.MODULE$.HostNameProp(), "localhost");
         props.put(KafkaConfig$.MODULE$.ZkConnectProp(), "localhost:2181");
         props.put(KafkaConfig$.MODULE$.DeleteTopicEnableProp(), true);
         props.put(KafkaConfig$.MODULE$.AutoCreateTopicsEnableProp(), false);
         props.put(KafkaConfig$.MODULE$.BrokerIdProp(), Integer.toString(brokerId));
+        if ((keysAndValues.length % 2) != 0) {
+            throw new RuntimeException("Expected to see an even number of entries " +
+                "arranged as key1, value1, key2, value2, ...");
+        }
+        for (int i = 0; i < keysAndValues.length; i+=2) {
+            props.put(keysAndValues[i], keysAndValues[i + 1]);
+        }
         return new KafkaConfig(props);
     }
 }
