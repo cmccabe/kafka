@@ -17,12 +17,26 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.common.Node;
+import org.slf4j.Logger;
+
+import java.util.List;
+
 final public class KafkaPropagator implements Propagator {
+    private final Logger log;
+    private List<Node> newNodes = null;
+
     public KafkaPropagator(ControllerLogContext logContext) {
+        this.log = logContext.createLogger(KafkaPropagator.class);
+    }
+
+    @Override
+    public void setBrokerEndpoints(List<Node> nodes) {
+        this.newNodes = nodes;
+        // TODO: add wakeup
     }
 
     @Override
     public void close() throws Exception {
-
     }
 }

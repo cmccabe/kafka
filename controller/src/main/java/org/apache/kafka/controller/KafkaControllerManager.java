@@ -18,6 +18,7 @@
 package org.apache.kafka.controller;
 
 import kafka.controller.ControllerManagerFactory;
+import kafka.server.KafkaConfig;
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ApiException;
@@ -101,6 +102,7 @@ public final class KafkaControllerManager implements ControllerManager {
     private static final String MAYBE_PROPAGATE = "maybePropagate";
 
     private final ControllerLogContext logContext;
+    private final KafkaConfig config;
     private final Logger log;
     private final BackingStore backingStore;
     private final Propagator propagator;
@@ -114,10 +116,11 @@ public final class KafkaControllerManager implements ControllerManager {
         private final ReplicationManager replicationManager;
         private final PropagationManager propagationManager;
 
-        Controller(int controllerEpoch, MetadataState newState) {
+        Controller(int controllerEpoch, MetadataState state) {
             this.controllerEpoch = controllerEpoch;
             this.replicationManager = new ReplicationManager();
-            this.propagationManager = new PropagationManager();
+            this.propagationManager = new PropagationManager(logContext, config, state);
+            propagationManager.propagate(propagator);
         }
 
         int controllerEpoch() {
@@ -126,7 +129,21 @@ public final class KafkaControllerManager implements ControllerManager {
 
         void resign() {
             backingStore.resign(controllerEpoch);
-            propagationManager.close();
+            propagationManager.close(propagator);
+        }
+
+        void handleBrokerUpdates(BrokerDelta delta) {
+            propagationManager.handleBrokerUpdates(replicationManager, delta);
+            maybePropagate();
+        }
+
+        void handleTopicUpdates(TopicDelta delta) {
+            propagationManager.handleTopicUpdates(replicationManager, delta);
+            maybePropagate();
+        }
+
+        void maybePropagate() {
+            propagationManager.maybePropagate(propagator);
         }
     }
 
@@ -247,7 +264,6 @@ public final class KafkaControllerManager implements ControllerManager {
         @Override
         public Void execute() throws Throwable {
             controller = new Controller(newControllerEpoch, newState);
-            maybePropagate();
             return null;
         }
     }
@@ -259,12 +275,9 @@ public final class KafkaControllerManager implements ControllerManager {
 
         @Override
         public Void execute() throws Throwable {
-            maybePropagate();
+            controller.maybePropagate();
             return null;
         }
-    }
-
-    private void maybePropagate() {
     }
 
     class DeactivateEvent extends AbstractControllerManagerEvent<Void> {
@@ -289,8 +302,7 @@ public final class KafkaControllerManager implements ControllerManager {
 
         @Override
         public Void execute() throws Throwable {
-            controller.propagationManager.handleBrokerUpdates(delta);
-            maybePropagate();
+            controller.handleBrokerUpdates(delta);
             return null;
         }
     }
@@ -305,8 +317,7 @@ public final class KafkaControllerManager implements ControllerManager {
 
         @Override
         public Void execute() throws Throwable {
-            controller.propagationManager.handleTopicUpdates(delta);
-            maybePropagate();
+            controller.handleTopicUpdates(delta);
             return null;
         }
     }
@@ -328,8 +339,8 @@ public final class KafkaControllerManager implements ControllerManager {
             mainQueue = new KafkaEventQueue(new LogContext(
                 logContext.logContext().logPrefix() + " [mainQueue] "),
                 logContext.threadNamePrefix());
-            controllerManager = new KafkaControllerManager(logContext, zkBackingStore,
-                kafkaPropagator, mainQueue);
+            controllerManager = new KafkaControllerManager(logContext, factory.config(),
+                zkBackingStore, kafkaPropagator, mainQueue);
             success = true;
         } finally {
             if (!success) {
@@ -342,10 +353,12 @@ public final class KafkaControllerManager implements ControllerManager {
     }
 
     KafkaControllerManager(ControllerLogContext logContext,
+                           KafkaConfig config,
                            BackingStore backingStore,
                            Propagator propagator,
                            EventQueue mainQueue) {
         this.logContext = logContext;
+        this.config = config;
         this.log = logContext.createLogger(KafkaControllerManager.class);
         this.backingStore = backingStore;
         this.propagator = propagator;

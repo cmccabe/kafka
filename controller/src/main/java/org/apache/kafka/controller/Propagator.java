@@ -17,5 +17,15 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.common.Node;
+
+import java.util.List;
+
 public interface Propagator extends AutoCloseable {
+    /**
+     * Set the endpoints of the brokers to connect to.
+     *
+     * @param nodes     The nodes to set.
+     */
+    void setBrokerEndpoints(List<Node> nodes);
 }

@@ -17,9 +17,14 @@
 
 package org.apache.kafka.controller;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.kafka.common.Endpoint;
+import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;

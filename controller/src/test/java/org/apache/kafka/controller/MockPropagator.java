@@ -17,6 +17,9 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.common.Node;
+
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MockPropagator implements Propagator {
@@ -29,5 +32,9 @@ public class MockPropagator implements Propagator {
 
     boolean closed() {
         return closed.get();
+    }
+
+    @Override
+    public void setBrokerEndpoints(List<Node> nodes) {
     }
 }

@@ -19,6 +19,8 @@ package org.apache.kafka.controller;
 
 import kafka.cluster.Broker;
 import kafka.cluster.EndPoint;
+import kafka.server.KafkaConfig;
+import kafka.server.KafkaConfig$;
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.message.MetadataState.BrokerEndpoint;
@@ -35,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -84,10 +87,10 @@ public class ControllerTestUtils {
      */
     static MetadataState.Broker newTestBroker(int id) {
         MetadataState.Broker broker = new MetadataState.Broker();
-        broker.setEndPoints(Collections.singletonList(
-            new BrokerEndpoint().setHost("localhost").
+        broker.endPoints().getOrCreate("PLAINTEXT").
+                setHost("localhost").
                 setPort((short) 9020).
-                setSecurityProtocol(SecurityProtocol.PLAINTEXT.id)));
+                setSecurityProtocol(SecurityProtocol.PLAINTEXT.id);
         broker.setBrokerEpoch(-1);
         broker.setBrokerId(id);
         broker.setRack(null);
@@ -149,5 +152,15 @@ public class ControllerTestUtils {
             assertTrue("Expected exception message to include " + messageSubString +
                 ", but it was " + messageText, messageText.contains(messageSubString));
         }
+    }
+
+    public static KafkaConfig newKafkaConfig(int brokerId) {
+        Properties props = new Properties();
+        props.put(KafkaConfig$.MODULE$.HostNameProp(), "localhost");
+        props.put(KafkaConfig$.MODULE$.ZkConnectProp(), "localhost:2181");
+        props.put(KafkaConfig$.MODULE$.DeleteTopicEnableProp(), true);
+        props.put(KafkaConfig$.MODULE$.AutoCreateTopicsEnableProp(), false);
+        props.put(KafkaConfig$.MODULE$.BrokerIdProp(), Integer.toString(brokerId));
+        return new KafkaConfig(props);
     }
 }

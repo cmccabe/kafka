@@ -21,14 +21,17 @@ import kafka.cluster.Broker;
 import kafka.cluster.EndPoint;
 import kafka.controller.ReplicaAssignment;
 import kafka.utils.CoreUtils;
+import org.apache.kafka.common.Endpoint;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.slf4j.Logger;
 import scala.compat.java8.OptionConverters;
 import scala.jdk.javaapi.CollectionConverters;
 
 import java.text.DecimalFormat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -97,16 +100,13 @@ public final class ControllerUtils {
         newBroker.setRack(OptionConverters.<String>
             toJava(broker.rack()).orElse(null));
         newBroker.setBrokerId(broker.id());
-        List<MetadataState.BrokerEndpoint> newEndpoints = new ArrayList<>();
         for (EndPoint endPoint : CollectionConverters.asJava(broker.endPoints())) {
-            MetadataState.BrokerEndpoint newEndpoint =
-                new MetadataState.BrokerEndpoint();
+            MetadataState.BrokerEndpoint newEndpoint = newBroker.endPoints().
+                getOrCreate(endPoint.listenerName().value());
             newEndpoint.setHost(endPoint.host());
             newEndpoint.setPort((short) endPoint.port());
             newEndpoint.setSecurityProtocol(endPoint.securityProtocol().id);
-            newEndpoints.add(newEndpoint);
         }
-        newBroker.setEndPoints(newEndpoints);
         return newBroker;
     }
 
