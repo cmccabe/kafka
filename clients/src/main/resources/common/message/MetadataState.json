@@ -64,7 +64,9 @@
             { "name": "LeaderEpoch", "type": "int32", "versions": "0+", "default": "-1",
               "about": "The epoch of the lead replica." },
             { "name": "ControllerEpochOfLastIsrUpdate", "type": "int32", "versions": "0+", "default": "-1",
-              "about": "The controller epoch of the current ISR znode." }
+              "about": "The controller epoch of the current ISR znode." },
+            { "name": "ZkVersionOfLastIsrUpdate", "type": "int32", "versions": "0+", "default": "-1",
+              "about": "The ZK version of the current ISR znode." }
         ]}
     ]},
     { "name": "Clients", "type": "[]Clients", "versions": "0+",

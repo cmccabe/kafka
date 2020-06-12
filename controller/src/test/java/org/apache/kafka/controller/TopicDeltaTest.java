@@ -171,7 +171,7 @@ public class TopicDeltaTest {
         assertEquals(Collections.emptyList(), delta.removedParts);
         assertEquals(Collections.emptyMap(), delta.replicaChanges);
         assertEquals(Collections.singletonMap(new TopicPartition("foo", 0),
-            new TopicDelta.IsrChange(0, 100, Arrays.asList(0, 1), 123)),
+            new TopicDelta.IsrChange(0, 100, Arrays.asList(0, 1), 123, 456)),
                 delta.isrChanges);
         delta.apply(existingTopics);
         TopicDelta delta2 = TopicDelta.fromIsrUpdates(existingTopics, updates);

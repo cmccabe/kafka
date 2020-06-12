@@ -345,8 +345,8 @@ public class ZkBackingStoreTest {
     }
 
     private static void createLeaderAndIsr(KafkaZkClient zkClient,
-                                           String topicName, int partitionId, List<Integer> isr,
-                                           int leader, int controllerEpoch, int leaderEpoch) {
+                String topicName, int partitionId, List<Integer> isr, int leader,
+                int controllerEpoch, int leaderEpoch) {
         Map<TopicPartition, Throwable> failures =
             CollectionConverters.asJava(zkClient.createLeaderAndIsr(
                 CollectionConverters.asScala(Collections.singletonMap(
@@ -385,7 +385,8 @@ public class ZkBackingStoreTest {
                 MetadataState.Topic foo = new MetadataState.Topic().setName("foo");
                 foo.partitions().getOrCreate(0).
                     setLeader(0).setControllerEpochOfLastIsrUpdate(0).setLeaderEpoch(100).
-                    setReplicas(Arrays.asList(0, 1, 2)).setIsr(Arrays.asList(0, 1, 2));
+                    setReplicas(Arrays.asList(0, 1, 2)).setIsr(Arrays.asList(0, 1, 2)).
+                    setZkVersionOfLastIsrUpdate(0);
                 foo.partitions().getOrCreate(1).
                     setReplicas(Arrays.asList(1, 2, 3));
                 foo.partitions().getOrCreate(2).
@@ -402,7 +403,6 @@ public class ZkBackingStoreTest {
         }
     }
 
-
     @Test
     public void testIsrChanges() throws Exception {
         try (CloseableEmbeddedZooKeeper zooKeeper = new CloseableEmbeddedZooKeeper()) {
@@ -418,17 +418,21 @@ public class ZkBackingStoreTest {
                 MetadataState.Topic foo = new MetadataState.Topic().setName("foo");
                 foo.partitions().getOrCreate(0).setLeader(0).setLeaderEpoch(100).
                     setControllerEpochOfLastIsrUpdate(0).
-                    setReplicas(Arrays.asList(0, 1, 2)).setIsr(Arrays.asList(0, 1));
+                    setReplicas(Arrays.asList(0, 1, 2)).setIsr(Arrays.asList(0, 1)).
+                    setZkVersionOfLastIsrUpdate(0);
                 foo.partitions().getOrCreate(1).setLeader(1).setLeaderEpoch(200).
                     setControllerEpochOfLastIsrUpdate(0).
-                    setReplicas(Arrays.asList(1, 2, 3)).setIsr(Arrays.asList(1, 2, 3));
+                    setReplicas(Arrays.asList(1, 2, 3)).setIsr(Arrays.asList(1, 2, 3)).
+                    setZkVersionOfLastIsrUpdate(0);
                 ensemble.waitForTopics(Collections.singletonList(foo));
                 setLeaderAndIsr(zkClient, "foo", 0, Arrays.asList(0, 1, 2), 0, 0, 101);
                 setLeaderAndIsr(zkClient, "foo", 1, Arrays.asList(1, 2, 3), 1, 0, 201);
                 foo.partitions().getOrCreate(0).setLeaderEpoch(101).
-                    setIsr(Arrays.asList(0, 1, 2));
+                    setIsr(Arrays.asList(0, 1, 2)).
+                    setZkVersionOfLastIsrUpdate(1);
                 foo.partitions().getOrCreate(1).setLeaderEpoch(201).
-                    setIsr(Arrays.asList(1, 2, 3));
+                    setIsr(Arrays.asList(1, 2, 3)).
+                    setZkVersionOfLastIsrUpdate(1);
                 ensemble.waitForTopics(Collections.singletonList(foo));
             }
         }

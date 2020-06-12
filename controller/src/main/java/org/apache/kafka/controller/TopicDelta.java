@@ -99,19 +99,23 @@ class TopicDelta {
         final int leaderEpoch;
         final List<Integer> isr;
         final int controllerEpoch;
+        final int zkVersion;
 
         static IsrChange fromLeaderIsrAndControllerEpoch(LeaderIsrAndControllerEpoch info) {
             return new IsrChange(info.leaderAndIsr().leader(),
                 info.leaderAndIsr().leaderEpoch(),
                 CoreUtils.asJava(info.leaderAndIsr().isr()),
-                info.controllerEpoch());
+                info.controllerEpoch(),
+                info.leaderAndIsr().zkVersion());
         }
 
-        IsrChange(int leader, int leaderEpoch, List<Integer> isr, int controllerEpoch) {
+        IsrChange(int leader, int leaderEpoch, List<Integer> isr, int controllerEpoch,
+                  int zkVersion) {
             this.leader = leader;
             this.leaderEpoch = leaderEpoch;
             this.isr = isr;
             this.controllerEpoch = controllerEpoch;
+            this.zkVersion = zkVersion;
         }
 
         boolean matches(MetadataState.Partition part) {
@@ -119,6 +123,7 @@ class TopicDelta {
             if (leaderEpoch != part.leaderEpoch()) return false;
             if (!isr.equals(part.isr())) return false;
             if (controllerEpoch != part.controllerEpochOfLastIsrUpdate()) return false;
+            if (zkVersion != part.zkVersionOfLastIsrUpdate()) return false;
             return true;
         }
 
@@ -132,12 +137,13 @@ class TopicDelta {
             part.setLeader(leader).
                 setLeaderEpoch(leaderEpoch).
                 setIsr(new ArrayList<>(isr)).
-                setControllerEpochOfLastIsrUpdate(controllerEpoch);
+                setControllerEpochOfLastIsrUpdate(controllerEpoch).
+                setZkVersionOfLastIsrUpdate(zkVersion);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(leader, leaderEpoch, isr, controllerEpoch);
+            return Objects.hash(leader, leaderEpoch, isr, controllerEpoch, zkVersion);
         }
 
         @Override
@@ -147,7 +153,8 @@ class TopicDelta {
             return leader == other.leader &&
                 leaderEpoch == other.leaderEpoch &&
                 isr.equals(other.isr) &&
-                controllerEpoch == other.controllerEpoch;
+                controllerEpoch == other.controllerEpoch &&
+                zkVersion == other.zkVersion;
         }
 
         @Override
@@ -158,6 +165,7 @@ class TopicDelta {
             bld.append(", leaderEpoch = ").append(leaderEpoch);
             bld.append(", isr = ").append(Utils.join(isr, ", "));
             bld.append(", controllerEpoch = ").append(controllerEpoch);
+            bld.append(", zkVersion = ").append(zkVersion);
             bld.append(")");
             return bld.toString();
         }
