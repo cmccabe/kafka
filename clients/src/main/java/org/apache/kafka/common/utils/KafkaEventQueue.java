@@ -65,7 +65,7 @@ public final class KafkaEventQueue implements EventQueue {
 
         /**
          * If this event is in the delay map, this is the key it is there under.
-         * If it is not in the map, this is 0.
+         * If it is not in the map, this is null.
          */
         private Long deadlineNs = null;
 
