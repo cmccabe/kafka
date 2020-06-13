@@ -53,6 +53,18 @@ public class ControllerUtilsTest {
     }
 
     @Test
+    public void testNanosToFractionalMillis() throws Exception {
+        assertEquals("123", ControllerUtils.
+            nanosToFractionalMillis(TimeUnit.MILLISECONDS.toNanos(123)));
+        assertEquals("0", ControllerUtils.
+            nanosToFractionalMillis(TimeUnit.MILLISECONDS.toNanos(0)));
+        assertEquals("1", ControllerUtils.
+            nanosToFractionalMillis(TimeUnit.MILLISECONDS.toNanos(1)));
+        assertEquals("1.2346", ControllerUtils.
+            nanosToFractionalMillis(1234567));
+    }
+
+    @Test
     public void testBrokerToBrokerState() {
         Seq<EndPoint> endPoints = CollectionConverters.asScala(Arrays.asList(
             new EndPoint("host1", 123, new ListenerName("B"), SecurityProtocol.SSL),
@@ -68,17 +80,5 @@ public class ControllerUtilsTest {
             setSecurityProtocol(SecurityProtocol.SSL.id);
         assertEquals(endpoints, brokerState.endPoints());
         assertEquals(null, brokerState.rack());
-    }
-
-    @Test
-    public void testNanosToFractionalMillis() throws Exception {
-        assertEquals("123", ControllerUtils.
-            nanosToFractionalMillis(TimeUnit.MILLISECONDS.toNanos(123)));
-        assertEquals("0", ControllerUtils.
-            nanosToFractionalMillis(TimeUnit.MILLISECONDS.toNanos(0)));
-        assertEquals("1", ControllerUtils.
-            nanosToFractionalMillis(TimeUnit.MILLISECONDS.toNanos(1)));
-        assertEquals("1.2346", ControllerUtils.
-            nanosToFractionalMillis(1234567));
     }
 }

@@ -19,8 +19,6 @@ package org.apache.kafka.controller;
 
 import org.apache.kafka.common.message.MetadataState;
 
-import java.util.List;
-
 /**
  * Handles events from the BackingStore.
  */

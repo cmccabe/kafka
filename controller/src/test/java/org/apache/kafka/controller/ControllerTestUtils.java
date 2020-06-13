@@ -34,7 +34,6 @@ import scala.compat.java8.OptionConverters;
 import scala.jdk.javaapi.CollectionConverters;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
@@ -165,7 +164,7 @@ public class ControllerTestUtils {
             throw new RuntimeException("Expected to see an even number of entries " +
                 "arranged as key1, value1, key2, value2, ...");
         }
-        for (int i = 0; i < keysAndValues.length; i+=2) {
+        for (int i = 0; i < keysAndValues.length; i += 2) {
             props.put(keysAndValues[i], keysAndValues[i + 1]);
         }
         return new KafkaConfig(props);

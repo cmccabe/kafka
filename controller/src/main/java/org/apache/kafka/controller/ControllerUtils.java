@@ -21,47 +21,24 @@ import kafka.cluster.Broker;
 import kafka.cluster.EndPoint;
 import kafka.controller.ReplicaAssignment;
 import kafka.utils.CoreUtils;
-import org.apache.kafka.common.Endpoint;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataState;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.slf4j.Logger;
 import scala.compat.java8.OptionConverters;
 import scala.jdk.javaapi.CollectionConverters;
 
 import java.text.DecimalFormat;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.function.Function;
 
 public final class ControllerUtils {
     public static <T> CompletableFuture<T> exceptionalFuture(Throwable t) {
         CompletableFuture<T> future = new CompletableFuture<>();
         future.completeExceptionally(t);
         return future;
-    }
-
-    /**
-     * A function which logs an exception at WARN level.
-     */
-    public static class WarnOnFailure implements Function<Throwable, Void> {
-        private final String what;
-        private final Logger log;
-
-        public WarnOnFailure(String what, Logger log) {
-            this.what = what;
-            this.log = log;
-        }
-
-        @Override
-        public Void apply(Throwable throwable) {
-            log.warn("{} failed", what, throwable);
-            return null;
-        }
     }
 
     /**
