@@ -17,18 +17,23 @@
 
 package org.apache.kafka.controller;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Arrays;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.kafka.common.Endpoint;
+import kafka.cluster.Broker;
+import kafka.cluster.EndPoint;
 import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
+import scala.collection.Seq;
+import scala.compat.java8.OptionConverters;
+import scala.jdk.javaapi.CollectionConverters;
 
 import static org.junit.Assert.assertEquals;
 
@@ -45,6 +50,24 @@ public class ControllerUtilsTest {
         } catch (ExecutionException e) {
             assertEquals(exception, e.getCause());
         }
+    }
+
+    @Test
+    public void testBrokerToBrokerState() {
+        Seq<EndPoint> endPoints = CollectionConverters.asScala(Arrays.asList(
+            new EndPoint("host1", 123, new ListenerName("B"), SecurityProtocol.SSL),
+            new EndPoint("host2", 123, new ListenerName("A"), SecurityProtocol.PLAINTEXT)));
+        Broker broker = new Broker(3, endPoints, OptionConverters.toScala(Optional.empty()));
+        MetadataState.Broker brokerState = ControllerUtils.brokerToBrokerState(broker);
+        assertEquals(3, brokerState.brokerId());
+        MetadataState.BrokerEndpointCollection endpoints =
+            new MetadataState.BrokerEndpointCollection();
+        endpoints.getOrCreate("A").setHost("host2").setPort((short) 123).
+            setSecurityProtocol(SecurityProtocol.PLAINTEXT.id);
+        endpoints.getOrCreate("B").setHost("host1").setPort((short) 123).
+            setSecurityProtocol(SecurityProtocol.SSL.id);
+        assertEquals(endpoints, brokerState.endPoints());
+        assertEquals(null, brokerState.rack());
     }
 
     @Test

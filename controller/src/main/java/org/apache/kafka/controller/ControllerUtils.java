@@ -97,10 +97,14 @@ public final class ControllerUtils {
      */
     public static MetadataState.Broker brokerToBrokerState(Broker broker) {
         MetadataState.Broker newBroker = new MetadataState.Broker();
-        newBroker.setRack(OptionConverters.<String>
-            toJava(broker.rack()).orElse(null));
+        newBroker.setRack(OptionConverters.toJava(broker.rack()).orElse(null));
         newBroker.setBrokerId(broker.id());
-        for (EndPoint endPoint : CollectionConverters.asJava(broker.endPoints())) {
+        List<EndPoint> endPoints = new ArrayList<>(
+            CollectionConverters.asJava(broker.endPoints()));
+        // Put the endpoints in sorted order
+        endPoints.sort((e1, e2) ->
+            e1.listenerName().value().compareTo(e2.listenerName().value()));
+        for (EndPoint endPoint : endPoints) {
             MetadataState.BrokerEndpoint newEndpoint = newBroker.endPoints().
                 getOrCreate(endPoint.listenerName().value());
             newEndpoint.setHost(endPoint.host());
