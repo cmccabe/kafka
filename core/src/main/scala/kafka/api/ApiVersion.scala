@@ -143,6 +143,22 @@ sealed trait ApiVersion extends Ordered[ApiVersion] {
     ApiVersion.orderingByVersion.compare(this, that)
 
   override def toString: String = version
+
+  def updateMetadataRequestVersion(): Short =
+    if (id >= KAFKA_2_4_IV1.id) 6
+    else if (id >= KAFKA_2_2_IV0.id) 5
+    else if (id >= KAFKA_1_0_IV0.id) 4
+    else if (id >= KAFKA_0_10_2_IV0.id) 3
+    else if (id >= KAFKA_0_10_0_IV1.id) 2
+    else if (id >= KAFKA_0_9_0.id) 1
+    else 0
+
+  def leaderAndIsrRequestVersion(): Short =
+    if (id >= KAFKA_2_4_IV1.id) 4
+    else if (id >= KAFKA_2_4_IV0.id) 3
+    else if (id >= KAFKA_2_2_IV0.id) 2
+    else if (id >= KAFKA_1_0_IV0.id) 1
+    else 0
 }
 
 /**

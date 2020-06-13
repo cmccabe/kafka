@@ -149,4 +149,24 @@ class ApiVersionTest {
     assertEquals(ApiVersion.allVersions.size, apiVersions.length)
   }
 
+  @Test
+  def testCalculateUpdateMetadataRequestVersion(): Unit = {
+      assertEquals(6, KAFKA_2_5_IV0.updateMetadataRequestVersion)
+      assertEquals(6, KAFKA_2_4_IV1.updateMetadataRequestVersion)
+      assertEquals(5, KAFKA_2_3_IV0.updateMetadataRequestVersion)
+      assertEquals(4, KAFKA_1_1_IV0.updateMetadataRequestVersion)
+      assertEquals(3, KAFKA_0_10_2_IV0.updateMetadataRequestVersion)
+      assertEquals(2, KAFKA_0_10_1_IV0.updateMetadataRequestVersion)
+      assertEquals(1, KAFKA_0_9_0.updateMetadataRequestVersion)
+      assertEquals(0, KAFKA_0_8_0.updateMetadataRequestVersion)
+  }
+
+  @Test
+  def testCalculcateLeaderAndIsrRequestVersion(): Unit = {
+    assertEquals(4, KAFKA_2_5_IV0.leaderAndIsrRequestVersion)
+    assertEquals(3, KAFKA_2_4_IV0.leaderAndIsrRequestVersion)
+    assertEquals(2, KAFKA_2_2_IV0.leaderAndIsrRequestVersion)
+    assertEquals(1, KAFKA_1_0_IV0.leaderAndIsrRequestVersion)
+    assertEquals(0, KAFKA_0_9_0.leaderAndIsrRequestVersion)
+  }
 }
