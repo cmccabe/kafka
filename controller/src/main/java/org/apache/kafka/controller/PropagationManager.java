@@ -129,7 +129,7 @@ public class PropagationManager {
             broker.endpointInfoDirty = false;
         }
         if (!nodes.isEmpty()) {
-            propagator.setBrokerEndpoints(nodes);
+            //propagator.setBrokerEndpoints(nodes);
         }
     }
 

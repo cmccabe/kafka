@@ -17,13 +17,20 @@
 
 package org.apache.kafka.controller;
 
+import kafka.common.RequestAndCompletionHandler;
 import org.apache.kafka.common.Node;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MockPropagator implements Propagator {
     private final AtomicBoolean closed = new AtomicBoolean(false);
+
+    @Override
+    public void send(List<Node> nodes, Collection<RequestAndCompletionHandler> newRequests) {
+
+    }
 
     @Override
     public void close() throws Exception {
@@ -34,7 +41,4 @@ public class MockPropagator implements Propagator {
         return closed.get();
     }
 
-    @Override
-    public void setBrokerEndpoints(List<Node> nodes) {
-    }
 }

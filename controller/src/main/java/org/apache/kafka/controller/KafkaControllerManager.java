@@ -28,6 +28,7 @@ import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
 import kafka.controller.ControllerManager;
+import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
@@ -335,7 +336,8 @@ public final class KafkaControllerManager implements ControllerManager {
             zkBackingStore = ZkBackingStore.create(logContext,
                 factory.nodeId(),
                 factory.zkClient());
-            kafkaPropagator = new KafkaPropagator(logContext);
+            kafkaPropagator = KafkaPropagator.create(logContext, factory.config(),
+                factory.metrics());
             mainQueue = new KafkaEventQueue(new LogContext(
                 logContext.logContext().logPrefix() + " [mainQueue] "),
                 logContext.threadNamePrefix());

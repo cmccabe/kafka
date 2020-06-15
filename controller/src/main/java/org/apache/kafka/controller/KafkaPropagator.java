@@ -17,26 +17,172 @@
 
 package org.apache.kafka.controller;
 
+import kafka.common.InterBrokerSendThread;
+import kafka.common.RequestAndCompletionHandler;
+import kafka.server.KafkaConfig;
+import org.apache.kafka.clients.ApiVersions;
+import org.apache.kafka.clients.ClientDnsLookup;
+import org.apache.kafka.clients.KafkaClient;
+import org.apache.kafka.clients.ManualMetadataUpdater;
+import org.apache.kafka.clients.NetworkClient;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.Reconfigurable;
+import org.apache.kafka.common.metrics.Metrics;
+import org.apache.kafka.common.network.ChannelBuilder;
+import org.apache.kafka.common.network.ChannelBuilders;
+import org.apache.kafka.common.network.Selectable;
+import org.apache.kafka.common.network.Selector;
+import org.apache.kafka.common.security.JaasContext;
+import org.apache.kafka.common.utils.SystemTime;
+import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
+import scala.jdk.javaapi.CollectionConverters;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 final public class KafkaPropagator implements Propagator {
     private final Logger log;
-    private List<Node> newNodes = null;
 
-    public KafkaPropagator(ControllerLogContext logContext) {
+    /**
+     * The cluster metadata manager used by the KafkaClient.
+     */
+    private final ManualMetadataUpdater metadataUpdater;
+
+    /**
+     * The network client used by this propagator.
+     */
+    private final KafkaClient client;
+
+    /**
+     * The runnable used in the service thread for this propagator.
+     */
+    private final KafkaPropagatorSendThread thread;
+
+    /**
+     * The nodes information to use when sending messages.
+     * Protected by the object monitor.
+     */
+    private List<Node> nodes = Collections.emptyList();
+
+    /**
+     * The requests to send.
+     */
+    private List<RequestAndCompletionHandler> requests = new ArrayList<>();
+
+    class KafkaPropagatorSendThread extends InterBrokerSendThread {
+        private final int requestTimeoutMs;
+
+        public KafkaPropagatorSendThread(String name, KafkaClient client, Time time,
+                                         int requestTimeoutMs) {
+            super(name, client, time, true);
+            this.requestTimeoutMs = requestTimeoutMs;
+        }
+
+        @Override
+        public scala.collection.Iterable<RequestAndCompletionHandler> generateRequests() {
+            Iterable<RequestAndCompletionHandler> iterable;
+            synchronized (KafkaPropagator.this) {
+                metadataUpdater.setNodes(nodes);
+                if (requests.isEmpty()) {
+                    iterable = Collections.emptyList();
+                } else {
+                    iterable = requests;
+                    requests = new ArrayList<>();
+                }
+            }
+            return CollectionConverters.asScala(iterable);
+        }
+
+        @Override
+        public int requestTimeoutMs() {
+            return requestTimeoutMs;
+        }
+    }
+
+    @Override
+    public synchronized void send(List<Node> nodes,
+                                  Collection<RequestAndCompletionHandler> newRequests) {
+        this.nodes = nodes;
+        this.requests.addAll(newRequests);
+        this.thread.wakeup();
+    }
+
+    public static KafkaPropagator create(ControllerLogContext logContext,
+                                         KafkaConfig config,
+                                         Metrics metrics) {
+        ManualMetadataUpdater metadataUpdater = new ManualMetadataUpdater();
+        String metricGrpPrefix = "propagator";
+        ChannelBuilder channelBuilder = null;
+        Selector selector = null;
+        NetworkClient networkClient = null;
+        Time time = SystemTime.SYSTEM;
+        try {
+            channelBuilder = ChannelBuilders.clientChannelBuilder(
+                config.interBrokerSecurityProtocol(),
+                JaasContext.Type.SERVER,
+                config,
+                config.interBrokerListenerName(),
+                config.saslMechanismInterBrokerProtocol(),
+                time,
+                config.saslInterBrokerHandshakeRequestEnable(),
+                logContext.logContext());
+            if (channelBuilder instanceof Reconfigurable) {
+                config.addReconfigurable((Reconfigurable) channelBuilder);
+            }
+            selector = new Selector(config.connectionsMaxIdleMs(),
+                metrics,
+                time,
+                metricGrpPrefix,
+                channelBuilder,
+                logContext.logContext());
+            networkClient = new NetworkClient(
+                selector,
+                metadataUpdater,
+                logContext.threadNamePrefix() + "Propagator",
+                1,
+                50,
+                50,
+                Selectable.USE_DEFAULT_BUFFER_SIZE,
+                config.socketReceiveBufferBytes(),
+                config.requestTimeoutMs(),
+                ClientDnsLookup.DEFAULT,
+                time,
+                false,
+                new ApiVersions(),
+                logContext.logContext());
+            return new KafkaPropagator(logContext, metadataUpdater, networkClient, time,
+                config);
+        } catch (Throwable e) {
+            Utils.closeQuietly(channelBuilder, "KafkaPropagator#channelBuilder");
+            Utils.closeQuietly(selector, "KafkaPropagator#selector");
+            Utils.closeQuietly(networkClient, "KafkaPropagator#networkClient");
+            throw new KafkaException("Failed to create new KafkaPropagator", e);
+        }
+    }
+
+    public KafkaPropagator(ControllerLogContext logContext,
+                           ManualMetadataUpdater metadataUpdater,
+                           KafkaClient client,
+                           Time time,
+                           KafkaConfig config) {
         this.log = logContext.createLogger(KafkaPropagator.class);
+        this.metadataUpdater = metadataUpdater;
+        this.client = client;
+        this.thread = new KafkaPropagatorSendThread(
+            logContext.threadNamePrefix() + "Propagator", client, time,
+            config.requestTimeoutMs());
+        this.thread.start();
     }
 
     @Override
-    public void setBrokerEndpoints(List<Node> nodes) {
-        this.newNodes = nodes;
-        // TODO: add wakeup
-    }
-
-    @Override
-    public void close() throws Exception {
+    public void close() throws InterruptedException {
+        thread.shutdown();
+        thread.join();
+        Utils.closeQuietly(client, "KafkaPropagator#client");
     }
 }

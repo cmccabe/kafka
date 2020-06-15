@@ -17,15 +17,18 @@
 
 package org.apache.kafka.controller;
 
+import kafka.common.RequestAndCompletionHandler;
 import org.apache.kafka.common.Node;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface Propagator extends AutoCloseable {
     /**
-     * Set the endpoints of the brokers to connect to.
+     * Send a batch of messages.
      *
-     * @param nodes     The nodes to set.
+     * @param nodes         The node metadata.
+     * @param newRequests   The new requests to send.
      */
-    void setBrokerEndpoints(List<Node> nodes);
+    void send(List<Node> nodes, Collection<RequestAndCompletionHandler> newRequests);
 }
