@@ -22,8 +22,11 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -150,6 +153,37 @@ public class KafkaEventQueueTest {
         assertThrows(CancellationException.class, () -> future1.get());
         assertEquals(Integer.valueOf(1), future2.get());
         assertEquals(1, ai.get());
+        queue.close();
+    }
+
+    @Test
+    public void testDeferredIsQueuedAfterTriggering() throws Exception {
+        KafkaEventQueue queue =
+            new KafkaEventQueue(new LogContext(), "testDeferredIsQueuedAfterTriggering");
+
+        final CountDownLatch latch = new CountDownLatch(1);
+        AtomicInteger count = new AtomicInteger(0);
+        List<CompletableFuture<Integer>> futures = new ArrayList<>();
+        futures.add(queue.append(() -> {
+            latch.await();
+            return count.getAndAdd(1);
+        }));
+        futures.add(queue.append(() -> count.getAndAdd(1)));
+        futures.add(queue.append(() -> count.getAndAdd(1)));
+        futures.add(queue.scheduleDeferred("foo",
+            __ -> Time.SYSTEM.nanoseconds() + 1L,
+            () -> {
+                int value = count.getAndAdd(1);
+                if (value != 3) {
+                    throw new RuntimeException("invalid ordering.");
+                }
+                return value;
+            }));
+        latch.countDown();
+        int i = 0;
+        for (CompletableFuture<Integer> future : futures) {
+            assertEquals(Integer.valueOf(i++), future.get());
+        }
         queue.close();
     }
 }

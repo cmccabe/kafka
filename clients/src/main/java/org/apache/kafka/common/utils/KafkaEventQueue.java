@@ -153,16 +153,6 @@ public final class KafkaEventQueue implements EventQueue {
         }
     }
 
-    private static class ToCancel {
-        private final EventContext<?> eventContext;
-        private final Throwable exception;
-
-        ToCancel(EventContext<?> eventContext, Throwable exception) {
-            this.eventContext = eventContext;
-            this.exception = exception;
-        }
-    }
-
     private class EventHandler implements Runnable {
         /**
          * Event contexts indexed by tag.  Events without a tag are not included here.
@@ -212,7 +202,8 @@ public final class KafkaEventQueue implements EventQueue {
             while (true) {
                 if (timedEventContext != null) {
                     if (timedEventContext.insertionType == EventInsertionType.DEFERRED) {
-                        timedEventContext.run();
+                        // The deferred event is ready to run.  Put it in the queue.
+                        head.insertBefore(timedEventContext);
                     } else {
                         timedEventContext.completeWithTimeout();
                     }
