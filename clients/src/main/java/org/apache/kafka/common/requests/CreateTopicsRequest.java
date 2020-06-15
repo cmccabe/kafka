@@ -72,7 +72,7 @@ public class CreateTopicsRequest extends AbstractRequest {
     public static final int NO_NUM_PARTITIONS = -1;
     public static final short NO_REPLICATION_FACTOR = -1;
 
-    private CreateTopicsRequest(CreateTopicsRequestData data, short version) {
+    public CreateTopicsRequest(CreateTopicsRequestData data, short version) {
         super(ApiKeys.CREATE_TOPICS, version);
         this.data = data;
     }

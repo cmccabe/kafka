@@ -43,6 +43,7 @@ import scala.jdk.javaapi.CollectionConverters;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 
 final public class KafkaPropagator implements Propagator {
@@ -86,7 +87,9 @@ final public class KafkaPropagator implements Propagator {
         @Override
         public scala.collection.Iterable<RequestAndCompletionHandler> generateRequests() {
             Iterable<RequestAndCompletionHandler> iterable;
+            List<Node> curNodes = null;
             synchronized (KafkaPropagator.this) {
+                curNodes = nodes;
                 metadataUpdater.setNodes(nodes);
                 if (requests.isEmpty()) {
                     iterable = Collections.emptyList();
@@ -94,6 +97,24 @@ final public class KafkaPropagator implements Propagator {
                     iterable = requests;
                     requests = new ArrayList<>();
                 }
+            }
+            if (log.isTraceEnabled()) {
+                StringBuilder bld = new StringBuilder();
+                int numRequests = 0;
+                String prefix = "";
+                for (Iterator<RequestAndCompletionHandler> i = iterable.iterator();
+                         i.hasNext(); ) {
+                    RequestAndCompletionHandler req = i.next();
+                    bld.append(prefix).append("RequestAndCompletionHandler(");
+                    bld.append("dest=").append(req.destination().id()).append(", ");
+                    bld.append("builderClassName=").
+                        append(req.request().getClass().getSimpleName());
+                    bld.append(")");
+                    numRequests++;
+                    prefix = ", ";
+                }
+                log.trace("Generating {} request(s): [{}] to {} node(s) [{}]",
+                    numRequests, bld.toString(), curNodes.size(), Utils.join(curNodes, ", "));
             }
             return CollectionConverters.asScala(iterable);
         }
@@ -165,11 +186,11 @@ final public class KafkaPropagator implements Propagator {
         }
     }
 
-    public KafkaPropagator(ControllerLogContext logContext,
-                           ManualMetadataUpdater metadataUpdater,
-                           KafkaClient client,
-                           Time time,
-                           KafkaConfig config) {
+    KafkaPropagator(ControllerLogContext logContext,
+                    ManualMetadataUpdater metadataUpdater,
+                    KafkaClient client,
+                    Time time,
+                    KafkaConfig config) {
         this.log = logContext.createLogger(KafkaPropagator.class);
         this.metadataUpdater = metadataUpdater;
         this.client = client;
