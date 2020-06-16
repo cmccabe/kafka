@@ -17,7 +17,26 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.common.message.MetadataState;
+
 public final class ReplicationManager {
+    /**
+     * The current metadata state.  Only changes which have been written to the backing
+     * store are included here.
+     */
+    private final MetadataState state;
+
+    ReplicationManager(MetadataState state) {
+        this.state = state;
+    }
+
+    /**
+     * Get a reference to the current metadata state.
+     */
+    public MetadataState state() {
+        return state;
+    }
+
 //    private final ControllerLogContext logContext;
 //    private final Logger log;
 //    private final int controllerEpoch;

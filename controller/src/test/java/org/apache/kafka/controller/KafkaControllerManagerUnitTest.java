@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import kafka.server.KafkaConfig;
 import kafka.zk.BrokerInfo;
 import org.apache.kafka.common.utils.KafkaEventQueue;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.test.TestUtils;
 import org.junit.Rule;
 import org.junit.Test;
@@ -44,7 +45,8 @@ public class KafkaControllerManagerUnitTest {
     private KafkaControllerManager createControllerManager(String name,
                                                            BackingStore backingStore,
                                                            Propagator propagator) {
-        KafkaConfig config = ControllerTestUtils.newKafkaConfig(0);
+        int brokerId = 0;
+        KafkaConfig config = ControllerTestUtils.newKafkaConfig(brokerId);
         ControllerLogContext logContext = ControllerLogContext.fromPrefix(name);
         if (backingStore == null) {
             backingStore = new MockBackingStore.Builder().build();
@@ -54,8 +56,8 @@ public class KafkaControllerManagerUnitTest {
         }
         KafkaEventQueue mainQueue =
             new KafkaEventQueue(logContext.logContext(), logContext.threadNamePrefix());
-        return new KafkaControllerManager(logContext, config, backingStore, propagator,
-            mainQueue);
+        return new KafkaControllerManager(logContext, config, brokerId, Time.SYSTEM,
+            backingStore, propagator, mainQueue);
     }
 
     @Test

@@ -30,4 +30,12 @@ class BrokerDelta {
         this.changedBrokers = changedBrokers;
         this.deletedBrokerIds = deletedBrokerIds;
     }
+
+    public List<MetadataState.Broker> changedBrokers() {
+        return changedBrokers;
+    }
+
+    public List<Integer> deletedBrokerIds() {
+        return deletedBrokerIds;
+    }
 }

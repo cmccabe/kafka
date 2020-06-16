@@ -20,14 +20,15 @@ package org.apache.kafka.controller;
 import kafka.controller.ControllerManagerFactory;
 import kafka.server.KafkaConfig;
 import kafka.zk.BrokerInfo;
+import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.message.MetadataState;
-import org.apache.kafka.common.requests.LeaderAndIsrResponse;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
 import org.apache.kafka.common.utils.LogContext;
 import kafka.controller.ControllerManager;
+import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
@@ -99,14 +100,15 @@ import java.util.concurrent.CompletableFuture;
  * cache is not "dirty": it does not contain uncommitted state.
  */
 public final class KafkaControllerManager implements ControllerManager {
-    private static final String MAYBE_PROPAGATE = "maybePropagate";
-
     private final ControllerLogContext logContext;
     private final KafkaConfig config;
+    private final int nodeId;
+    private final Time time;
     private final Logger log;
     private final BackingStore backingStore;
     private final Propagator propagator;
     private final EventQueue mainQueue;
+    private final PropagationManagerCallbackHandler propagationManagerCallbackHandler;
     private final KafkaBackingStoreCallbackHandler backingStoreCallbackHandler;
     private Controller controller;
     private boolean started;
@@ -118,9 +120,10 @@ public final class KafkaControllerManager implements ControllerManager {
 
         Controller(int controllerEpoch, MetadataState state) {
             this.controllerEpoch = controllerEpoch;
-            this.replicationManager = new ReplicationManager();
-            this.propagationManager = new PropagationManager(logContext, config, state);
-            propagationManager.propagate(propagator);
+            this.replicationManager = new ReplicationManager(state);
+            this.propagationManager = new PropagationManager(logContext, controllerEpoch, nodeId,
+                propagationManagerCallbackHandler, config);
+            propagationManager.initialize(replicationManager);
         }
 
         int controllerEpoch() {
@@ -129,21 +132,29 @@ public final class KafkaControllerManager implements ControllerManager {
 
         void resign() {
             backingStore.resign(controllerEpoch);
-            propagationManager.close(propagator);
         }
 
         void handleBrokerUpdates(BrokerDelta delta) {
-            propagationManager.handleBrokerUpdates(replicationManager, delta);
-            maybePropagate();
+            long nowNs = time.nanoseconds();
+            propagationManager.handleBrokerUpdates(nowNs, delta);
+            maybePropagate(nowNs);
         }
 
         void handleTopicUpdates(TopicDelta delta) {
-            propagationManager.handleTopicUpdates(replicationManager, delta);
-            maybePropagate();
+            long nowNs = time.nanoseconds();
+            propagationManager.handleTopicUpdates(nowNs, delta);
+            maybePropagate(nowNs);
         }
 
-        void maybePropagate() {
-            propagationManager.maybePropagate(propagator);
+        void maybePropagate(long nowNs) {
+            propagationManager.maybeSendRequests(nowNs, replicationManager, propagator);
+            long nextMaybePropagateNs = propagationManager.nextSendTimeNs();
+            if (nextMaybePropagateNs != Long.MAX_VALUE) {
+                mainQueue.scheduleDeferred("maybePropagate." + controller.controllerEpoch,
+                    prevDeadlineNs -> prevDeadlineNs == null ?
+                        nextMaybePropagateNs : Math.min(prevDeadlineNs, nextMaybePropagateNs),
+                    new MaybePropagateEvent(controller.controllerEpoch));
+            }
         }
     }
 
@@ -181,16 +192,13 @@ public final class KafkaControllerManager implements ControllerManager {
 
     class KafkaPropagationManagerCallbackHandler implements PropagationManagerCallbackHandler {
         @Override
-        public void schedulePropagationManagerCheck(long delayNs) {
-            long nextDeadlineNs = Time.SYSTEM.nanoseconds() + delayNs;
-            mainQueue.scheduleDeferred(MAYBE_PROPAGATE,
-                prevDeadlineNs -> prevDeadlineNs == null ?
-                    nextDeadlineNs : Math.min(prevDeadlineNs, nextDeadlineNs),
-                new MaybePropagateEvent(controller.controllerEpoch));
+        public void handleLeaderAndIsrResponse(int brokerId, ClientResponse response) {
+
         }
 
         @Override
-        public void handleLeaderAndIsrResponse(int brokerId, LeaderAndIsrResponse response) {
+        public void handleUpdateMetadataResponse(int brokerId, ClientResponse response) {
+
         }
     }
 
@@ -275,7 +283,7 @@ public final class KafkaControllerManager implements ControllerManager {
 
         @Override
         public Void execute() throws Throwable {
-            controller.maybePropagate();
+            controller.maybePropagate(time.nanoseconds());
             return null;
         }
     }
@@ -341,7 +349,8 @@ public final class KafkaControllerManager implements ControllerManager {
                 logContext.logContext().logPrefix() + " [mainQueue] "),
                 logContext.threadNamePrefix());
             controllerManager = new KafkaControllerManager(logContext, factory.config(),
-                zkBackingStore, kafkaPropagator, mainQueue);
+                factory.nodeId(), SystemTime.SYSTEM, zkBackingStore,
+                kafkaPropagator, mainQueue);
             success = true;
         } finally {
             if (!success) {
@@ -355,15 +364,21 @@ public final class KafkaControllerManager implements ControllerManager {
 
     KafkaControllerManager(ControllerLogContext logContext,
                            KafkaConfig config,
+                           int nodeId,
+                           Time time,
                            BackingStore backingStore,
                            Propagator propagator,
                            EventQueue mainQueue) {
         this.logContext = logContext;
         this.config = config;
+        this.nodeId = nodeId;
+        this.time = time;
         this.log = logContext.createLogger(KafkaControllerManager.class);
         this.backingStore = backingStore;
         this.propagator = propagator;
         this.mainQueue = mainQueue;
+        this.propagationManagerCallbackHandler =
+            new KafkaPropagationManagerCallbackHandler();
         this.backingStoreCallbackHandler = new KafkaBackingStoreCallbackHandler();
         this.controller = null;
         this.started = false;
