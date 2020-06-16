@@ -175,6 +175,7 @@
     <allow pkg="kafka" />
     <allow pkg="org.apache.kafka.clients" />
     <allow pkg="org.apache.kafka.common.controller" />
+    <allow pkg="org.apache.kafka.common.feature" />
     <allow pkg="org.apache.kafka.common.message" />
     <allow pkg="org.apache.kafka.common.metrics" />
     <allow pkg="org.apache.kafka.common.network" />

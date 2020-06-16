@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 import kafka.cluster.Broker;
 import kafka.cluster.EndPoint;
+import org.apache.kafka.common.feature.Features;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
@@ -69,7 +70,8 @@ public class ControllerUtilsTest {
         Seq<EndPoint> endPoints = CollectionConverters.asScala(Arrays.asList(
             new EndPoint("host1", 123, new ListenerName("B"), SecurityProtocol.SSL),
             new EndPoint("host2", 123, new ListenerName("A"), SecurityProtocol.PLAINTEXT)));
-        Broker broker = new Broker(3, endPoints, OptionConverters.toScala(Optional.empty()));
+        Broker broker = new Broker(3, endPoints, OptionConverters.toScala(Optional.empty()),
+                Features.emptySupportedFeatures());
         MetadataState.Broker brokerState = ControllerUtils.brokerToBrokerState(broker);
         assertEquals(3, brokerState.brokerId());
         MetadataState.BrokerEndpointCollection endpoints =

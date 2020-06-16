@@ -22,6 +22,7 @@ import kafka.cluster.EndPoint;
 import kafka.server.KafkaConfig;
 import kafka.server.KafkaConfig$;
 import kafka.zk.BrokerInfo;
+import org.apache.kafka.common.feature.Features;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.message.MetadataState.BrokerEndpoint;
 import org.apache.kafka.common.network.ListenerName;
@@ -120,7 +121,8 @@ public class ControllerTestUtils {
         Optional<String> rack = Optional.ofNullable(stateBroker.rack());
         Broker broker = new Broker(stateBroker.brokerId(),
             CollectionConverters.asScala(endpoints),
-            OptionConverters.toScala(rack));
+            OptionConverters.toScala(rack),
+            Features.emptySupportedFeatures());
         // We don't store the JMX port in MetadataState.Broker, so just make
         // something up.
         int jmxPort = 8686 + stateBroker.brokerId();
