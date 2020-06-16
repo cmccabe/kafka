@@ -18,10 +18,7 @@
 package org.apache.kafka.controller;
 
 import kafka.common.RequestAndCompletionHandler;
-import kafka.server.KafkaConfig;
 import org.apache.kafka.clients.ClientResponse;
-import org.apache.kafka.clients.ManualMetadataUpdater;
-import org.apache.kafka.clients.MockClient;
 import org.apache.kafka.clients.RequestCompletionHandler;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
@@ -30,15 +27,12 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
-import org.apache.kafka.common.utils.MockTime;
-import org.apache.kafka.common.utils.Time;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -52,56 +46,8 @@ public class KafkaPropagatorTest {
     @Rule
     final public Timeout globalTimeout = Timeout.seconds(40);
 
-    static class PropagatorUnitTestEnv implements AutoCloseable {
-        private final ControllerLogContext logContext;
-        private final MockTime time;
-        private final ManualMetadataUpdater manualMetadataUpdater;
-        private final MockClient.MockMetadataUpdater mockMetadataUpdater;
-        private final MockClient client;
-        private final KafkaConfig config;
-        private final KafkaPropagator propagator;
-
-        PropagatorUnitTestEnv(String name) {
-            this.logContext = ControllerLogContext.fromPrefix(name);
-            this.time = new MockTime();
-            this.manualMetadataUpdater = new ManualMetadataUpdater();
-            this.mockMetadataUpdater = new MockClient.MockMetadataUpdater() {
-                @Override
-                public List<Node> fetchNodes() {
-                    return manualMetadataUpdater.fetchNodes();
-                }
-
-                @Override
-                public boolean isUpdateNeeded() {
-                    return false;
-                }
-
-                @Override
-                public void update(Time time, MockClient.MetadataUpdate update) {
-                    throw new UnsupportedOperationException();
-                }
-            };
-            this.client = new MockClient(time, mockMetadataUpdater);
-            this.config = ControllerTestUtils.newKafkaConfig(0);
-            this.propagator = new KafkaPropagator(logContext, manualMetadataUpdater,
-                client, time, config);
-        }
-
-        List<Node> nodes(int numNodes) {
-            List<Node> nodes = new ArrayList<>();
-            for (int i = 0; i < numNodes; i++) {
-                nodes.add(new Node(i, "localhost", 9092 + i));
-            }
-            return nodes;
-        }
-
-        @Override
-        public void close() throws InterruptedException {
-            propagator.close();
-        }
-    }
-
-    public class SimpleCreateTopicsRequestBuilder extends AbstractRequest.Builder<CreateTopicsRequest> {
+    public class SimpleCreateTopicsRequestBuilder
+            extends AbstractRequest.Builder<CreateTopicsRequest> {
         private final CreateTopicsRequestData data;
 
         public SimpleCreateTopicsRequestBuilder(CreateTopicsRequestData data, short version) {
@@ -133,8 +79,8 @@ public class KafkaPropagatorTest {
             CreateTopicsResponseData respData = new CreateTopicsResponseData().
                 setThrottleTimeMs(6789);
             CountDownLatch responseReceived = new CountDownLatch(1);
-            env.client.prepareResponseFrom(new CreateTopicsResponse(respData), nodes.get(1));
-            env.propagator.send(nodes, Collections.singletonList(
+            env.client().prepareResponseFrom(new CreateTopicsResponse(respData), nodes.get(1));
+            env.propagator().send(nodes, Collections.singletonList(
                 new RequestAndCompletionHandler(nodes.get(1),
                     new SimpleCreateTopicsRequestBuilder(reqData, createTopicsVersion),
                     new RequestCompletionHandler() {
@@ -143,12 +89,13 @@ public class KafkaPropagatorTest {
                             assertEquals(null, response.authenticationException());
                             assertEquals(nodes.get(1).idString(), response.destination());
                             assertTrue(response.hasResponse());
-                            CreateTopicsResponse resp = (CreateTopicsResponse) response.responseBody();
+                            CreateTopicsResponse resp =
+                                (CreateTopicsResponse) response.responseBody();
                             assertEquals(respData, resp.data());
                             responseReceived.countDown();
                         }
                     })));
-            env.time.sleep(1);
+            env.time().sleep(1);
             responseReceived.await();
         }
     }
