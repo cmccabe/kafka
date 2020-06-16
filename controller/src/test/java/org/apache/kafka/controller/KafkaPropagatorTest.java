@@ -89,7 +89,7 @@ public class KafkaPropagatorTest {
 
         List<Node> nodes(int numNodes) {
             List<Node> nodes = new ArrayList<>();
-            for (int i = 0 ; i < numNodes; i++) {
+            for (int i = 0; i < numNodes; i++) {
                 nodes.add(new Node(i, "localhost", 9092 + i));
             }
             return nodes;
