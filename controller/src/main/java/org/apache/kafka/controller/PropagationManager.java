@@ -107,7 +107,8 @@ public class PropagationManager {
 
         @Override
         public void onComplete(ClientResponse response) {
-            callbackHandler.handleUpdateMetadataResponse(brokerId, response);
+            callbackHandler.handleUpdateMetadataResponse(controllerEpoch,
+                brokerId, response);
         }
     }
 
@@ -135,7 +136,8 @@ public class PropagationManager {
 
         @Override
         public void onComplete(ClientResponse response) {
-            callbackHandler.handleLeaderAndIsrResponse(brokerId, response);
+            callbackHandler.handleLeaderAndIsrResponse(controllerEpoch,
+                brokerId, response);
         }
     }
 

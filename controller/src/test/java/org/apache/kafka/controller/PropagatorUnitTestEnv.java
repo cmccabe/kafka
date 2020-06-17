@@ -32,11 +32,13 @@ public class PropagatorUnitTestEnv implements AutoCloseable {
     public static class MockPropagationManagerCallbackHandler
             implements PropagationManagerCallbackHandler {
         @Override
-        public void handleLeaderAndIsrResponse(int brokerId, ClientResponse response) {
+        public void handleLeaderAndIsrResponse(int controllerEpoch, int brokerId,
+                                               ClientResponse response) {
         }
 
         @Override
-        public void handleUpdateMetadataResponse(int brokerId, ClientResponse response) {
+        public void handleUpdateMetadataResponse(int controllerEpoch, int brokerId,
+                                                 ClientResponse response) {
         }
     }
 

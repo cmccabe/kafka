@@ -26,16 +26,22 @@ public interface PropagationManagerCallbackHandler {
     /**
      * Handle a LeaderAndIsrResponse.
      *
-     * @param brokerId      The ID of the broker that responded.
-     * @param response      The response object.
+     * @param controllerEpoch   The current controller epoch.
+     * @param brokerId          The ID of the broker that responded.
+     * @param response          The response object.
      */
-    void handleLeaderAndIsrResponse(int brokerId, ClientResponse response);
+    void handleLeaderAndIsrResponse(int controllerEpoch,
+                                    int brokerId,
+                                    ClientResponse response);
 
     /**
      * Handle receiving an UpdateMetadataResponse.
      *
-     * @param brokerId      The ID of the broker that responded.
-     * @param response      The response object.
+     * @param controllerEpoch   The current controller epoch.
+     * @param brokerId          The ID of the broker that responded.
+     * @param response          The response object.
      */
-    void handleUpdateMetadataResponse(int brokerId, ClientResponse response);
+    void handleUpdateMetadataResponse(int controllerEpoch,
+                                      int brokerId,
+                                      ClientResponse response);
 }

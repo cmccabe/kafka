@@ -190,15 +190,19 @@ public final class KafkaControllerManager implements ControllerManager {
         }
     }
 
-    static class KafkaPropagationManagerCallbackHandler implements PropagationManagerCallbackHandler {
+    class KafkaPropagationManagerCallbackHandler implements PropagationManagerCallbackHandler {
         @Override
-        public void handleLeaderAndIsrResponse(int brokerId, ClientResponse response) {
-
+        public void handleLeaderAndIsrResponse(int controllerEpoch, int brokerId,
+                                               ClientResponse response) {
+            mainQueue.append(new HandleLeaderAndIsrResponseEvent(controllerEpoch,
+                brokerId, response));
         }
 
         @Override
-        public void handleUpdateMetadataResponse(int brokerId, ClientResponse response) {
-
+        public void handleUpdateMetadataResponse(int controllerEpoch, int brokerId,
+                                                 ClientResponse response) {
+            mainQueue.append(new HandleUpdateMetadataResponseEvent(controllerEpoch,
+                brokerId, response));
         }
     }
 
@@ -255,6 +259,42 @@ public final class KafkaControllerManager implements ControllerManager {
             backingStore.beginShutdown();
             propagator.close();
             backingStore.close();
+            return null;
+        }
+    }
+
+    class HandleUpdateMetadataResponseEvent extends AbstractControllerManagerEvent<Void> {
+        private final int brokerId;
+        private final ClientResponse response;
+
+        public HandleUpdateMetadataResponseEvent(int controllerEpoch, int brokerId,
+                                                 ClientResponse response) {
+            super(Optional.of(controllerEpoch));
+            this.brokerId = brokerId;
+            this.response = response;
+        }
+
+        @Override
+        public Void execute() throws Throwable {
+            // TODO: handle this
+            return null;
+        }
+    }
+
+    class HandleLeaderAndIsrResponseEvent extends AbstractControllerManagerEvent<Void> {
+        private final int brokerId;
+        private final ClientResponse response;
+
+        public HandleLeaderAndIsrResponseEvent(int controllerEpoch, int brokerId,
+                                               ClientResponse response) {
+            super(Optional.of(controllerEpoch));
+            this.brokerId = brokerId;
+            this.response = response;
+        }
+
+        @Override
+        public Void execute() throws Throwable {
+            // TODO: handle this
             return null;
         }
     }
