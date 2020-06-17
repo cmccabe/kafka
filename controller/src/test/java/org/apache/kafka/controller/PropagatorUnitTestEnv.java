@@ -18,6 +18,7 @@
 package org.apache.kafka.controller;
 
 import kafka.server.KafkaConfig;
+import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.ManualMetadataUpdater;
 import org.apache.kafka.clients.MockClient;
 import org.apache.kafka.common.Node;
@@ -28,6 +29,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class PropagatorUnitTestEnv implements AutoCloseable {
+    public static class MockPropagationManagerCallbackHandler
+            implements PropagationManagerCallbackHandler {
+        @Override
+        public void handleLeaderAndIsrResponse(int brokerId, ClientResponse response) {
+        }
+
+        @Override
+        public void handleUpdateMetadataResponse(int brokerId, ClientResponse response) {
+        }
+    }
+
     private final ControllerLogContext logContext;
     private final MockTime time;
     private final ManualMetadataUpdater manualMetadataUpdater;
@@ -35,6 +47,8 @@ public class PropagatorUnitTestEnv implements AutoCloseable {
     private final MockClient client;
     private final KafkaConfig config;
     private final KafkaPropagator propagator;
+    private final PropagationManager propagationManager;
+    private final MockPropagationManagerCallbackHandler callbackHandler;
 
     public PropagatorUnitTestEnv(String name) {
         this.logContext = ControllerLogContext.fromPrefix(name);
@@ -57,9 +71,16 @@ public class PropagatorUnitTestEnv implements AutoCloseable {
             }
         };
         this.client = new MockClient(time, mockMetadataUpdater);
-        this.config = ControllerTestUtils.newKafkaConfig(0);
+        this.config = ControllerTestUtils.newKafkaConfig(0,
+            KafkaConfig.ControlPlaneListenerNameProp(), "CONTROLLER",
+            KafkaConfig.InterBrokerListenerNameProp(), "INTERNAL",
+            KafkaConfig.ListenersProp(), "CONTROLLER://localhost:9093,INTERNAL://localhost:9092",
+            KafkaConfig.ListenerSecurityProtocolMapProp(), "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT");
         this.propagator = new KafkaPropagator(logContext, manualMetadataUpdater,
             client, time, config);
+        this.callbackHandler = new MockPropagationManagerCallbackHandler();
+        this.propagationManager = new PropagationManager(logContext, 0, 0,
+            callbackHandler, config);
     }
 
     List<Node> nodes(int numNodes) {
@@ -96,6 +117,10 @@ public class PropagatorUnitTestEnv implements AutoCloseable {
 
     public KafkaPropagator propagator() {
         return propagator;
+    }
+
+    public PropagationManager propagationManager() {
+        return propagationManager;
     }
 
     @Override

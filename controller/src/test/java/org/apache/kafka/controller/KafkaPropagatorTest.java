@@ -69,10 +69,19 @@ public class KafkaPropagatorTest {
     }
 
     @Test
+    public void testCreateStartAndClose() throws Throwable {
+        try (PropagatorUnitTestEnv env =
+                 new PropagatorUnitTestEnv("testCreateAndClose")) {
+            env.propagator().start();
+        }
+    }
+
+    @Test
     public void testSendAndReceive() throws Throwable {
         short createTopicsVersion = 5;
         try (PropagatorUnitTestEnv env =
                  new PropagatorUnitTestEnv("testSendAndReceive")) {
+            env.propagator().start();
             List<Node> nodes = env.nodes(4);
             CreateTopicsRequestData reqData = new CreateTopicsRequestData().
                 setTimeoutMs(12345).setValidateOnly(true);

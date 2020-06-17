@@ -27,6 +27,9 @@ import org.junit.rules.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
+import java.util.HashSet;
+
 import static org.junit.Assert.assertEquals;
 
 public class PropagationManagerTest {
@@ -55,7 +58,7 @@ public class PropagationManagerTest {
         assertEquals("INTERNAL", PropagationManager.calculateTargetListener(config));
     }
 
-    private MetadataState.BrokerCollection newBrokers() {
+    private static MetadataState.BrokerCollection newBrokers() {
         MetadataState.BrokerCollection brokers = new MetadataState.BrokerCollection();
         for (int brokerId = 0; brokerId < 3; brokerId++) {
             MetadataState.Broker broker = brokers.getOrCreate(brokerId);
@@ -75,6 +78,12 @@ public class PropagationManagerTest {
         return brokers;
     }
 
+    private static ReplicationManager createTestReplicationManager() {
+        MetadataState state = new MetadataState().setBrokers(newBrokers());
+        ReplicationManager replicationManager = new ReplicationManager(state);
+        return replicationManager;
+    }
+
     @Test
     public void testBrokerToNode() {
         MetadataState.Broker broker = newBrokers().find(1);
@@ -88,4 +97,19 @@ public class PropagationManagerTest {
         assertEquals(null, PropagationManager.brokerToNode(broker, "BLAH"));
     }
 
+    @Test
+    public void testInitializePropagationManager() throws Exception {
+        try (PropagatorUnitTestEnv env =
+                 new PropagatorUnitTestEnv("testInitialEndpointUpdate")) {
+            ReplicationManager replicationManager = createTestReplicationManager();
+            env.propagationManager().initialize(replicationManager);
+            assertEquals(null, env.propagationManager().nodes());
+            assertEquals(new HashSet<>(Arrays.asList(0, 1, 2)),
+                env.propagationManager().brokers().keySet());
+            assertEquals(Arrays.asList(new Node(0, "host0", 9093, "rack0"),
+                                       new Node(1, "host1", 9093, "rack1"),
+                                       new Node(2, "host2", 9093, "rack0")),
+                env.propagationManager().recalculateNodes(replicationManager));
+        }
+    }
 }

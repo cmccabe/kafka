@@ -345,6 +345,7 @@ public final class KafkaControllerManager implements ControllerManager {
                 factory.zkClient());
             kafkaPropagator = KafkaPropagator.create(logContext, factory.config(),
                 factory.metrics());
+            kafkaPropagator.start();
             mainQueue = new KafkaEventQueue(new LogContext(
                 logContext.logContext().logPrefix() + " [mainQueue] "),
                 logContext.threadNamePrefix());

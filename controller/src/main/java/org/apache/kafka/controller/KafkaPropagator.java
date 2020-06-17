@@ -197,7 +197,10 @@ final public class KafkaPropagator implements Propagator {
         this.thread = new KafkaPropagatorSendThread(
             logContext.threadNamePrefix() + "Propagator", client, time,
             config.requestTimeoutMs());
-        this.thread.start();
+    }
+
+    public void start() {
+        thread.start();
     }
 
     @Override

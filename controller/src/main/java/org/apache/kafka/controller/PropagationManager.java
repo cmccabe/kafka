@@ -370,7 +370,7 @@ public class PropagationManager {
     /**
      * Recalculate node information based on the set of all current brokers.
      */
-    private List<Node> recalculateNodes(ReplicationManager replicationManager) {
+    List<Node> recalculateNodes(ReplicationManager replicationManager) {
         List<Node> nodes = new ArrayList<>();
         for (MetadataState.Broker broker : replicationManager.state().brokers()) {
             Node node = brokerToNode(broker, targetListener);
@@ -647,5 +647,15 @@ public class PropagationManager {
             }
             broker.pendingUpdateMetadata.addTopicDelta(delta);
         }
+    }
+
+    // Visible for testing
+    Map<Integer, DestinationBroker> brokers() {
+        return brokers;
+    }
+
+    // Visible for testing
+    List<Node> nodes() {
+        return nodes;
     }
 }
