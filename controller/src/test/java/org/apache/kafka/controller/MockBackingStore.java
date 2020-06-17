@@ -40,7 +40,7 @@ public class MockBackingStore implements BackingStore {
     }
 
     private boolean started = false;
-    private boolean shutdown = false;
+    private boolean shuttingDown = false;
     private boolean closed = false;
 
     private MockBackingStore(Builder builder) {
@@ -84,17 +84,17 @@ public class MockBackingStore implements BackingStore {
     }
 
     @Override
-    public synchronized void shutdown() {
-        this.shutdown = true;
+    public synchronized void beginShutdown() {
+        this.shuttingDown = true;
     }
 
-    public synchronized boolean isShutdown() {
-        return this.shutdown;
+    public synchronized boolean isShuttingDown() {
+        return this.shuttingDown;
     }
 
     @Override
     public synchronized void close() throws InterruptedException {
-        shutdown();
+        beginShutdown();
         this.closed = true;
     }
 }

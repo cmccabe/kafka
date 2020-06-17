@@ -57,7 +57,7 @@ public interface BackingStore extends AutoCloseable {
     /**
      * Start the process of shutting down the backing store.
      */
-    void shutdown();
+    void beginShutdown();
 
     /**
      * Shut down the backing store and block until all resources and threads are

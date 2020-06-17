@@ -252,7 +252,7 @@ public final class KafkaControllerManager implements ControllerManager {
         @Override
         public Void execute() throws Throwable {
             resignIfActive();
-            backingStore.shutdown();
+            backingStore.beginShutdown();
             propagator.close();
             backingStore.close();
             return null;
@@ -408,15 +408,15 @@ public final class KafkaControllerManager implements ControllerManager {
     }
 
     @Override
-    public void shutdown() {
+    public void beginShutdown() {
         log.debug("Shutting down.");
-        mainQueue.shutdown(new StopEvent());
+        mainQueue.beginShutdown(new StopEvent());
     }
 
     @Override
     public void close() throws Exception {
         log.debug("Initiating close.");
-        shutdown();
+        beginShutdown();
         mainQueue.close();
         log.debug("Close complete.");
     }

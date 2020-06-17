@@ -138,16 +138,16 @@ public interface EventQueue extends AutoCloseable {
      * Asynchronously shut down the event queue.
      * See shutdown(Event<?>, TimeUnit, long);
      */
-    default void shutdown() {
-        shutdown(new VoidEvent());
+    default void beginShutdown() {
+        beginShutdown(new VoidEvent());
     }
 
     /**
      * Asynchronously shut down the event queue.
-     * See shutdown(Event<?>, TimeUnit, long);
+     * See beginShutdown(Event<?>, TimeUnit, long);
      */
-    default void shutdown(Event<?> cleanupEvent) {
-        shutdown(cleanupEvent, TimeUnit.SECONDS, 0);
+    default void beginShutdown(Event<?> cleanupEvent) {
+        beginShutdown(cleanupEvent, TimeUnit.SECONDS, 0);
     }
 
     /**
@@ -164,7 +164,7 @@ public interface EventQueue extends AutoCloseable {
      *                      events will get a
      *                      @{org.apache.kafka.common.errors.TimeoutException}.
      */
-    void shutdown(Event<?> cleanupEvent, TimeUnit timeUnit, long timeSpan);
+    void beginShutdown(Event<?> cleanupEvent, TimeUnit timeUnit, long timeSpan);
 
     /**
      * Synchronously close the event queue and wait for any threads to be joined.

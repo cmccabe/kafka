@@ -83,9 +83,9 @@ public class KafkaControllerManagerUnitTest {
             assertEquals("Attempting to Start a KafkaControllerManager which has " +
                 "already been started.", assertThrows(ExecutionException.class,
                     () -> manager.start(brokerInfo).get()).getCause().getMessage());
-            assertFalse(backingStore.isShutdown());
-            manager.shutdown();
-            TestUtils.waitForCondition(() -> backingStore.isShutdown(),
+            assertFalse(backingStore.isShuttingDown());
+            manager.beginShutdown();
+            TestUtils.waitForCondition(() -> backingStore.isShuttingDown(),
                 "BackingStore shut down");
         }
     }

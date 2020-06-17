@@ -885,15 +885,15 @@ public class ZkBackingStore implements BackingStore {
     }
 
     @Override
-    public void shutdown() {
+    public void beginShutdown() {
         log.debug("Shutting down.");
-        backingStoreQueue.shutdown(new StopEvent());
+        backingStoreQueue.beginShutdown(new StopEvent());
     }
 
     @Override
     public void close() throws InterruptedException {
         log.debug("Initiating close.");
-        shutdown();
+        beginShutdown();
         backingStoreQueue.close();
         log.debug("Close complete.");
     }

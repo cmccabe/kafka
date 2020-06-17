@@ -76,7 +76,7 @@ public class KafkaEventQueueTest {
                 assertEquals(4, numEventsExecuted.incrementAndGet());
                 return 4;
             }).get();
-        queue.shutdown();
+        queue.beginShutdown();
         queue.close();
     }
 

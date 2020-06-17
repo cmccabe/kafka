@@ -47,7 +47,7 @@ trait ControllerManager extends AutoCloseable {
   /**
    * Start the asynchronous process of shutting down this controller manager.
    */
-  def shutdown(): Unit
+  def beginShutdown(): Unit
 
   /**
    * Update the broker info.

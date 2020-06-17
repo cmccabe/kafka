@@ -360,9 +360,9 @@ public final class KafkaEventQueue implements EventQueue {
     }
 
     @Override
-    public void shutdown(Event<?> newCleanupEvent, TimeUnit timeUnit, long timeSpan) {
+    public void beginShutdown(Event<?> newCleanupEvent, TimeUnit timeUnit, long timeSpan) {
         if (timeSpan < 0) {
-            throw new IllegalArgumentException("Shutdown must be called with a " +
+            throw new IllegalArgumentException("beginShutdown must be called with a " +
                 "non-negative timeout.");
         }
         Objects.requireNonNull(newCleanupEvent);
@@ -384,7 +384,7 @@ public final class KafkaEventQueue implements EventQueue {
 
     @Override
     public void close() throws InterruptedException {
-        shutdown();
+        beginShutdown();
         eventHandlerThread.join();
     }
 }
