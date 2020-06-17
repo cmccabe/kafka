@@ -32,7 +32,6 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.LeaderAndIsrRequest;
 import org.apache.kafka.common.requests.UpdateMetadataRequest;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
-import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import scala.compat.java8.OptionConverters;
 
@@ -202,7 +201,7 @@ public class PropagationManager {
     /**
      * A request that we would like to send, but haven't sent yet.
      */
-    class PendingRequest {
+    static class PendingRequest {
         private final Set<String> topics;
 
         private final long earliestSendTimeNs;
@@ -263,7 +262,7 @@ public class PropagationManager {
     /**
      * A request which we are in the process of sending.
      */
-    class InFlightRequest {
+    static class InFlightRequest {
         private final long sendTimeNs;
 
         InFlightRequest(long sendTimeNs) {
@@ -278,7 +277,7 @@ public class PropagationManager {
     /**
      * Propagation information about a specific broker.
      */
-    class DestinationBroker {
+    static class DestinationBroker {
         /**
          * The broker id.
          */

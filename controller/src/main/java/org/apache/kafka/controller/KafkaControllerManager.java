@@ -190,7 +190,7 @@ public final class KafkaControllerManager implements ControllerManager {
         }
     }
 
-    class KafkaPropagationManagerCallbackHandler implements PropagationManagerCallbackHandler {
+    static class KafkaPropagationManagerCallbackHandler implements PropagationManagerCallbackHandler {
         @Override
         public void handleLeaderAndIsrResponse(int brokerId, ClientResponse response) {
 
