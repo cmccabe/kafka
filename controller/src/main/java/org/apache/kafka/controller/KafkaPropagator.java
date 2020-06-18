@@ -20,8 +20,10 @@ package org.apache.kafka.controller;
 import kafka.common.InterBrokerSendThread;
 import kafka.common.RequestAndCompletionHandler;
 import kafka.server.KafkaConfig;
+import kafka.utils.ShutdownableThread;
 import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.ClientDnsLookup;
+import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.KafkaClient;
 import org.apache.kafka.clients.ManualMetadataUpdater;
 import org.apache.kafka.clients.NetworkClient;
@@ -58,6 +60,11 @@ final public class KafkaPropagator implements Propagator {
      * The network client used by this propagator.
      */
     private final KafkaClient client;
+
+    /**
+     * The time provider.
+     */
+    private final Time time;
 
     /**
      * The runnable used in the service thread for this propagator.
@@ -126,11 +133,26 @@ final public class KafkaPropagator implements Propagator {
     }
 
     @Override
-    public synchronized void send(List<Node> nodes,
-                                  Collection<RequestAndCompletionHandler> newRequests) {
-        this.nodes = nodes;
-        this.requests.addAll(newRequests);
-        this.thread.wakeup();
+    public void send(List<Node> nodes,
+                     Collection<RequestAndCompletionHandler> newRequests) {
+        synchronized (thread) {
+            if (thread.isShutdownInitiated()) {
+                cancelRequests(newRequests);
+                return;
+            }
+            this.nodes = nodes;
+            this.requests.addAll(newRequests);
+            this.thread.wakeup();
+        }
+    }
+
+    private void cancelRequests(Collection<RequestAndCompletionHandler> requests) {
+        long nowMs = time.milliseconds();
+        for (RequestAndCompletionHandler req : requests) {
+            req.handler().onComplete(new ClientResponse(null, req.handler(),
+                req.destination().idString(), nowMs, nowMs, true, null, null,
+                null));
+        }
     }
 
     public static KafkaPropagator create(ControllerLogContext logContext,
@@ -194,13 +216,11 @@ final public class KafkaPropagator implements Propagator {
         this.log = logContext.createLogger(KafkaPropagator.class);
         this.metadataUpdater = metadataUpdater;
         this.client = client;
+        this.time = time;
         this.thread = new KafkaPropagatorSendThread(
             logContext.threadNamePrefix() + "Propagator", client, time,
             config.requestTimeoutMs());
-    }
-
-    public void start() {
-        thread.start();
+        this.thread.start();
     }
 
     @Override
@@ -208,5 +228,10 @@ final public class KafkaPropagator implements Propagator {
         thread.shutdown();
         thread.join();
         Utils.closeQuietly(client, "KafkaPropagator#client");
+        synchronized (thread) {
+            cancelRequests(requests);
+            nodes = null;
+            requests = Collections.emptyList();
+        }
     }
 }

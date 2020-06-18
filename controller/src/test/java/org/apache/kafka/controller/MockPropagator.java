@@ -28,7 +28,7 @@ public class MockPropagator implements Propagator {
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     @Override
-    public void send(List<Node> nodes, Collection<RequestAndCompletionHandler> newRequests) {
+    public void send(List<Node> nodes, Collection<RequestAndCompletionHandler> requests) {
 
     }
 
