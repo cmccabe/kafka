@@ -22,7 +22,6 @@ import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
-import org.apache.kafka.common.utils.MockTime;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -31,8 +30,10 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 public class PropagationManagerTest {
     private static final Logger log =
@@ -53,7 +54,6 @@ public class PropagationManagerTest {
 
     static class TestEnv {
         private final ControllerLogContext logContext;
-        private final MockTime time;
         private final KafkaConfig config;
         private final MockPropagator propagator;
         private final PropagationManager propagationManager;
@@ -61,7 +61,6 @@ public class PropagationManagerTest {
 
         public TestEnv(String name) {
             this.logContext = ControllerLogContext.fromPrefix(name);
-            this.time = new MockTime();
             this.config = ControllerTestUtils.newKafkaConfig(0,
                 KafkaConfig.ControlPlaneListenerNameProp(), "CONTROLLER",
                 KafkaConfig.InterBrokerListenerNameProp(), "INTERNAL",
@@ -118,6 +117,18 @@ public class PropagationManagerTest {
 
     private static ReplicationManager createTestReplicationManager() {
         MetadataState state = new MetadataState().setBrokers(newBrokers());
+        state.topics().getOrCreate("foo").partitions().
+            getOrCreate(0).setLeader(0).setControllerEpochOfLastIsrUpdate(0).
+            setLeaderEpoch(100).setReplicas(Arrays.asList(0, 1, 2)).
+            setIsr(Arrays.asList(0, 1, 2)).setZkVersionOfLastIsrUpdate(0);
+        state.topics().getOrCreate("foo").partitions().
+            getOrCreate(1).setLeader(2).setControllerEpochOfLastIsrUpdate(0).
+            setLeaderEpoch(100).setReplicas(Arrays.asList(2, 0, 1)).
+            setIsr(Arrays.asList(2, 0, 1)).setZkVersionOfLastIsrUpdate(0);
+        state.topics().getOrCreate("bar").partitions().
+            getOrCreate(0).setLeader(1).setControllerEpochOfLastIsrUpdate(0).
+            setLeaderEpoch(100).setReplicas(Arrays.asList(1, 0, 2)).
+            setIsr(Arrays.asList(1, 0)).setZkVersionOfLastIsrUpdate(0);
         ReplicationManager replicationManager = new ReplicationManager(state);
         return replicationManager;
     }
@@ -155,5 +166,16 @@ public class PropagationManagerTest {
         ReplicationManager replicationManager = createTestReplicationManager();
         env.propagationManager.initialize(replicationManager);
         env.propagationManager.maybeSendRequests(100L, replicationManager, env.propagator);
+        for (Map.Entry<Integer, PropagationManager.DestinationBroker> entry :
+                env.propagationManager.brokers().entrySet()) {
+            PropagationManager.DestinationBroker broker = entry.getValue();
+            assertEquals(entry.getKey(), Integer.valueOf(broker.id));
+            assertEquals(null, broker.pendingUpdateMetadata);
+            assertNotNull(broker.inFlightUpdateMetadata);
+            assertEquals(100L, broker.inFlightUpdateMetadata.sendTimeNs());
+            assertEquals(null, broker.pendingLeaderAndIsr);
+            assertEquals(100L, broker.inFlightLeaderAndIsr.sendTimeNs());
+            assertNotNull(broker.inFlightLeaderAndIsr);
+        }
     }
 }

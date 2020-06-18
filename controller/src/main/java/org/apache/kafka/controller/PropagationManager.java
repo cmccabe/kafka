@@ -283,27 +283,27 @@ public class PropagationManager {
         /**
          * The broker id.
          */
-        private final int id;
+        final int id;
 
         /**
          * The pending update metadata request, or null if there is none.
          */
-        private PendingRequest pendingUpdateMetadata = new PendingRequest();
+        PendingRequest pendingUpdateMetadata = new PendingRequest();
 
         /**
          * The in-flight UpdateMetadataRequest, or null if there is none.
          */
-        private InFlightRequest inFlightUpdateMetadata = null;
+        InFlightRequest inFlightUpdateMetadata = null;
 
         /**
          * The pending leader and isr request, or null if there is none.
          */
-        private PendingRequest pendingLeaderAndIsr = new PendingRequest();
+        PendingRequest pendingLeaderAndIsr = new PendingRequest();
 
         /**
          * The in-flight LeaderAndIsrRequest, or null if there is none.
          */
-        private InFlightRequest inFlightLeaderAndIsr = null;
+        InFlightRequest inFlightLeaderAndIsr = null;
 
         DestinationBroker(int id) {
             this.id = id;
@@ -457,6 +457,8 @@ public class PropagationManager {
                 createUmrTopicEntry(data, topic);
             }
         }
+        destBroker.pendingUpdateMetadata = null;
+        destBroker.inFlightUpdateMetadata = new InFlightRequest(nowNs);
         requests.add(new RequestAndCompletionHandler(
             brokerToNode(destBrokerState, targetListener),
             new SimpleUpdateMetadataRequestBuilder(data),
@@ -560,6 +562,8 @@ public class PropagationManager {
                 createIsrTopicEntry(data, topic);
             }
         }
+        destBroker.pendingLeaderAndIsr = null;
+        destBroker.inFlightLeaderAndIsr = new InFlightRequest(nowNs);
         requests.add(new RequestAndCompletionHandler(
             brokerToNode(destBrokerState, targetListener),
             new SimpleLeaderAndIsrRequestBuilder(data),
