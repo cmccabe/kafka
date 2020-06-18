@@ -18,9 +18,11 @@
 package org.apache.kafka.controller;
 
 import kafka.server.KafkaConfig;
+import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
+import org.apache.kafka.common.utils.MockTime;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -35,6 +37,42 @@ import static org.junit.Assert.assertEquals;
 public class PropagationManagerTest {
     private static final Logger log =
         LoggerFactory.getLogger(PropagationManagerTest.class);
+
+    static class MockPropagationManagerCallbackHandler
+        implements PropagationManagerCallbackHandler {
+        @Override
+        public void handleLeaderAndIsrResponse(int controllerEpoch, int brokerId,
+                                               ClientResponse response) {
+        }
+
+        @Override
+        public void handleUpdateMetadataResponse(int controllerEpoch, int brokerId,
+                                                 ClientResponse response) {
+        }
+    }
+
+    static class TestEnv {
+        private final ControllerLogContext logContext;
+        private final MockTime time;
+        private final KafkaConfig config;
+        private final MockPropagator propagator;
+        private final PropagationManager propagationManager;
+        private final MockPropagationManagerCallbackHandler callbackHandler;
+
+        public TestEnv(String name) {
+            this.logContext = ControllerLogContext.fromPrefix(name);
+            this.time = new MockTime();
+            this.config = ControllerTestUtils.newKafkaConfig(0,
+                KafkaConfig.ControlPlaneListenerNameProp(), "CONTROLLER",
+                KafkaConfig.InterBrokerListenerNameProp(), "INTERNAL",
+                KafkaConfig.ListenersProp(), "CONTROLLER://localhost:9093,INTERNAL://localhost:9092",
+                KafkaConfig.ListenerSecurityProtocolMapProp(), "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT");
+            this.propagator = new MockPropagator();
+            this.callbackHandler = new MockPropagationManagerCallbackHandler();
+            this.propagationManager = new PropagationManager(logContext, 0, 0,
+                callbackHandler, config);
+        }
+    }
 
     @Rule
     final public Timeout globalTimeout = Timeout.seconds(40);
@@ -99,17 +137,23 @@ public class PropagationManagerTest {
 
     @Test
     public void testInitializePropagationManager() throws Exception {
-        try (PropagatorUnitTestEnv env =
-                 new PropagatorUnitTestEnv("testInitialEndpointUpdate")) {
-            ReplicationManager replicationManager = createTestReplicationManager();
-            env.propagationManager().initialize(replicationManager);
-            assertEquals(null, env.propagationManager().nodes());
-            assertEquals(new HashSet<>(Arrays.asList(0, 1, 2)),
-                env.propagationManager().brokers().keySet());
-            assertEquals(Arrays.asList(new Node(0, "host0", 9093, "rack0"),
-                                       new Node(1, "host1", 9093, "rack1"),
-                                       new Node(2, "host2", 9093, "rack0")),
-                env.propagationManager().recalculateNodes(replicationManager));
-        }
+        TestEnv env = new TestEnv("testInitialEndpointUpdate");
+        ReplicationManager replicationManager = createTestReplicationManager();
+        env.propagationManager.initialize(replicationManager);
+        assertEquals(null, env.propagationManager.nodes());
+        assertEquals(new HashSet<>(Arrays.asList(0, 1, 2)),
+            env.propagationManager.brokers().keySet());
+        assertEquals(Arrays.asList(new Node(0, "host0", 9093, "rack0"),
+            new Node(1, "host1", 9093, "rack1"),
+            new Node(2, "host2", 9093, "rack0")),
+            env.propagationManager.recalculateNodes(replicationManager));
+    }
+
+    @Test
+    public void testGenerateInitialMessages() throws Exception {
+        TestEnv env = new TestEnv("testGenerateInitialMessages");
+        ReplicationManager replicationManager = createTestReplicationManager();
+        env.propagationManager.initialize(replicationManager);
+        env.propagationManager.maybeSendRequests(100L, replicationManager, env.propagator);
     }
 }
