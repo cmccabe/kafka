@@ -20,7 +20,6 @@ package org.apache.kafka.controller;
 import kafka.common.InterBrokerSendThread;
 import kafka.common.RequestAndCompletionHandler;
 import kafka.server.KafkaConfig;
-import kafka.utils.ShutdownableThread;
 import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.ClientDnsLookup;
 import org.apache.kafka.clients.ClientResponse;

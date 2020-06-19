@@ -41,9 +41,11 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class KafkaPropagatorTest {
@@ -173,5 +175,28 @@ public class KafkaPropagatorTest {
             env.time.sleep(1);
             responseReceived.await();
         }
+    }
+
+    @Test
+    public void testCancelRequestsOnClose() throws Throwable {
+        short createTopicsVersion = 5;
+        CreateTopicsRequestData reqData = new CreateTopicsRequestData().
+            setTimeoutMs(12345).setValidateOnly(true);
+        List<Node> nodes = null;
+        TestEnv env = new TestEnv("testCancelRequestsOnClose");
+        try {
+            nodes = env.nodes(4);
+        } finally {
+            env.close();
+        }
+        CompletableFuture<ClientResponse> future = new CompletableFuture<>();
+        env.propagator.send(nodes, Collections.singletonList(
+            new RequestAndCompletionHandler(nodes.get(1),
+                new SimpleCreateTopicsRequestBuilder(reqData, createTopicsVersion),
+                response -> future.complete(response))));
+        assertEquals("1", future.get().destination());
+        assertEquals(null, future.get().versionMismatch());
+        assertEquals(null, future.get().authenticationException());
+        assertTrue(future.get().wasDisconnected());
     }
 }
