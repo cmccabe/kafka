@@ -21,6 +21,9 @@ import kafka.controller.LeaderIsrAndControllerEpoch;
 import kafka.utils.CoreUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.message.MetadataState.Partition;
+import org.apache.kafka.common.message.MetadataState.Topic;
+import org.apache.kafka.common.message.MetadataState.TopicCollection;
 import org.apache.kafka.common.utils.Utils;
 
 import java.util.ArrayList;
@@ -49,20 +52,20 @@ class TopicDelta {
             this.removingReplicas = removingReplicas;
         }
 
-        boolean matches(MetadataState.Partition existingPart) {
+        boolean matches(Partition existingPart) {
             if (!replicas.equals(existingPart.replicas())) return false;
             if (!addingReplicas.equals(existingPart.addingReplicas())) return false;
             if (!removingReplicas.equals(existingPart.removingReplicas())) return false;
             return true;
         }
 
-        MetadataState.Partition toPartition(int partitionId) {
-            MetadataState.Partition part = new MetadataState.Partition().setId(partitionId);
+        Partition toPartition(int partitionId) {
+            Partition part = new Partition().setId(partitionId);
             apply(part);
             return part;
         }
 
-        void apply(MetadataState.Partition part) {
+        void apply(Partition part) {
             part.setReplicas(new ArrayList<>(replicas)).
                 setAddingReplicas(new ArrayList<>(addingReplicas)).
                 setRemovingReplicas(new ArrayList<>(removingReplicas));
@@ -118,7 +121,7 @@ class TopicDelta {
             this.zkVersion = zkVersion;
         }
 
-        boolean matches(MetadataState.Partition part) {
+        boolean matches(Partition part) {
             if (leader != part.leader()) return false;
             if (leaderEpoch != part.leaderEpoch()) return false;
             if (!isr.equals(part.isr())) return false;
@@ -127,13 +130,13 @@ class TopicDelta {
             return true;
         }
 
-        MetadataState.Partition toPartition(int partitionId) {
-            MetadataState.Partition part = new MetadataState.Partition().setId(partitionId);
+        Partition toPartition(int partitionId) {
+            Partition part = new Partition().setId(partitionId);
             apply(part);
             return part;
         }
 
-        void apply(MetadataState.Partition part) {
+        void apply(Partition part) {
             part.setLeader(leader).
                 setLeaderEpoch(leaderEpoch).
                 setIsr(new ArrayList<>(isr)).
@@ -171,11 +174,11 @@ class TopicDelta {
         }
     }
 
-    final List<MetadataState.Topic> addedTopics = new ArrayList<>();
+    final List<Topic> addedTopics = new ArrayList<>();
 
     final List<String> removedTopics = new ArrayList<>();
 
-    final Map<TopicPartition, MetadataState.Partition> addedParts = new HashMap<>();
+    final Map<TopicPartition, Partition> addedParts = new HashMap<>();
 
     final List<TopicPartition> removedParts = new ArrayList<>();
 
@@ -189,20 +192,20 @@ class TopicDelta {
         return topicDelta;
     }
 
-    static TopicDelta fromUpdatedTopicReplicas(MetadataState.TopicCollection existingTopics,
+    static TopicDelta fromUpdatedTopicReplicas(TopicCollection existingTopics,
                                                MetadataState.Topic updatedTopic) {
         TopicDelta topicDelta = new TopicDelta();
-        MetadataState.TopicCollection updatedTopics = new MetadataState.TopicCollection();
+        TopicCollection updatedTopics = new TopicCollection();
         updatedTopics.mustAdd(updatedTopic.duplicate());
         topicDelta.calculateReplicaUpdates(existingTopics, updatedTopics);
         return topicDelta;
     }
 
-    static TopicDelta fromUpdatedTopicReplicas(MetadataState.TopicCollection existingTopics,
-                                               MetadataState.TopicCollection updatedTopics) {
+    static TopicDelta fromUpdatedTopicReplicas(TopicCollection existingTopics,
+                                               TopicCollection updatedTopics) {
         TopicDelta topicDelta = new TopicDelta();
-        for (MetadataState.Topic existingTopic : existingTopics) {
-            MetadataState.Topic updatedTopic = updatedTopics.find(existingTopic);
+        for (Topic existingTopic : existingTopics) {
+            Topic updatedTopic = updatedTopics.find(existingTopic);
             if (updatedTopic == null) {
                 topicDelta.removedTopics.add(existingTopic.name());
             }
@@ -211,7 +214,7 @@ class TopicDelta {
         return topicDelta;
     }
 
-    static TopicDelta fromIsrUpdates(MetadataState.TopicCollection existingTopics,
+    static TopicDelta fromIsrUpdates(TopicCollection existingTopics,
                 Map<TopicPartition, LeaderIsrAndControllerEpoch> updates) {
         Map<String, Map<Integer, LeaderIsrAndControllerEpoch>> groupedUpdates = new HashMap<>();
         for (Map.Entry<TopicPartition, LeaderIsrAndControllerEpoch> entry :
@@ -226,16 +229,14 @@ class TopicDelta {
                 groupedUpdates.entrySet()) {
             String topicName = entry.getKey();
             Map<Integer, LeaderIsrAndControllerEpoch> partInfo = entry.getValue();
-            MetadataState.Topic existingTopic = existingTopics.find(topicName);
+            Topic existingTopic = existingTopics.find(topicName);
             if (existingTopic == null) {
-                MetadataState.Topic addedTopic =
-                    new MetadataState.Topic().setName(topicName);
+                Topic addedTopic = new Topic().setName(topicName);
                 for (Map.Entry<Integer, LeaderIsrAndControllerEpoch> partEntry :
                         partInfo.entrySet()) {
                     IsrChange isrChange = IsrChange.
                         fromLeaderIsrAndControllerEpoch(partEntry.getValue());
-                    MetadataState.Partition part =
-                        isrChange.toPartition(partEntry.getKey());
+                    Partition part = isrChange.toPartition(partEntry.getKey());
                     addedTopic.partitions().mustAdd(part);
                 }
                 delta.addedTopics.add(addedTopic);
@@ -245,7 +246,7 @@ class TopicDelta {
                     int partId = partEntry.getKey();
                     IsrChange isrChange = IsrChange.
                         fromLeaderIsrAndControllerEpoch(partEntry.getValue());
-                    MetadataState.Partition part = existingTopic.partitions().find(partId);
+                    Partition part = existingTopic.partitions().find(partId);
                     TopicPartition topicPart = new TopicPartition(topicName, partId);
                     if (part == null) {
                         part = isrChange.toPartition(partId);
@@ -259,27 +260,26 @@ class TopicDelta {
         return delta;
     }
 
-    private void calculateReplicaUpdates(MetadataState.TopicCollection existingTopics,
-                                         MetadataState.TopicCollection updatedTopics) {
-        for (MetadataState.Topic updatedTopic : updatedTopics) {
-            MetadataState.Topic existingTopic = existingTopics.find(updatedTopic);
+    private void calculateReplicaUpdates(TopicCollection existingTopics,
+                                         TopicCollection updatedTopics) {
+        for (Topic updatedTopic : updatedTopics) {
+            Topic existingTopic = existingTopics.find(updatedTopic);
             if (existingTopic == null) {
                 addedTopics.add(updatedTopic.duplicate());
                 continue;
             }
-            for (MetadataState.Partition updatedPart : updatedTopic.partitions()) {
-                MetadataState.Partition existingPart =
+            for (Partition updatedPart : updatedTopic.partitions()) {
+                Partition existingPart =
                     existingTopic.partitions().find(updatedPart);
                 if (existingPart == null) {
                     addedParts.put(new TopicPartition(updatedTopic.name(), updatedPart.id()),
                         updatedPart.duplicate());
                 }
             }
-            for (MetadataState.Partition existingPart : existingTopic.partitions()) {
+            for (Partition existingPart : existingTopic.partitions()) {
                 TopicPartition topicPart =
                     new TopicPartition(existingTopic.name(), existingPart.id());
-                MetadataState.Partition updatedPart =
-                    updatedTopic.partitions().find(existingPart);
+                Partition updatedPart = updatedTopic.partitions().find(existingPart);
                 if (updatedPart == null) {
                     removedParts.add(topicPart);
                     continue;
@@ -293,36 +293,34 @@ class TopicDelta {
         }
     }
 
-    void apply(MetadataState.TopicCollection topics) {
-        for (MetadataState.Topic addedTopic : addedTopics) {
+    void apply(TopicCollection topics) {
+        for (Topic addedTopic : addedTopics) {
             topics.add(addedTopic.duplicate());
         }
         for (String removedTopic : removedTopics) {
-            topics.remove(new MetadataState.Topic().setName(removedTopic));
+            topics.remove(new Topic().setName(removedTopic));
         }
-        for (Map.Entry<TopicPartition, MetadataState.Partition> entry : addedParts.entrySet()) {
+        for (Map.Entry<TopicPartition, Partition> entry : addedParts.entrySet()) {
             TopicPartition partition = entry.getKey();
             topics.find(partition.topic()).partitions().
                     mustAdd(entry.getValue().duplicate());
         }
         for (TopicPartition removedPartition : removedParts) {
             topics.find(removedPartition.topic()).partitions().remove(
-                new MetadataState.Partition().setId(removedPartition.partition()));
+                new Partition().setId(removedPartition.partition()));
         }
         for (Map.Entry<TopicPartition, ReplicaChange> entry : replicaChanges.entrySet()) {
             TopicPartition topicPart = entry.getKey();
             ReplicaChange change = entry.getValue();
-            MetadataState.Topic topic = topics.getOrCreate(topicPart.topic());
-            MetadataState.Partition part =
-                topic.partitions().getOrCreate(topicPart.partition());
+            Topic topic = topics.getOrCreate(topicPart.topic());
+            Partition part = topic.partitions().getOrCreate(topicPart.partition());
             change.apply(part);
         }
         for (Map.Entry<TopicPartition, IsrChange> entry : isrChanges.entrySet()) {
             TopicPartition topicPart = entry.getKey();
             IsrChange change = entry.getValue();
-            MetadataState.Topic topic = topics.getOrCreate(topicPart.topic());
-            MetadataState.Partition part =
-                topic.partitions().getOrCreate(topicPart.partition());
+            Topic topic = topics.getOrCreate(topicPart.topic());
+            Partition part = topic.partitions().getOrCreate(topicPart.partition());
             change.apply(part);
         }
     }

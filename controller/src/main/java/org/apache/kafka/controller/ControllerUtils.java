@@ -23,6 +23,7 @@ import kafka.controller.ReplicaAssignment;
 import kafka.utils.CoreUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.message.MetadataState.TopicCollection;
 import org.slf4j.Logger;
 import scala.compat.java8.OptionConverters;
 import scala.jdk.javaapi.CollectionConverters;
@@ -98,10 +99,9 @@ public final class ControllerUtils {
      * @return          The topic collection.  Note that this will not contain ISR
      *                  information.
      */
-    public static MetadataState.TopicCollection replicaAssignmentsToTopicStates(
+    public static TopicCollection replicaAssignmentsToTopicStates(
             Map<TopicPartition, ReplicaAssignment> map) {
-        MetadataState.TopicCollection newTopics =
-            new MetadataState.TopicCollection();
+        TopicCollection newTopics = new TopicCollection();
         for (Map.Entry<TopicPartition, ReplicaAssignment> entry : map.entrySet()) {
             TopicPartition topicPart = entry.getKey();
             ReplicaAssignment assignment = entry.getValue();

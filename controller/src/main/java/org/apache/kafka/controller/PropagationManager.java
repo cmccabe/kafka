@@ -24,6 +24,10 @@ import org.apache.kafka.clients.RequestCompletionHandler;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.LeaderAndIsrRequestData;
+import org.apache.kafka.common.message.MetadataState.Broker;
+import org.apache.kafka.common.message.MetadataState.BrokerEndpoint;
+import org.apache.kafka.common.message.MetadataState.Partition;
+import org.apache.kafka.common.message.MetadataState.Topic;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.message.UpdateMetadataRequestData;
 import org.apache.kafka.common.network.ListenerName;
@@ -74,8 +78,8 @@ public class PropagationManager {
      * @return                  The node object, or null if the target listener was
      *                          not found.
      */
-    static Node brokerToNode(MetadataState.Broker broker, String targetListener) {
-        MetadataState.BrokerEndpoint endpoint = broker.endPoints().find(targetListener);
+    static Node brokerToNode(Broker broker, String targetListener) {
+        BrokerEndpoint endpoint = broker.endPoints().find(targetListener);
         if (endpoint == null) {
             return null;
         }
@@ -241,7 +245,7 @@ public class PropagationManager {
                 // There is no need to track specific topics if we're doing a full update.
                 return;
             }
-            for (MetadataState.Topic topic : delta.addedTopics) {
+            for (Topic topic : delta.addedTopics) {
                 topics.add(topic.name());
             }
             // note: removedTopics actually does not get added to the update.
@@ -331,7 +335,7 @@ public class PropagationManager {
     }
 
     public void initialize(ReplicationManager replicationManager) {
-        for (MetadataState.Broker broker : replicationManager.state().brokers()) {
+        for (Broker broker : replicationManager.state().brokers()) {
             brokers.put(broker.brokerId(), new DestinationBroker(broker.brokerId()));
         }
     }
@@ -373,7 +377,7 @@ public class PropagationManager {
      */
     List<Node> recalculateNodes(ReplicationManager replicationManager) {
         List<Node> nodes = new ArrayList<>();
-        for (MetadataState.Broker broker : replicationManager.state().brokers()) {
+        for (Broker broker : replicationManager.state().brokers()) {
             Node node = brokerToNode(broker, targetListener);
             if (node == null) {
                 throw new RuntimeException("Broker " + broker.brokerId() + " doesn't " +
@@ -405,7 +409,7 @@ public class PropagationManager {
             return;
         }
         MetadataState state = replicationManager.state();
-        MetadataState.Broker destBrokerState = state.brokers().find(destBroker.id);
+        Broker destBrokerState = state.brokers().find(destBroker.id);
         if (destBrokerState == null) {
             throw new RuntimeException("Internal logic error: DestinationBroker map " +
                 "contains broker " + destBroker.id + ", but the ReplicationManager state " +
@@ -415,13 +419,13 @@ public class PropagationManager {
         data.setControllerId(controllerId);
         data.setControllerEpoch(controllerEpoch);
         data.setBrokerEpoch(destBrokerState.brokerEpoch());
-        for (MetadataState.Broker brokerState : state.brokers()) {
+        for (Broker brokerState : state.brokers()) {
             UpdateMetadataRequestData.UpdateMetadataBroker liveBroker =
                 new UpdateMetadataRequestData.UpdateMetadataBroker();
             liveBroker.setId(brokerState.brokerId());
             if (updateMetadataRequestVersion == 0) {
                 // v0 is very old.  It only supports a single plaintext endpoint per broker.
-                MetadataState.BrokerEndpoint endpoint = brokerState.endPoints().find(
+                BrokerEndpoint endpoint = brokerState.endPoints().find(
                     SecurityProtocol.PLAINTEXT.name);
                 if (endpoint == null) {
                     throw new RuntimeException("UpdateMetadataRequest version is 0, " +
@@ -431,7 +435,7 @@ public class PropagationManager {
                 liveBroker.setV0Host(endpoint.host());
                 liveBroker.setV0Port(endpoint.port());
             } else {
-                for (MetadataState.BrokerEndpoint endpoint : brokerState.endPoints()) {
+                for (BrokerEndpoint endpoint : brokerState.endPoints()) {
                     liveBroker.endpoints().add(
                         new UpdateMetadataRequestData.UpdateMetadataEndpoint().
                             setPort(endpoint.port()).
@@ -444,12 +448,12 @@ public class PropagationManager {
             data.liveBrokers().add(liveBroker);
         }
         if (destBroker.pendingUpdateMetadata.isFull()) {
-            for (MetadataState.Topic topic : state.topics()) {
+            for (Topic topic : state.topics()) {
                 createUmrTopicEntry(data, topic);
             }
         } else {
             for (String topicName : destBroker.pendingUpdateMetadata.topics) {
-                MetadataState.Topic topic = state.topics().find(topicName);
+                Topic topic = state.topics().find(topicName);
                 if (topic == null) {
                     throw new RuntimeException("Unable to locate topic " + topicName +
                         " in the ReplicationManager.");
@@ -465,19 +469,18 @@ public class PropagationManager {
             new UpdateMetadataCompletionHandler(destBroker.id)));
     }
 
-    private void createUmrTopicEntry(UpdateMetadataRequestData data,
-                                     MetadataState.Topic topic) {
+    private void createUmrTopicEntry(UpdateMetadataRequestData data, Topic topic) {
         if (updateMetadataRequestVersion >= 5) {
             UpdateMetadataRequestData.UpdateMetadataTopicState topicState =
                 new UpdateMetadataRequestData.UpdateMetadataTopicState();
             topicState.setTopicName(topic.name());
-            for (MetadataState.Partition partition : topic.partitions()) {
+            for (Partition partition : topic.partitions()) {
                 topicState.partitionStates().add(
                     createUmrPartitionEntry(topic, partition));
             }
             data.topicStates().add(topicState);
         } else {
-            for (MetadataState.Partition partition : topic.partitions()) {
+            for (Partition partition : topic.partitions()) {
                 data.ungroupedPartitionStates().add(
                     createUmrPartitionEntry(topic, partition));
             }
@@ -485,8 +488,7 @@ public class PropagationManager {
     }
 
     private static UpdateMetadataRequestData.UpdateMetadataPartitionState
-            createUmrPartitionEntry(MetadataState.Topic topic,
-                                    MetadataState.Partition partition) {
+            createUmrPartitionEntry(Topic topic, Partition partition) {
         UpdateMetadataRequestData.UpdateMetadataPartitionState part =
             new UpdateMetadataRequestData.UpdateMetadataPartitionState();
         part.setTopicName(topic.name()); // only used when version <= 4
@@ -523,7 +525,7 @@ public class PropagationManager {
             return;
         }
         MetadataState state = replicationManager.state();
-        MetadataState.Broker destBrokerState = state.brokers().find(destBroker.id);
+        Broker destBrokerState = state.brokers().find(destBroker.id);
         if (destBrokerState == null) {
             throw new RuntimeException("Internal logic error: DestinationBroker map " +
                 "contains broker " + destBroker.id + ", but the ReplicationManager state " +
@@ -533,12 +535,11 @@ public class PropagationManager {
         data.setControllerId(controllerId);
         data.setControllerEpoch(controllerEpoch);
         data.setBrokerEpoch(destBrokerState.brokerEpoch());
-        for (MetadataState.Broker brokerState : state.brokers()) {
+        for (Broker brokerState : state.brokers()) {
             LeaderAndIsrRequestData.LeaderAndIsrLiveLeader liveLeader =
                 new LeaderAndIsrRequestData.LeaderAndIsrLiveLeader();
             liveLeader.setBrokerId(brokerState.brokerId());
-            MetadataState.BrokerEndpoint endpoint =
-                brokerState.endPoints().find(targetListener);
+            BrokerEndpoint endpoint = brokerState.endPoints().find(targetListener);
             if (endpoint == null) {
                 throw new RuntimeException("There is no " + targetListener + " endpoint " +
                     "for broker " + brokerState.brokerId());
@@ -549,12 +550,12 @@ public class PropagationManager {
             data.liveLeaders().add(liveLeader);
         }
         if (destBroker.pendingLeaderAndIsr.isFull()) {
-            for (MetadataState.Topic topic : state.topics()) {
+            for (Topic topic : state.topics()) {
                 createIsrTopicEntry(data, topic);
             }
         } else {
             for (String topicName : destBroker.pendingUpdateMetadata.topics) {
-                MetadataState.Topic topic = state.topics().find(topicName);
+                Topic topic = state.topics().find(topicName);
                 if (topic == null) {
                     throw new RuntimeException("Unable to locate topic " + topicName +
                         " in the ReplicationManager.");
@@ -570,19 +571,18 @@ public class PropagationManager {
             new LeaderAndIsrCompletionHandler(destBroker.id)));
     }
 
-    private void createIsrTopicEntry(LeaderAndIsrRequestData data,
-                                     MetadataState.Topic topic) {
+    private void createIsrTopicEntry(LeaderAndIsrRequestData data, Topic topic) {
         if (leaderAndIsrRequestVersion >= 2) {
             LeaderAndIsrRequestData.LeaderAndIsrTopicState topicState =
                 new LeaderAndIsrRequestData.LeaderAndIsrTopicState();
             topicState.setTopicName(topic.name());
-            for (MetadataState.Partition partition : topic.partitions()) {
+            for (Partition partition : topic.partitions()) {
                 topicState.partitionStates().add(
                     createIsrPartitionEntry(topic, partition));
             }
             data.topicStates().add(topicState);
         } else {
-            for (MetadataState.Partition partition : topic.partitions()) {
+            for (Partition partition : topic.partitions()) {
                 data.ungroupedPartitionStates().add(
                     createIsrPartitionEntry(topic, partition));
             }
@@ -590,8 +590,7 @@ public class PropagationManager {
     }
 
     private static LeaderAndIsrRequestData.LeaderAndIsrPartitionState
-            createIsrPartitionEntry(MetadataState.Topic topic,
-                                    MetadataState.Partition partition) {
+            createIsrPartitionEntry(Topic topic, Partition partition) {
         LeaderAndIsrRequestData.LeaderAndIsrPartitionState part =
             new LeaderAndIsrRequestData.LeaderAndIsrPartitionState();
         part.setTopicName(topic.name()); // only used when version <= 4
@@ -619,7 +618,7 @@ public class PropagationManager {
                     "broker id " + brokerId);
             }
         }
-        for (MetadataState.Broker broker : delta.changedBrokers()) {
+        for (Broker broker : delta.changedBrokers()) {
             DestinationBroker destBroker = brokers.get(broker.brokerId());
             if (destBroker == null) {
                 destBroker = new DestinationBroker(broker.brokerId());

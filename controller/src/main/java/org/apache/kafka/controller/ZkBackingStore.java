@@ -36,6 +36,10 @@ import kafka.zookeeper.ZNodeChildChangeHandler;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ControllerMovedException;
 import org.apache.kafka.common.errors.NotControllerException;
+import org.apache.kafka.common.message.MetadataState.BrokerCollection;
+import org.apache.kafka.common.message.MetadataState.Partition;
+import org.apache.kafka.common.message.MetadataState.Topic;
+import org.apache.kafka.common.message.MetadataState.TopicCollection;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.utils.EventQueue;
 import org.apache.kafka.common.utils.KafkaEventQueue;
@@ -571,7 +575,7 @@ public class ZkBackingStore implements BackingStore {
             // Unfortunately, the ZK watch does not say which child znode was created
             // or deleted, so we have to re-read everything.
             List<MetadataState.Broker> changed = new ArrayList<>();
-            MetadataState.BrokerCollection newBrokers = loadBrokerChildren();
+            BrokerCollection newBrokers = loadBrokerChildren();
             for (MetadataState.Broker newBroker : newBrokers) {
                 MetadataState.Broker existingBroker =
                     activeState.metadata.brokers().find(newBroker);
@@ -676,7 +680,7 @@ public class ZkBackingStore implements BackingStore {
             // There are two main changes that can happen here: adding partitions,
             // or changing the replica set.  (Removing partitions is not really
             // supported by Kafka right now, but the code is here anyway...)
-            MetadataState.TopicCollection newTopics = loadTopicChildren();
+            TopicCollection newTopics = loadTopicChildren();
             TopicDelta delta = TopicDelta.fromUpdatedTopicReplicas(
                 activeState.metadata.topics(), newTopics);
             applyDelta(requiredControllerEpoch().get(), delta);
@@ -686,7 +690,7 @@ public class ZkBackingStore implements BackingStore {
     }
 
     private void applyDelta(int controllerEpoch, TopicDelta delta) {
-        for (MetadataState.Topic addedTopic : delta.addedTopics) {
+        for (Topic addedTopic : delta.addedTopics) {
             registerTopicChangeHandler(controllerEpoch, addedTopic.name());
         }
         for (String removedTopic : delta.removedTopics) {
@@ -718,9 +722,9 @@ public class ZkBackingStore implements BackingStore {
             Map<TopicPartition, ReplicaAssignment> map = CollectionConverters.asJava(
                     zkClient.getFullReplicaAssignmentForTopics(
                     CollectionConverters.asScala(Collections.singleton(topic)).toSet()));
-            MetadataState.TopicCollection updatedTopics = ControllerUtils.
+            TopicCollection updatedTopics = ControllerUtils.
                 replicaAssignmentsToTopicStates(map);
-            MetadataState.Topic updatedTopic = updatedTopics.find(topic);
+            Topic updatedTopic = updatedTopics.find(topic);
             TopicDelta delta;
             if (updatedTopic == null) {
                 // In theory the znode could have been deleted between the watch getting
@@ -746,7 +750,7 @@ public class ZkBackingStore implements BackingStore {
         state.setBrokers(loadBrokerChildren());
         log.info("Loaded broker(s) {}", state.brokers());
         state.setTopics(loadTopicChildren());
-        for (MetadataState.Topic topic : state.topics()) {
+        for (Topic topic : state.topics()) {
             registerTopicChangeHandler(controllerEpoch, topic.name());
         }
         zkClient.deleteIsrChangeNotifications(epochZkVersion);
@@ -759,9 +763,8 @@ public class ZkBackingStore implements BackingStore {
         return new ActiveZkBackingStoreState(controllerEpoch, epochZkVersion, state);
     }
 
-    private MetadataState.BrokerCollection loadBrokerChildren() {
-        MetadataState.BrokerCollection newBrokers =
-            new MetadataState.BrokerCollection();
+    private BrokerCollection loadBrokerChildren() {
+        BrokerCollection newBrokers = new BrokerCollection();
         for (Map.Entry<Broker, Object> entry : CollectionConverters.
             asJava(zkClient.getAllBrokerAndEpochsInCluster()).entrySet()) {
             MetadataState.Broker newBroker = ControllerUtils.
@@ -772,7 +775,7 @@ public class ZkBackingStore implements BackingStore {
         return newBrokers;
     }
 
-    private MetadataState.TopicCollection loadTopicChildren() {
+    private TopicCollection loadTopicChildren() {
         scala.collection.immutable.Set<String> scalaTopics =
             zkClient.getAllTopicsInCluster(true);
         Map<TopicPartition, ReplicaAssignment> map = CollectionConverters.asJava(
@@ -780,10 +783,10 @@ public class ZkBackingStore implements BackingStore {
         return ControllerUtils.replicaAssignmentsToTopicStates(map);
     }
 
-    private void mergeIsrInformation(MetadataState.TopicCollection topics) {
+    private void mergeIsrInformation(TopicCollection topics) {
         List<TopicPartition> partitions = new ArrayList<>();
-        for (MetadataState.Topic topic : topics) {
-            for (MetadataState.Partition partition : topic.partitions()) {
+        for (Topic topic : topics) {
+            for (Partition partition : topic.partitions()) {
                 partitions.add(new TopicPartition(topic.name(), partition.id()));
             }
         }
