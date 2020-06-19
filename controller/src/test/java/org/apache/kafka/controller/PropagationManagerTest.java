@@ -17,10 +17,12 @@
 
 package org.apache.kafka.controller;
 
+import kafka.common.RequestAndCompletionHandler;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.junit.Rule;
 import org.junit.Test;
@@ -165,6 +167,7 @@ public class PropagationManagerTest {
         TestEnv env = new TestEnv("testGenerateInitialMessages");
         ReplicationManager replicationManager = createTestReplicationManager();
         env.propagationManager.initialize(replicationManager);
+        assertEquals(0, env.propagator.numInFlight());
         env.propagationManager.maybeSendRequests(100L, replicationManager, env.propagator);
         for (Map.Entry<Integer, PropagationManager.DestinationBroker> entry :
                 env.propagationManager.brokers().entrySet()) {
@@ -176,6 +179,9 @@ public class PropagationManagerTest {
             assertEquals(null, broker.pendingLeaderAndIsr);
             assertEquals(100L, broker.inFlightLeaderAndIsr.sendTimeNs());
             assertNotNull(broker.inFlightLeaderAndIsr);
+            RequestAndCompletionHandler request =
+                env.propagator.getInFlightRequest(broker.id, ApiKeys.UPDATE_METADATA);
+            assertNotNull(request);
         }
     }
 }
