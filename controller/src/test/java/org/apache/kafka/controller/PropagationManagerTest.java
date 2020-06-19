@@ -21,8 +21,11 @@ import kafka.common.RequestAndCompletionHandler;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataState;
+import org.apache.kafka.common.message.UpdateMetadataRequestData.UpdateMetadataPartitionState;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.UpdateMetadataRequest;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.junit.Rule;
 import org.junit.Test;
@@ -31,7 +34,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
@@ -162,6 +167,16 @@ public class PropagationManagerTest {
             env.propagationManager.recalculateNodes(replicationManager));
     }
 
+    static Map<TopicPartition, UpdateMetadataPartitionState> toMap(Iterable<UpdateMetadataPartitionState> i) {
+        Iterator<UpdateMetadataPartitionState> iter = i.iterator();
+        Map<TopicPartition, UpdateMetadataPartitionState> map = new HashMap<>();
+        while (iter.hasNext()) {
+            UpdateMetadataPartitionState part = iter.next();
+            map.put(new TopicPartition(part.topicName(), part.partitionIndex()), part);
+        }
+        return map;
+    }
+
     @Test
     public void testGenerateInitialMessages() throws Exception {
         TestEnv env = new TestEnv("testGenerateInitialMessages");
@@ -182,6 +197,21 @@ public class PropagationManagerTest {
             RequestAndCompletionHandler request =
                 env.propagator.getInFlightRequest(broker.id, ApiKeys.UPDATE_METADATA);
             assertNotNull(request);
+            UpdateMetadataRequest req = (UpdateMetadataRequest) request.request().build();
+            assertEquals(toMap(Arrays.asList(
+                new UpdateMetadataPartitionState().setTopicName("foo").
+                    setPartitionIndex(0).setLeader(0).setControllerEpoch(0).
+                    setLeaderEpoch(100).setReplicas(Arrays.asList(0, 1, 2)).
+                    setIsr(Arrays.asList(0, 1, 2)),
+                new UpdateMetadataPartitionState().setTopicName("foo").
+                        setPartitionIndex(1).setLeader(2).setControllerEpoch(0).
+                        setLeaderEpoch(100).setReplicas(Arrays.asList(2, 0, 1)).
+                        setIsr(Arrays.asList(2, 0, 1)),
+                new UpdateMetadataPartitionState().setTopicName("bar").
+                    setPartitionIndex(0).setLeader(1).setControllerEpoch(0).
+                    setLeaderEpoch(100).setReplicas(Arrays.asList(1, 0, 2)).
+                    setIsr(Arrays.asList(1, 0)))),
+                toMap(req.partitionStates()));
         }
     }
 }

@@ -210,7 +210,7 @@ public class UpdateMetadataRequest extends AbstractControlRequest {
     }
 
     // Visible for testing
-    UpdateMetadataRequestData data() {
+    public UpdateMetadataRequestData data() {
         return data;
     }
 
