@@ -22,9 +22,11 @@ import kafka.server.KafkaConfig;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.LeaderAndIsrRequestData.LeaderAndIsrPartitionState;
 import org.apache.kafka.common.message.MetadataState;
 import org.apache.kafka.common.message.UpdateMetadataRequestData.UpdateMetadataPartitionState;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.LeaderAndIsrRequest;
 import org.apache.kafka.common.requests.UpdateMetadataRequest;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.junit.Rule;
@@ -167,11 +169,23 @@ public class PropagationManagerTest {
             env.propagationManager.recalculateNodes(replicationManager));
     }
 
-    static Map<TopicPartition, UpdateMetadataPartitionState> toMap(Iterable<UpdateMetadataPartitionState> i) {
+    static Map<TopicPartition, UpdateMetadataPartitionState>
+            umrMap(Iterable<UpdateMetadataPartitionState> i) {
         Iterator<UpdateMetadataPartitionState> iter = i.iterator();
         Map<TopicPartition, UpdateMetadataPartitionState> map = new HashMap<>();
         while (iter.hasNext()) {
             UpdateMetadataPartitionState part = iter.next();
+            map.put(new TopicPartition(part.topicName(), part.partitionIndex()), part);
+        }
+        return map;
+    }
+
+    static Map<TopicPartition, LeaderAndIsrPartitionState>
+            lairMap(Iterable<LeaderAndIsrPartitionState> i) {
+        Iterator<LeaderAndIsrPartitionState> iter = i.iterator();
+        Map<TopicPartition, LeaderAndIsrPartitionState> map = new HashMap<>();
+        while (iter.hasNext()) {
+            LeaderAndIsrPartitionState part = iter.next();
             map.put(new TopicPartition(part.topicName(), part.partitionIndex()), part);
         }
         return map;
@@ -194,11 +208,11 @@ public class PropagationManagerTest {
             assertEquals(null, broker.pendingLeaderAndIsr);
             assertEquals(100L, broker.inFlightLeaderAndIsr.sendTimeNs());
             assertNotNull(broker.inFlightLeaderAndIsr);
-            RequestAndCompletionHandler request =
+            RequestAndCompletionHandler umrRequest =
                 env.propagator.getInFlightRequest(broker.id, ApiKeys.UPDATE_METADATA);
-            assertNotNull(request);
-            UpdateMetadataRequest req = (UpdateMetadataRequest) request.request().build();
-            assertEquals(toMap(Arrays.asList(
+            assertNotNull(umrRequest);
+            UpdateMetadataRequest umrReq = (UpdateMetadataRequest) umrRequest.request().build();
+            assertEquals(umrMap(Arrays.asList(
                 new UpdateMetadataPartitionState().setTopicName("foo").
                     setPartitionIndex(0).setLeader(0).setControllerEpoch(0).
                     setLeaderEpoch(100).setReplicas(Arrays.asList(0, 1, 2)).
@@ -211,7 +225,26 @@ public class PropagationManagerTest {
                     setPartitionIndex(0).setLeader(1).setControllerEpoch(0).
                     setLeaderEpoch(100).setReplicas(Arrays.asList(1, 0, 2)).
                     setIsr(Arrays.asList(1, 0)))),
-                toMap(req.partitionStates()));
+                umrMap(umrReq.partitionStates()));
+
+            RequestAndCompletionHandler lairRequest =
+                env.propagator.getInFlightRequest(broker.id, ApiKeys.LEADER_AND_ISR);
+            assertNotNull(lairRequest);
+            LeaderAndIsrRequest lairReq = (LeaderAndIsrRequest) lairRequest.request().build();
+            assertEquals(lairMap(Arrays.asList(
+                new LeaderAndIsrPartitionState().setTopicName("foo").
+                    setPartitionIndex(0).setLeader(0).setControllerEpoch(0).
+                    setLeaderEpoch(100).setReplicas(Arrays.asList(0, 1, 2)).
+                    setIsr(Arrays.asList(0, 1, 2)),
+                new LeaderAndIsrPartitionState().setTopicName("foo").
+                    setPartitionIndex(1).setLeader(2).setControllerEpoch(0).
+                    setLeaderEpoch(100).setReplicas(Arrays.asList(2, 0, 1)).
+                    setIsr(Arrays.asList(2, 0, 1)),
+                new LeaderAndIsrPartitionState().setTopicName("bar").
+                    setPartitionIndex(0).setLeader(1).setControllerEpoch(0).
+                    setLeaderEpoch(100).setReplicas(Arrays.asList(1, 0, 2)).
+                    setIsr(Arrays.asList(1, 0)))),
+                lairMap(lairReq.partitionStates()));
         }
     }
 }

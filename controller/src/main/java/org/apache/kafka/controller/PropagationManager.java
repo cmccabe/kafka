@@ -609,8 +609,7 @@ public class PropagationManager {
         return part;
     }
 
-    public void handleBrokerUpdates(long nowNs,
-                                    BrokerDelta delta) {
+    public void handleBrokerUpdates(long nowNs, BrokerDelta delta) {
         for (int brokerId : delta.deletedBrokerIds()) {
             DestinationBroker prevBroker = brokers.remove(brokerId);
             if (prevBroker == null) {
@@ -639,8 +638,7 @@ public class PropagationManager {
         //  is on, but what if not?
     }
 
-    public void handleTopicUpdates(long nowNs,
-                                   TopicDelta delta) {
+    public void handleTopicUpdates(long nowNs, TopicDelta delta) {
         for (DestinationBroker broker : brokers.values()) {
             if (broker.pendingLeaderAndIsr == null) {
                 broker.pendingLeaderAndIsr = new PendingRequest(nowNs + coalesceDelayNs);
