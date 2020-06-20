@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller;
 
+import kafka.cluster.Replica;
 import kafka.common.RequestAndCompletionHandler;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.clients.ClientResponse;
@@ -36,6 +37,7 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.LeaderAndIsrRequest;
 import org.apache.kafka.common.requests.UpdateMetadataRequest;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
+import org.apache.kafka.controller.TopicDelta.ReplicaChange;
 import org.slf4j.Logger;
 import scala.compat.java8.OptionConverters;
 
@@ -44,6 +46,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 /**
@@ -325,7 +328,7 @@ public class PropagationManager {
         this.callbackHandler = callbackHandler;
         this.log = logContext.createLogger(PropagationManager.class);
         this.targetListener = calculateTargetListener(config);
-        this.coalesceDelayNs = 10000L; // TODO: add configuration, etc.
+        this.coalesceDelayNs = config.controllerPropagationDelayNs();
         this.updateMetadataRequestVersion =
             config.interBrokerProtocolVersion().updateMetadataRequestVersion();
         this.leaderAndIsrRequestVersion =
@@ -638,17 +641,66 @@ public class PropagationManager {
         //  is on, but what if not?
     }
 
-    public void handleTopicUpdates(long nowNs, TopicDelta delta) {
+    public void handleTopicUpdates(long nowNs, ReplicationManager replicationManager,
+                                   TopicDelta delta) {
         for (DestinationBroker broker : brokers.values()) {
-            if (broker.pendingLeaderAndIsr == null) {
-                broker.pendingLeaderAndIsr = new PendingRequest(nowNs + coalesceDelayNs);
+            if (needLeaderAndIsrEntry(broker.id, replicationManager, delta)) {
+                if (broker.pendingLeaderAndIsr == null) {
+                    broker.pendingLeaderAndIsr = new PendingRequest(nowNs + coalesceDelayNs);
+                }
+                broker.pendingLeaderAndIsr.addTopicDelta(delta);
             }
-            broker.pendingLeaderAndIsr.addTopicDelta(delta);
             if (broker.pendingUpdateMetadata == null) {
                 broker.pendingUpdateMetadata = new PendingRequest(nowNs + coalesceDelayNs);
             }
             broker.pendingUpdateMetadata.addTopicDelta(delta);
         }
+    }
+
+    private boolean needLeaderAndIsrEntry(int brokerId, ReplicationManager replicationManager,
+                                          TopicDelta delta) {
+        for (Topic topic : delta.addedTopics) {
+            for (Partition part : topic.partitions()) {
+                if (needLeaderAndIsrEntry(brokerId, part)) return true;
+            }
+        }
+        // NOTE: we don't consider removedTopics here.
+        // Once a topic has been truly removed it is no longer present on any broker.
+        // TODO: handle removING topics by sending the special invalid ISR.
+        for (Partition part : delta.addedParts.values()) {
+            if (needLeaderAndIsrEntry(brokerId, part)) return true;
+        }
+        // NOTE: we don't consider or handle removedParts here.  This is OK since Kafka
+        // doesn't support this yet (there is an ApiKeys.CREATE_PARTITIONS but no
+        // ApiKeys.DELETE_PARTITIONS)
+        for (Entry<TopicPartition, ReplicaChange> entry : delta.replicaChanges.entrySet()) {
+            if (needLeaderAndIsrEntry(brokerId, replicationManager, entry.getKey())) {
+                return true;
+            }
+            ReplicaChange change = entry.getValue();
+            if (change.replicas.contains(brokerId)) return true;
+            if (change.removingReplicas.contains(brokerId)) return true;
+            if (change.addingReplicas.contains(brokerId)) return true;
+        }
+        for (TopicPartition topicPart : delta.isrChanges.keySet()) {
+            if (needLeaderAndIsrEntry(brokerId, replicationManager, topicPart)) return true;
+        }
+        return false;
+    }
+
+    private boolean needLeaderAndIsrEntry(int brokerId,
+                                          ReplicationManager replicationManager,
+                                          TopicPartition topicPart) {
+        Topic topic = replicationManager.state().topics().find(topicPart.topic());
+        Partition part = topic.partitions().find(topicPart.partition());
+        return needLeaderAndIsrEntry(brokerId, part);
+    }
+
+    private boolean needLeaderAndIsrEntry(int brokerId, Partition part) {
+        if (part.replicas().contains(brokerId)) return true;
+        if (part.removingReplicas().contains(brokerId)) return true;
+        if (part.addingReplicas().contains(brokerId)) return true;
+        return false;
     }
 
     // Visible for testing

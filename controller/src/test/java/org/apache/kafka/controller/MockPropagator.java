@@ -82,6 +82,11 @@ public class MockPropagator implements Propagator {
         return result;
     }
 
+    public void clear() {
+        this.nodes = Collections.emptyList();
+        this.inFlight.clear();;
+    }
+
     @Override
     public void close() throws Exception {
         closed.set(true);

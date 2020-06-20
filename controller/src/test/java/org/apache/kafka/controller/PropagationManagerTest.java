@@ -29,6 +29,7 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.LeaderAndIsrRequest;
 import org.apache.kafka.common.requests.UpdateMetadataRequest;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
+import org.apache.kafka.controller.TopicDelta.IsrChange;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -36,6 +37,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -74,7 +76,8 @@ public class PropagationManagerTest {
                 KafkaConfig.ControlPlaneListenerNameProp(), "CONTROLLER",
                 KafkaConfig.InterBrokerListenerNameProp(), "INTERNAL",
                 KafkaConfig.ListenersProp(), "CONTROLLER://localhost:9093,INTERNAL://localhost:9092",
-                KafkaConfig.ListenerSecurityProtocolMapProp(), "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT");
+                KafkaConfig.ListenerSecurityProtocolMapProp(), "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT",
+                KafkaConfig.ControllerPropagationDelayNsProp(), "100");
             this.propagator = new MockPropagator();
             this.callbackHandler = new MockPropagationManagerCallbackHandler();
             this.propagationManager = new PropagationManager(logContext, 0, 0,
@@ -247,4 +250,21 @@ public class PropagationManagerTest {
                 lairMap(lairReq.partitionStates()));
         }
     }
+
+    @Test
+    public void testIsrUpdate() throws Exception {
+        TestEnv env = new TestEnv("testBrokerUpdate");
+        ReplicationManager replicationManager = createTestReplicationManager();
+        env.propagationManager.initialize(replicationManager);
+        env.propagationManager.maybeSendRequests(100L, replicationManager, env.propagator);
+        env.propagator.clear();
+        TopicDelta isrUpdate = new TopicDelta();
+        isrUpdate.isrChanges.put(new TopicPartition("bar", 0),
+            new IsrChange(1, 101, Arrays.asList(1, 0, 2), 0, 1));
+        env.propagationManager.handleTopicUpdates(200L, replicationManager, isrUpdate);
+        env.propagationManager.maybeSendRequests(200L, replicationManager, env.propagator);
+        assertEquals(0, env.propagator.numInFlight());
+    }
+
+    // public void testBouncedBroker() throws Exception {
 }
