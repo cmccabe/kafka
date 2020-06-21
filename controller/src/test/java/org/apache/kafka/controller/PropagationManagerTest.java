@@ -29,6 +29,7 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.LeaderAndIsrRequest;
 import org.apache.kafka.common.requests.UpdateMetadataRequest;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
+import org.apache.kafka.controller.PropagationManager.PendingRequest;
 import org.apache.kafka.controller.TopicDelta.IsrChange;
 import org.junit.Rule;
 import org.junit.Test;
@@ -43,6 +44,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 
 public class PropagationManagerTest {
@@ -108,7 +110,7 @@ public class PropagationManagerTest {
 
     private static MetadataState.BrokerCollection newBrokers() {
         MetadataState.BrokerCollection brokers = new MetadataState.BrokerCollection();
-        for (int brokerId = 0; brokerId < 3; brokerId++) {
+        for (int brokerId = 0; brokerId < 4; brokerId++) {
             MetadataState.Broker broker = brokers.getOrCreate(brokerId);
             broker.setBrokerEpoch(123 + brokerId);
             broker.endPoints().getOrCreate("PLAINTEXT").
@@ -163,12 +165,14 @@ public class PropagationManagerTest {
         ReplicationManager replicationManager = createTestReplicationManager();
         env.propagationManager.initialize(replicationManager);
         assertEquals(null, env.propagationManager.nodes());
-        assertEquals(new HashSet<>(Arrays.asList(0, 1, 2)),
+        assertEquals(new HashSet<>(Arrays.asList(0, 1, 2, 3)),
             env.propagationManager.brokers().keySet());
         assertEquals(Arrays.asList(new Node(0, "host0", 9093, "rack0"),
             new Node(1, "host1", 9093, "rack1"),
-            new Node(2, "host2", 9093, "rack0")),
+            new Node(2, "host2", 9093, "rack0"),
+            new Node(3, "host3", 9093, "rack1")),
             env.propagationManager.recalculateNodes(replicationManager));
+        assertEquals(100L, env.propagationManager.coalesceDelayNs());
     }
 
     static Map<TopicPartition, UpdateMetadataPartitionState>
@@ -262,6 +266,28 @@ public class PropagationManagerTest {
             new IsrChange(1, 101, Arrays.asList(1, 0, 2), 0, 1));
         env.propagationManager.handleTopicUpdates(200L, replicationManager, isrUpdate);
         env.propagationManager.maybeSendRequests(200L, replicationManager, env.propagator);
+        assertEquals(0, env.propagator.numInFlight());
+
+        for (int brokerId : Arrays.asList(0, 1, 2)) {
+            PendingRequest pending = env.propagationManager.brokers().get(brokerId).
+                pendingLeaderAndIsr;
+            assertNotNull(pending);
+            assertFalse(pending.isFull());
+            assertEquals(new HashSet<>(Arrays.asList("bar")), pending.topics());
+            assertEquals(300L, pending.earliestSendTimeNs());
+        }
+        assertEquals(null, env.propagationManager.brokers().get(3).pendingLeaderAndIsr);
+
+        for (int brokerId : Arrays.asList(0, 1, 2, 3)) {
+            PendingRequest pending = env.propagationManager.brokers().get(brokerId).
+                pendingUpdateMetadata;
+            assertNotNull(pending);
+            assertFalse(pending.isFull());
+            assertEquals(new HashSet<>(Arrays.asList("bar")), pending.topics());
+            assertEquals(300L, pending.earliestSendTimeNs());
+        }
+
+        env.propagationManager.maybeSendRequests(250L, replicationManager, env.propagator);
         assertEquals(0, env.propagator.numInFlight());
     }
 

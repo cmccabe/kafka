@@ -711,4 +711,9 @@ public class PropagationManager {
     List<Node> nodes() {
         return nodes;
     }
+
+    // Visible for testing
+    long coalesceDelayNs() {
+        return coalesceDelayNs;
+    }
 }
