@@ -174,13 +174,13 @@
   <subpackage name="controller">
     <allow pkg="kafka" />
     <allow pkg="org.apache.kafka.clients" />
-    <allow pkg="org.apache.kafka.common.controller" />
     <allow pkg="org.apache.kafka.common.feature" />
     <allow pkg="org.apache.kafka.common.message" />
     <allow pkg="org.apache.kafka.common.metrics" />
     <allow pkg="org.apache.kafka.common.network" />
     <allow pkg="org.apache.kafka.common.protocol" />
     <allow pkg="org.apache.kafka.common.requests" />
+    <allow pkg="org.apache.kafka.controller" />
     <allow pkg="org.apache.kafka.test" />
     <allow pkg="org.apache.zookeeper.client" />
     <allow pkg="scala" />

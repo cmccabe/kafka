@@ -84,7 +84,7 @@ public class MockPropagator implements Propagator {
 
     public void clear() {
         this.nodes = Collections.emptyList();
-        this.inFlight.clear();;
+        this.inFlight.clear();
     }
 
     @Override

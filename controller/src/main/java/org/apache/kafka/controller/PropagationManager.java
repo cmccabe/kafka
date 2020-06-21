@@ -17,7 +17,6 @@
 
 package org.apache.kafka.controller;
 
-import kafka.cluster.Replica;
 import kafka.common.RequestAndCompletionHandler;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.clients.ClientResponse;

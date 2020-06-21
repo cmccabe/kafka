@@ -257,4 +257,8 @@
     <suppress checks="JavaNCSS"
               files="RequestResponseTest.java"/>
 
+    <!-- Controller -->
+    <suppress checks="NPathComplexity"
+              files="PropagationManager.java"/>
+
 </suppressions>
