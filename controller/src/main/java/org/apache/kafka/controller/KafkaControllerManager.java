@@ -136,7 +136,7 @@ public final class KafkaControllerManager implements ControllerManager {
 
         void handleBrokerUpdates(BrokerDelta delta) {
             long nowNs = time.nanoseconds();
-            propagationManager.handleBrokerUpdates(nowNs, delta);
+            propagationManager.handleBrokerUpdates(nowNs, replicationManager, delta);
             maybePropagate(nowNs);
         }
 

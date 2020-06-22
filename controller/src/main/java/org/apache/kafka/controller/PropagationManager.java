@@ -53,8 +53,7 @@ import java.util.Set;
  * the rest of the cluster.
  *
  * Its methods are intended to be called from the KafkaControllerManager's main queue
- * thread.  Therefore, there is no internal synchronization, except where we are
- * interfacing with the Propagator.
+ * thread.  Therefore, there is no internal synchronization.
  */
 public class PropagationManager {
     /**
@@ -230,6 +229,14 @@ public class PropagationManager {
             this.earliestSendTimeNs = earliestSendTimeNs;
         }
 
+        /**
+         * Create a pending partial or full request.
+         */
+        PendingRequest(Set<String> topics, long earliestSendTimeNs) {
+            this.topics = topics;
+            this.earliestSendTimeNs = earliestSendTimeNs;
+        }
+
         boolean isFull() {
             return topics == null;
         }
@@ -271,9 +278,12 @@ public class PropagationManager {
      * A request which we are in the process of sending.
      */
     static class InFlightRequest {
+        private final Set<String> topics;
+
         private final long sendTimeNs;
 
-        InFlightRequest(long sendTimeNs) {
+        InFlightRequest(Set<String> topics, long sendTimeNs) {
+            this.topics = topics;
             this.sendTimeNs = sendTimeNs;
         }
 
@@ -405,7 +415,7 @@ public class PropagationManager {
                 destBroker.id);
             return;
         }
-        if (destBroker.pendingUpdateMetadata.earliestSendTimeNs > nowNs) {
+        if (nowNs < destBroker.pendingUpdateMetadata.earliestSendTimeNs) {
             log.trace("Broker {} is still waiting to send an update metadata request.",
                 destBroker.id);
             return;
@@ -453,6 +463,8 @@ public class PropagationManager {
             for (Topic topic : state.topics()) {
                 createUmrTopicEntry(data, topic);
             }
+            log.debug("Creating new full UpdateMetadataRequest for {} with {} topic(s).",
+                destBroker.id, state.topics().size());
         } else {
             for (String topicName : destBroker.pendingUpdateMetadata.topics) {
                 Topic topic = state.topics().find(topicName);
@@ -462,9 +474,12 @@ public class PropagationManager {
                 }
                 createUmrTopicEntry(data, topic);
             }
+            log.debug("Creating new incremental UpdateMetadataRequest for {} with {} " +
+                "topic(s).", destBroker.id, destBroker.pendingUpdateMetadata.topics.size());
         }
+        destBroker.inFlightUpdateMetadata =
+            new InFlightRequest(destBroker.pendingUpdateMetadata.topics(), nowNs);
         destBroker.pendingUpdateMetadata = null;
-        destBroker.inFlightUpdateMetadata = new InFlightRequest(nowNs);
         requests.add(new RequestAndCompletionHandler(
             brokerToNode(destBrokerState, targetListener),
             new SimpleUpdateMetadataRequestBuilder(data),
@@ -521,7 +536,7 @@ public class PropagationManager {
                 destBroker.id);
             return;
         }
-        if (destBroker.pendingLeaderAndIsr .earliestSendTimeNs > nowNs) {
+        if (nowNs < destBroker.pendingLeaderAndIsr.earliestSendTimeNs) {
             log.trace("Broker {} is still waiting to send a leader and isr request.",
                 destBroker.id);
             return;
@@ -555,8 +570,10 @@ public class PropagationManager {
             for (Topic topic : state.topics()) {
                 createIsrTopicEntry(data, topic);
             }
+            log.debug("Creating new full LeaderAndIsrRequest for {} with {} topic(s).",
+                destBroker.id, state.topics().size());
         } else {
-            for (String topicName : destBroker.pendingUpdateMetadata.topics) {
+            for (String topicName : destBroker.pendingLeaderAndIsr.topics) {
                 Topic topic = state.topics().find(topicName);
                 if (topic == null) {
                     throw new RuntimeException("Unable to locate topic " + topicName +
@@ -564,9 +581,12 @@ public class PropagationManager {
                 }
                 createIsrTopicEntry(data, topic);
             }
+            log.debug("Creating new incremental LeaderAndIsrRequest for {} with {} " +
+                "topic(s).", destBroker.id, destBroker.pendingLeaderAndIsr.topics.size());
         }
+        destBroker.inFlightLeaderAndIsr =
+            new InFlightRequest(destBroker.pendingLeaderAndIsr.topics(), nowNs);
         destBroker.pendingLeaderAndIsr = null;
-        destBroker.inFlightLeaderAndIsr = new InFlightRequest(nowNs);
         requests.add(new RequestAndCompletionHandler(
             brokerToNode(destBrokerState, targetListener),
             new SimpleLeaderAndIsrRequestBuilder(data),
@@ -611,12 +631,15 @@ public class PropagationManager {
         return part;
     }
 
-    public void handleBrokerUpdates(long nowNs, BrokerDelta delta) {
+    public void handleBrokerUpdates(long nowNs, ReplicationManager replicationManager,
+                                    BrokerDelta delta) {
+        boolean changed = false;
         for (int brokerId : delta.deletedBrokerIds()) {
-            DestinationBroker prevBroker = brokers.remove(brokerId);
-            if (prevBroker == null) {
-                throw new RuntimeException("BrokerDelta tried to remove non-existent " +
-                    "broker id " + brokerId);
+            if (!replicationManager.hasInSyncReplicas(brokerId)) {
+                // Don't remove the broker until we have removed it from the ISR
+                // of all partitions.
+                brokers.remove(brokerId);
+                changed = true;
             }
         }
         for (Broker broker : delta.changedBrokers()) {
@@ -624,20 +647,20 @@ public class PropagationManager {
             if (destBroker == null) {
                 destBroker = new DestinationBroker(broker.brokerId());
                 brokers.put(broker.brokerId(), destBroker);
+                changed = true;
             }
         }
-        nodes = null; // Invalidate the nodes cache so that we will recalculate it later.
-        for (DestinationBroker broker : brokers.values()) {
-            if (broker.pendingLeaderAndIsr == null) {
-                broker.pendingLeaderAndIsr = new PendingRequest(nowNs + coalesceDelayNs);
-            }
-            if (broker.pendingUpdateMetadata == null) {
-                broker.pendingUpdateMetadata = new PendingRequest(nowNs + coalesceDelayNs);
+        if (changed) {
+            nodes = null; // Invalidate the nodes cache so that we will recalculate it later.
+            for (DestinationBroker broker : brokers.values()) {
+                if (broker.pendingLeaderAndIsr == null) {
+                    broker.pendingLeaderAndIsr = new PendingRequest(nowNs + coalesceDelayNs);
+                }
+                if (broker.pendingUpdateMetadata == null) {
+                    broker.pendingUpdateMetadata = new PendingRequest(nowNs + coalesceDelayNs);
+                }
             }
         }
-        // TODO: is it a problem that we still might have stuff in the ISR that is not
-        //  in the broker list?  It should be handled by handleTopicUpdates when coalesce
-        //  is on, but what if not?
     }
 
     public void handleTopicUpdates(long nowNs, ReplicationManager replicationManager,
@@ -700,6 +723,38 @@ public class PropagationManager {
         if (part.removingReplicas().contains(brokerId)) return true;
         if (part.addingReplicas().contains(brokerId)) return true;
         return false;
+    }
+
+    public void completeUpdateMetadataRequest(int brokerId, boolean success) {
+        DestinationBroker broker = brokers.get(brokerId);
+        if (broker == null) {
+            log.debug("Ignoring result of UpdateMetadataRequest to {} since we are " +
+                "no longer tracking that broker.", brokerId);
+            return;
+        }
+        if (!success) {
+            InFlightRequest inFlightRequest = broker.inFlightUpdateMetadata;
+            // TODO: add exponential backoff behavior
+            broker.pendingUpdateMetadata =
+                new PendingRequest(inFlightRequest.topics, inFlightRequest.sendTimeNs);
+        }
+        broker.inFlightUpdateMetadata = null;
+    }
+
+    public void completeLeaderAndIsr(int brokerId, boolean success) {
+        DestinationBroker broker = brokers.get(brokerId);
+        if (broker == null) {
+            log.debug("Ignoring result of LeaderAndIsrRequest to {} since we are " +
+                "no longer tracking that broker.", brokerId);
+            return;
+        }
+        if (!success) {
+            InFlightRequest inFlightRequest = broker.inFlightLeaderAndIsr;
+            // TODO: add exponential backoff behavior
+            broker.pendingLeaderAndIsr =
+                new PendingRequest(inFlightRequest.topics, inFlightRequest.sendTimeNs);
+        }
+        broker.inFlightLeaderAndIsr = null;
     }
 
     // Visible for testing

@@ -17,9 +17,44 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataState;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * The ReplicaManager manages the partition replication.
+ *
+ * There are two kinds of partition state that it manages.  The first is hard state, which
+ * is ultimately stored in the backing store.  This includes things like partition epochs,
+ * ISR membership, and so on.  The second kind is soft state which exists only in memory.
+ *
+ * Its methods are intended to be called from the KafkaControllerManager's main queue
+ * thread.  Therefore, there is no internal synchronization.
+ */
 public final class ReplicationManager {
+    enum ReplicaState {
+        /**
+         * The replica is present on the broker, but not in sync.
+         */
+        PRESENT,
+
+        /**
+         * The replica is present on the broker and in sync.
+         */
+        IN_SYNC,
+    }
+
+    /**
+     * Maps broker ids to maps of replica state to partition sets.
+     * This allows us to quickly iterate over all the partitions in a given state on a
+     * given broker.
+     */
+    private final Map<Integer, Map<ReplicaState, Set<TopicPartition>>>
+        replicaStates = new HashMap<>();
+
     /**
      * The current metadata state.  Only changes which have been written to the backing
      * store are included here.
@@ -35,6 +70,20 @@ public final class ReplicationManager {
      */
     public MetadataState state() {
         return state;
+    }
+
+    /**
+     * Checks if a given broker has any in-sync replicas.
+     *
+     * @param brokerId  The broker ID to check.
+     * @return          True only if the broker has any in-sync replicas.
+     */
+    boolean hasInSyncReplicas(int brokerId) {
+        Map<ReplicaState, Set<TopicPartition>> statesToReplicas = replicaStates.get(brokerId);
+        if (statesToReplicas == null) return false;
+        Set<TopicPartition> partitions = statesToReplicas.get(ReplicaState.IN_SYNC);
+        if (partitions == null) return false;
+        return !partitions.isEmpty();
     }
 
 //    private final ControllerLogContext logContext;

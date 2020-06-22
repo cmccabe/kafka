@@ -256,14 +256,21 @@ public class PropagationManagerTest {
 
     @Test
     public void testIsrUpdate() throws Exception {
-        TestEnv env = new TestEnv("testBrokerUpdate");
+        TestEnv env = new TestEnv("testIsrUpdate");
         ReplicationManager replicationManager = createTestReplicationManager();
         env.propagationManager.initialize(replicationManager);
+        log.debug("maybe sending requests at time 100");
         env.propagationManager.maybeSendRequests(100L, replicationManager, env.propagator);
+        assertEquals(8, env.propagator.numInFlight());
         env.propagator.clear();
         TopicDelta isrUpdate = new TopicDelta();
         isrUpdate.isrChanges.put(new TopicPartition("bar", 0),
             new IsrChange(1, 101, Arrays.asList(1, 0, 2), 0, 1));
+        log.debug("maybe sending requests at time 200");
+        for (int brokerId = 0; brokerId < 4; brokerId++) {
+            env.propagationManager.completeUpdateMetadataRequest(brokerId, true);
+            env.propagationManager.completeLeaderAndIsr(brokerId, true);
+        }
         env.propagationManager.handleTopicUpdates(200L, replicationManager, isrUpdate);
         env.propagationManager.maybeSendRequests(200L, replicationManager, env.propagator);
         assertEquals(0, env.propagator.numInFlight());
@@ -287,9 +294,24 @@ public class PropagationManagerTest {
             assertEquals(300L, pending.earliestSendTimeNs());
         }
 
+        log.debug("maybe sending requests at time 250");
         env.propagationManager.maybeSendRequests(250L, replicationManager, env.propagator);
         assertEquals(0, env.propagator.numInFlight());
+        log.debug("sending requests at time 300");
+        env.propagationManager.maybeSendRequests(300L, replicationManager, env.propagator);
+        assertEquals(7, env.propagator.numInFlight());
     }
 
-    // public void testBouncedBroker() throws Exception {
+    @Test
+    public void testBouncedBroker() throws Exception {
+        TestEnv env = new TestEnv("testBouncedBroker");
+        ReplicationManager replicationManager = createTestReplicationManager();
+        env.propagationManager.initialize(replicationManager);
+        env.propagationManager.maybeSendRequests(100L, replicationManager, env.propagator);
+        env.propagator.clear();
+        BrokerDelta delta = new BrokerDelta();
+        delta.deletedBrokerIds().add(3);
+        delta.changedBrokers().add(replicationManager.state().brokers().find(3).duplicate());
+        // TODO: test some properties here
+    }
 }

@@ -19,11 +19,17 @@ package org.apache.kafka.controller;
 
 import org.apache.kafka.common.message.MetadataState.Broker;
 
+import java.util.ArrayList;
 import java.util.List;
 
 class BrokerDelta {
     private final List<Broker> changedBrokers;
     private final List<Integer> deletedBrokerIds;
+
+    BrokerDelta() {
+        this.changedBrokers = new ArrayList<>();
+        this.deletedBrokerIds = new ArrayList<>();
+    }
 
     BrokerDelta(List<Broker> changedBrokers,
                 List<Integer> deletedBrokerIds) {
