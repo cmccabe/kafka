@@ -1,0 +1,22 @@
+{
+  "apiKey": 5,
+  "type": "metadataRecord",
+  "name": "AccessControlRecord",
+  "validVersions": "0",
+  "fields": [
+    { "name": "ResourceType", "type": "int8", "versions": "0+",
+      "about": "The resource type" },
+    { "name": "ResourceName", "type": "string", "versions": "0+", "nullableVersions": "0+",
+      "about": "The resource name, or null if this is for the default resource." },
+    { "name": "PatternType", "type": "int8", "versions": "0+",
+      "about": "The pattern type (literal, prefixed, etc.)" },
+    { "name": "Principal", "type": "string", "versions": "0+",
+      "about": "The principal name." },
+    { "name": "Host", "type": "string", "versions": "0+",
+      "about": "The host." },
+    { "name": "Operation", "type": "int8", "versions": "0+",
+      "about": "The operation type." },
+    { "name": "PermissionType", "type": "int8", "versions": "0+",
+      "about": "The permission type (allow, deny)." }
+  ]
+}

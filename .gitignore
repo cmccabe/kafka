@@ -53,6 +53,7 @@ systest/
 *.swp
 clients/src/generated
 clients/src/generated-test
+controller/src/generated
 jmh-benchmarks/generated
 jmh-benchmarks/src/main/generated
 streams/src/generated

@@ -1,0 +1,16 @@
+{        
+  "apiKey": 3,
+  "type": "metadataRecord",
+  "name": "ConfigRecord",
+  "validVersions": "0",
+  "fields": [
+    { "name": "ResourceType", "type": "int8", "versions": "0+",
+      "about": "The type of resource this configuration applies to." },
+    { "name": "ResourceName", "type": "string", "versions": "0+",
+      "about": "The name of the resource this configuration applies to." },        
+    { "name": "Name", "type": "string", "versions": "0+",
+      "about": "The name of the configuration key." },                 
+    { "name": "Value", "type": "string", "versions": "0+",    
+      "about": "The value of the configuration." }
+  ]          
+}

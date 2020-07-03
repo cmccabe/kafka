@@ -1,0 +1,25 @@
+{
+  "apiKey": 0,
+  "type": "metadataRecord",
+  "name": "BrokerRecord",
+  "validVersions": "0",
+  "fields": [
+    { "name": "BrokerId", "type": "int32", "versions": "0+",
+      "about": "The broker id." },
+    { "name": "BrokerEpoch", "type": "int64", "versions": "0+",
+      "about": "The broker epoch." },
+    { "name": "EndPoints", "type": "[]BrokerEndpoint", "versions": "0+",
+      "about": "The endpoints that can be used to communicate with this broker.", "fields": [
+        { "name": "Name", "type": "string", "versions": "0+", "mapKey": true,
+          "about": "The name of the endpoint." },
+        { "name": "Host", "type": "string", "versions": "0+",
+          "about": "The hostname." },
+        { "name": "Port", "type": "int16", "versions": "0+",
+          "about": "The port." },
+        { "name": "SecurityProtocol", "type": "int16", "versions": "0+",
+          "about": "The security protocol." }
+    ]},
+    { "name": "Rack", "type": "string", "versions": "0+", "nullableVersions": "0+",
+      "about": "The broker rack." }
+  ]
+}

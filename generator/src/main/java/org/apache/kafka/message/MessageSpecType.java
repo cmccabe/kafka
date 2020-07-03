@@ -29,6 +29,9 @@ public enum MessageSpecType {
     @JsonProperty("header")
     HEADER,
 
+    @JsonProperty("metadataRecord")
+    METADATA_RECORD,
+
     @JsonProperty("data")
     DATA;
 }
