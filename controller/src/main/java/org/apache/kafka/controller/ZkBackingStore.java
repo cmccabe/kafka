@@ -574,8 +574,8 @@ public class ZkBackingStore implements BackingStore {
             checkIsStarted();
             // Unfortunately, the ZK watch does not say which child znode was created
             // or deleted, so we have to re-read everything.
-            List<MetadataState.Broker> changed = new ArrayList<>();
             BrokerCollection newBrokers = loadBrokerChildren();
+            BrokerDelta delta = new BrokerDelta();
             for (MetadataState.Broker newBroker : newBrokers) {
                 MetadataState.Broker existingBroker =
                     activeState.metadata.brokers().find(newBroker);
@@ -584,19 +584,17 @@ public class ZkBackingStore implements BackingStore {
                         registerBrokerChangeHandler(activeState.controllerEpoch,
                                 newBroker.brokerId());
                     }
-                    changed.add(newBroker.duplicate());
+                    delta.changedBrokers().add(newBroker.duplicate());
                 }
             }
-            List<Integer> deleted = new ArrayList<>();
             for (MetadataState.Broker existingBroker : activeState.metadata.brokers()) {
                 if (newBrokers.find(existingBroker) == null) {
-                    deleted.add(existingBroker.brokerId());
+                    delta.deletedBrokerIds().add(existingBroker.brokerId());
                     unregisterBrokerChangeHandler(existingBroker.brokerId());
                 }
             }
             activeState.metadata.setBrokers(newBrokers);
-            callbackHandler.handleBrokerUpdates(activeState.controllerEpoch,
-                new BrokerDelta(changed, deleted));
+            callbackHandler.handleBrokerUpdates(activeState.controllerEpoch, delta);
             return null;
         }
     }
@@ -626,8 +624,7 @@ public class ZkBackingStore implements BackingStore {
                 log.debug("{}: broker {} is now gone.", name(), brokerId);
                 activeState.metadata.brokers().remove(existingBroker);
                 callbackHandler.handleBrokerUpdates(activeState.controllerEpoch,
-                    new BrokerDelta(Collections.emptyList(),
-                        Collections.singletonList(brokerId)));
+                    BrokerDelta.fromRemovedBrokerId(brokerId));
                 return null;
             }
             MetadataState.Broker stateBroker = ControllerUtils.
@@ -640,8 +637,7 @@ public class ZkBackingStore implements BackingStore {
                 activeState.metadata.brokers().remove(existingBroker);
                 activeState.metadata.brokers().add(stateBroker);
                 callbackHandler.handleBrokerUpdates(activeState.controllerEpoch,
-                    new BrokerDelta(Collections.singletonList(stateBroker.duplicate()),
-                        Collections.emptyList()));
+                    BrokerDelta.fromChangedBroker(stateBroker.duplicate()));
             } else {
                 log.debug("{}: The information for broker {} is unchanged.",
                     name(), brokerId);

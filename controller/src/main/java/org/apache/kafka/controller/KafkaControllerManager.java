@@ -142,6 +142,7 @@ public final class KafkaControllerManager implements ControllerManager {
 
         void handleTopicUpdates(TopicDelta delta) {
             long nowNs = time.nanoseconds();
+            replicationManager.handleTopicUpdates(delta);
             propagationManager.handleTopicUpdates(nowNs, replicationManager, delta);
             maybePropagate(nowNs);
         }

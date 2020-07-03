@@ -20,7 +20,9 @@ package org.apache.kafka.controller;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataState;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -86,71 +88,44 @@ public final class ReplicationManager {
         return !partitions.isEmpty();
     }
 
-//    private final ControllerLogContext logContext;
-//    private final Logger log;
-//    private final int controllerEpoch;
-//    private final BackingStore backingStore;
-//    private final EventQueue mainQueue;
-//    private final MetadataState state;
-//
-//    KafkaController(ControllerLogContext logContext,
-//                    int controllerEpoch,
-//                    BackingStore backingStore,
-//                    EventQueue mainQueue,
-//                    MetadataState state) {
-//        this.logContext = logContext;
-//        this.log = new LogContext(logContext.logContext().logPrefix() +
-//            " [epoch " + controllerEpoch + "] ").logger(KafkaController.class);
-//        this.controllerEpoch = controllerEpoch;
-//        this.backingStore = backingStore;
-//        this.mainQueue = mainQueue;
-//        this.state = state;
-//    }
-//
-//    public int controllerEpoch() {
-//        return controllerEpoch;
-//    }
-//
-//    static class PropagatorDelta {
-//        private final Map<Integer, PropagatorBrokerDelta> brokerDeltas = new HashMap<>();
-//
-//        private void addFullBrokerUpdate(int brokerId) {
-//            brokerDeltas.put(brokerId, new PropagatorBrokerDelta(true));
-//        }
-//    }
-//
-//    static class PropagatorBrokerDelta {
-//        private final boolean full;
-//
-//        PropagatorBrokerDelta(boolean full) {
-//            this.full = full;
-//        }
-//    }
-//
-//    public void handleBrokerUpdates(List<MetadataState.Broker> changedBrokers,
-//                                    List<Integer> deletedBrokerIds,
-//                                    PropagatorDelta propagatorDelta,
-//                                    TopicDelta topicDelta) {
-//        // Process changed brokers.
-//        for (MetadataState.Broker changedBroker : changedBrokers) {
-//            MetadataState.Broker existingBroker =
-//                state.brokers().find(changedBroker.brokerId());
-//            // TODO: what does this mean for the topicDelta?  Do we have to do anything here?
-//            if (existingBroker == null) {
-//                state.brokers().mustAdd(changedBroker);
-//                // Send out a full update to the new broker.
-//                propagatorDelta.addFullBrokerUpdate(changedBroker.brokerId());
-//            } else {
-//                if (existingBroker.brokerEpoch() != changedBroker.brokerEpoch()) {
-//                    // The broker was bounced, so we should send out a full update.
-//                    propagatorDelta.addFullBrokerUpdate(existingBroker.brokerId());
-//                }
-//                // Update our cached information.
-//                state.brokers().remove(existingBroker);
-//            }
-//            state.brokers().mustAdd(changedBroker);
-//        }
-//
+    /**
+     * Handle changes to the set of brokers.
+     *
+     * @param delta     The delta to apply.
+     */
+    public void handleBrokerUpdates(BrokerDelta delta, BackingStore backingStore) {
+        IsrDelta isrDelta = new IsrDelta();
+        for (int brokerId : delta.deletedBrokerIds()) {
+            if (delta.changedBrokers().find(brokerId) != null) {
+                // If the broker appears in both changed brokers and deleted broker IDs,
+                // it was bounced, and not removed.  So we don't need to take any action
+                // regarding its in-sync replicas.
+                continue;
+            }
+            // For brokers that were removed, we want to remove their replicas from the
+            // in-sync replica set.
+            Map<ReplicaState, Set<TopicPartition>> replicas =
+                replicaStates.getOrDefault(brokerId, Collections.emptyMap());
+            Set<TopicPartition> topicParts =
+                replicas.getOrDefault(ReplicaState.IN_SYNC, Collections.emptySet());
+            if (!topicParts.isEmpty()) {
+                // Remove all replica entries for the removed broker.
+                // TODO: include dirty vs. clean election configuration here
+                isrDelta.replicaRemovals.add(new ReplicaRemoval(brokerId,
+                    new HashSet<>(topicParts)));
+            }
+        }
+    }
+
+    /**
+     * Handle changes to topics and partitions.
+     *
+     * @param delta     The delta to apply.
+     */
+    public void handleTopicUpdates(TopicDelta delta) {
+        delta.apply(state.topics());
+    }
+
 //        // Process deleted brokers.
 //        for (int brokerId : deletedBrokerIds) {
 //            Map<ReplicaState, Set<TopicPartition>> statesToParts =

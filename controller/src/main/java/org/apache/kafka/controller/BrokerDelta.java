@@ -18,26 +18,33 @@
 package org.apache.kafka.controller;
 
 import org.apache.kafka.common.message.MetadataState.Broker;
+import org.apache.kafka.common.message.MetadataState.BrokerCollection;
 
 import java.util.ArrayList;
 import java.util.List;
 
 class BrokerDelta {
-    private final List<Broker> changedBrokers;
+    public static BrokerDelta fromChangedBroker(Broker broker) {
+        BrokerDelta delta = new BrokerDelta();
+        delta.changedBrokers.add(broker);
+        return delta;
+    }
+
+    public static BrokerDelta fromRemovedBrokerId(int brokerId) {
+        BrokerDelta delta = new BrokerDelta();
+        delta.deletedBrokerIds.add(brokerId);
+        return delta;
+    }
+
+    private final BrokerCollection changedBrokers;
     private final List<Integer> deletedBrokerIds;
 
     BrokerDelta() {
-        this.changedBrokers = new ArrayList<>();
+        this.changedBrokers = new BrokerCollection();
         this.deletedBrokerIds = new ArrayList<>();
     }
 
-    BrokerDelta(List<Broker> changedBrokers,
-                List<Integer> deletedBrokerIds) {
-        this.changedBrokers = changedBrokers;
-        this.deletedBrokerIds = deletedBrokerIds;
-    }
-
-    public List<Broker> changedBrokers() {
+    public BrokerCollection changedBrokers() {
         return changedBrokers;
     }
 
