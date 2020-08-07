@@ -17,12 +17,8 @@
 
 package org.apache.kafka.controller;
 
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.UnsupportedVersionException;
-import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.metadata.BrokerRegistration;
 
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public final class QuorumController implements Controller {
@@ -30,21 +26,8 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<Map<TopicPartition, Errors>>
-            alterIsr(int brokerId, long brokerEpoch,
-                     Map<TopicPartition, LeaderAndIsr> changes) {
-        CompletableFuture<Map<TopicPartition, Errors>> future = new CompletableFuture<>();
-        future.completeExceptionally(new UnsupportedVersionException("unimplemented"));
-        return future;
-    }
-
-    @Override
-    public CompletableFuture<Map<TopicPartition, PartitionLeaderElectionResult>>
-            electLeaders(int timeoutMs, Set<TopicPartition> parts, boolean unclean) {
-        CompletableFuture<Map<TopicPartition, PartitionLeaderElectionResult>> future =
-            new CompletableFuture<>();
-        future.completeExceptionally(new UnsupportedVersionException("unimplemented"));
-        return future;
+    public CompletableFuture<Void> handleBrokerHeartbeat(BrokerRegistration registration) {
+        return null;
     }
 
     @Override

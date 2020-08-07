@@ -17,7 +17,7 @@
 
 package org.apache.kafka.controller;
 
-import org.apache.kafka.common.metadata.BrokerRecord;
+import org.apache.kafka.common.metadata.BrokerRegistration;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.ApiMessageAndVersion;
 import org.apache.kafka.controller.LocalLogManager.LeaderInfo;
@@ -233,10 +233,10 @@ public class LocalLogManagerTest {
     @Test
     public void testCommits() throws Exception {
         CommitChecker checker = new CommitChecker(Arrays.asList(
-            new TestCommit(0, 0, new BrokerRecord().setBrokerId(0)),
-            new TestCommit(0, 1, new BrokerRecord().setBrokerId(1)),
-            new TestCommit(0, 2, new BrokerRecord().setBrokerId(2)),
-            new TestCommit(0, 3, new BrokerRecord().setBrokerId(0))
+            new TestCommit(0, 0, new BrokerRegistration().setBrokerId(0)),
+            new TestCommit(0, 1, new BrokerRegistration().setBrokerId(1)),
+            new TestCommit(0, 2, new BrokerRegistration().setBrokerId(2)),
+            new TestCommit(0, 3, new BrokerRegistration().setBrokerId(0))
         ));
         try (LocalLogManagerTestEnv env = new LocalLogManagerTestEnv(checker, 3)) {
             LeaderInfo leaderInfo = env.waitForLeader();

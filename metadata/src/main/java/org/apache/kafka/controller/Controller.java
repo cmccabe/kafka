@@ -17,38 +17,18 @@
 
 package org.apache.kafka.controller;
 
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.metadata.BrokerRegistration;
 
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public interface Controller extends AutoCloseable {
     /**
-     * Change partition ISRs.
+     * Handle a broker heartbeat.
      *
-     * @param brokerId      The ID of the broker making the change.
-     * @param brokerEpoch   The epoch of the broker making the change.
-     * @param changes       The changes to make.
-     *
-     * @return              A map from partitions to error results.
+     * @param registration
+     * @return
      */
-    CompletableFuture<Map<TopicPartition, Errors>>
-        alterIsr(int brokerId, long brokerEpoch, Map<TopicPartition, LeaderAndIsr> changes);
-
-    /**
-     * Elect new partition leaders.
-     *
-     * @param timeoutMs     The timeout to use.
-     * @param parts         The partitions to elect new leaders for.
-     * @param unclean       If this is true, we will elect the first live replic if
-     *                      there are no in-sync replicas.
-     *
-     * @return              A map from partitions to error results.
-     */
-    CompletableFuture<Map<TopicPartition, PartitionLeaderElectionResult>>
-        electLeaders(int timeoutMs, Set<TopicPartition> parts, boolean unclean);
+    CompletableFuture<Void> handleBrokerHeartbeat(BrokerRegistration registration);
 
     /**
      * Begin shutting down, but don't block.  You must still call close to clean up all
