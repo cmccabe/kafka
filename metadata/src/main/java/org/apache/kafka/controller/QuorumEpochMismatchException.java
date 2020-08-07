@@ -17,25 +17,5 @@
 
 package org.apache.kafka.controller;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-public class QuorumControllerTest {
-    private static final Logger log = LoggerFactory.getLogger(QuorumControllerTest.class);
-
-    @Rule
-    final public Timeout globalTimeout = Timeout.seconds(40);
-
-    @Test
-    public void testCreateAndClose() throws Throwable {
-        try (LocalLogManagerTestEnv env = new LocalLogManagerTestEnv(1)) {
-            try (QuorumController controller = new QuorumControllerFactory().
-                    setNodeId(0).
-                    setMetaLogManager(env.logManagers().get(0)).build()) {
-            }
-        }
-    }
+public final class QuorumEpochMismatchException extends RuntimeException {
 }

@@ -17,25 +17,14 @@
 
 package org.apache.kafka.controller;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+public final class QuorumLeaderMismatchException extends RuntimeException {
+    private final int currentLeaderId;
 
-public class QuorumControllerTest {
-    private static final Logger log = LoggerFactory.getLogger(QuorumControllerTest.class);
+    public QuorumLeaderMismatchException(int currentLeaderId) {
+        this.currentLeaderId = currentLeaderId;
+    }
 
-    @Rule
-    final public Timeout globalTimeout = Timeout.seconds(40);
-
-    @Test
-    public void testCreateAndClose() throws Throwable {
-        try (LocalLogManagerTestEnv env = new LocalLogManagerTestEnv(1)) {
-            try (QuorumController controller = new QuorumControllerFactory().
-                    setNodeId(0).
-                    setMetaLogManager(env.logManagers().get(0)).build()) {
-            }
-        }
+    public int currentLeaderId() {
+        return currentLeaderId;
     }
 }
