@@ -140,7 +140,7 @@
 
     <!-- Controller -->
     <suppress checks="CyclomaticComplexity|NPathComplexity"
-              files="(LocalDirMetaLog).java"/>
+              files="(LocalLogManager).java"/>
 
     <!-- Streams -->
     <suppress checks="ClassFanOutComplexity"

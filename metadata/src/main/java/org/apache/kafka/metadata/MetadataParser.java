@@ -48,14 +48,14 @@ public class MetadataParser {
             type = unsignedIntToShort(ByteUtils.readUnsignedVarint(buffer), "type");
         } catch (Exception e) {
             throw new MetadataParseException("Failed to read variable-length type " +
-                "number: " + e.getClass().getSimpleName() +": " + e.getMessage());
+                "number: " + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         short version;
         try {
             version = unsignedIntToShort(ByteUtils.readUnsignedVarint(buffer), "version");
         } catch (Exception e) {
             throw new MetadataParseException("Failed to read variable-length " +
-                "version number: " + e.getClass().getSimpleName() +": " + e.getMessage());
+                "version number: " + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         MetadataRecordType recordType = MetadataRecordType.fromId(type);
         ApiMessage message = recordType.newMetadataRecord();

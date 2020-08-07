@@ -17,7 +17,6 @@
 
 package org.apache.kafka.controller;
 
-import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.ApiMessageAndVersion;
 import org.apache.kafka.common.protocol.ObjectSerializationCache;
@@ -37,7 +36,6 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.nio.file.WatchService;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -607,7 +605,7 @@ public final class LocalLogManager implements MetaLogManager {
             }
         }
 
-        long blockingClaim() throws InterruptedException{
+        long blockingClaim() throws InterruptedException {
             lock.lock();
             try {
                 if (log.isTraceEnabled()) {

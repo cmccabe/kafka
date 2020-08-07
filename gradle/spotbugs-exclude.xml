@@ -271,10 +271,13 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
     <Match>
         <!-- Suppress a warning about ignoring the return value of await.
              This is done intentionally because we use other clues to determine
-             if the wait was cut short. -->
+             if the wait was cut short.
+
+             Also suppress a warning about calling wait() unconditionally.  This was done
+             intentionally as well. -->
         <Package name="org.apache.kafka.controller"/>
-        <Source name="LocalDirMetaLog.java"/>
-        <Bug pattern="RV_RETURN_VALUE_IGNORED,RV_RETURN_VALUE_IGNORED_BAD_PRACTICE"/>
+        <Source name="LocalLogManager.java"/>
+        <Bug pattern="RV_RETURN_VALUE_IGNORED,RV_RETURN_VALUE_IGNORED_BAD_PRACTICE,UW_UNCOND_WAIT"/>
     </Match>
 
     <Match>

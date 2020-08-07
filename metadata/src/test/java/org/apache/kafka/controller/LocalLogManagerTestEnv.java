@@ -57,7 +57,7 @@ public class LocalLogManagerTestEnv implements AutoCloseable {
     private final List<LocalLogManager> logManagers;
 
     public LocalLogManagerTestEnv(int numManagers) throws Exception {
-        this((__, ___, ____, _____) -> {}, numManagers);
+        this((__, ___, ____, _____) -> { }, numManagers);
     }
 
     public LocalLogManagerTestEnv(CommitHandler commitHandler,
