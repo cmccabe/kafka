@@ -82,7 +82,7 @@ import java.util.NoSuchElementException;
  * values.
  */
 class SnapshottableHashTable<T extends SnapshottableHashTable.ElementWithStartEpoch>
-        extends BaseHashTable<T> {
+        extends BaseHashTable<T> implements Revertable {
     interface ElementWithStartEpoch {
         void setStartEpoch(long startEpoch);
         long startEpoch();
@@ -321,7 +321,7 @@ class SnapshottableHashTable<T extends SnapshottableHashTable.ElementWithStartEp
             Snapshot snapshot = iter.next();
             HashTier<T> tier = snapshot.data(SnapshottableHashTable.this);
             if (tier == null) {
-                tier = new HashTier<T>(prevSize);
+                tier = new HashTier<>(prevSize);
                 snapshot.setData(SnapshottableHashTable.this, tier);
             }
         }
@@ -382,5 +382,29 @@ class SnapshottableHashTable<T extends SnapshottableHashTable.ElementWithStartEp
         }
         bld.append(String.format("]}%n"));
         return bld.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public void executeRevert(long targetEpoch, Object data) {
+        HashTier<T> tier = (HashTier<T>) data;
+        Iterator<T> iter = snapshottableIterator(Long.MAX_VALUE);
+        while (iter.hasNext()) {
+            T element = iter.next();
+            if (element.startEpoch() > targetEpoch) {
+                iter.remove();
+            }
+        }
+        BaseHashTable<T> deltaTable = tier.deltaTable;
+        if (deltaTable != null) {
+            List<T> out = new ArrayList<>();
+            for (int i = 0; i < deltaTable.baseElements().length; i++) {
+                BaseHashTable.unpackSlot(out, deltaTable.baseElements(), i);
+                for (T value : out) {
+                    baseAddOrReplace(value);
+                }
+                out.clear();
+            }
+        }
     }
 }

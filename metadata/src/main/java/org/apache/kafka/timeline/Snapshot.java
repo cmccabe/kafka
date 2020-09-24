@@ -18,6 +18,7 @@
 package org.apache.kafka.timeline;
 
 import java.util.IdentityHashMap;
+import java.util.Map;
 
 /**
  * A snapshot of some timeline data structures.
@@ -27,24 +28,30 @@ import java.util.IdentityHashMap;
  * the snapshot registry deletes the data for all the structures simultaneously, in
  * O(1) time.
  */
-public class Snapshot {
+class Snapshot {
     private final long epoch;
-    private final IdentityHashMap<Object, Object> map = new IdentityHashMap<>(4);
+    private final IdentityHashMap<Revertable, Object> map = new IdentityHashMap<>(4);
 
-    public Snapshot(long epoch) {
+    Snapshot(long epoch) {
         this.epoch = epoch;
     }
 
-    public long epoch() {
+    long epoch() {
         return epoch;
     }
 
     @SuppressWarnings("unchecked")
-    public <T> T data(Object owner) {
+    <T> T data(Revertable owner) {
         return (T) map.get(owner);
     }
 
-    public <T> void setData(Object owner, T data) {
+    <T> void setData(Revertable owner, T data) {
         map.put(owner, data);
+    }
+
+    void handleRevert() {
+        for (Map.Entry<Revertable, Object> entry : map.entrySet()) {
+            entry.getKey().executeRevert(epoch, entry.getValue());
+        }
     }
 }

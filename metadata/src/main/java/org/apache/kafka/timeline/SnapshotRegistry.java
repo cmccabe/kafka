@@ -83,7 +83,7 @@ public class SnapshotRegistry {
     /**
      * Deletes the snapshot with the given epoch.
      *
-     * @param epoch             this.snapshots = snapshots;        The epoch of the snapshot to delete.
+     * @param epoch             The epoch of the snapshot to delete.
      */
     public void deleteSnapshot(long epoch) {
         Iterator<Snapshot> iter = snapshots.iterator();
@@ -98,6 +98,28 @@ public class SnapshotRegistry {
             "No snapshot at epoch %d found. Snapshot epochs are %s.", epoch,
                 snapshots.stream().map(snapshot -> String.valueOf(snapshot.epoch())).
                     collect(Collectors.joining(", "))));
+    }
+
+    /**
+     * Reverts the state of all data structures to the state at the given epoch.
+     *
+     * @param epoch             The epoch of the snapshot to revert to.
+     */
+    public void revertToSnapshot(long epoch) {
+        Snapshot target = null;
+        for (Iterator<Snapshot> iter = snapshots.iterator(); iter.hasNext(); ) {
+            Snapshot snapshot = iter.next();
+            if (target == null) {
+                if (snapshot.epoch() == epoch) {
+                    target = snapshot;
+                    iter.remove();
+                }
+            } else {
+                iter.remove();
+            }
+        }
+        target.handleRevert();
+        curEpoch = epoch;
     }
 
     /**
