@@ -198,6 +198,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
@@ -5304,6 +5305,52 @@ public class KafkaAdminClientTest {
             // Validate response
             assertNotNull(result.all());
             TestUtils.assertFutureThrows(result.all(), Errors.REQUEST_TIMED_OUT.exception().getClass());
+        }
+    }
+
+    /**
+     * Test that if the client can obtain a node assignment, but can't send to the given
+     * node, it will disconnect and try a different node.
+     */
+    @Test
+    public void testClientSideTimeoutAfterFailureToSend() throws Exception {
+        Cluster cluster = mockCluster(3, 0);
+        CompletableFuture<String> disconnectFuture = new CompletableFuture<>();
+        try (final AdminClientUnitTestEnv env = new AdminClientUnitTestEnv(Time.SYSTEM, cluster,
+                newStrMap(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "1",
+                          AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "100000",
+                          AdminClientConfig.RETRY_BACKOFF_MS_CONFIG, "1"))) {
+            env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
+            for (Node node : cluster.nodes()) {
+                env.kafkaClient().delayReady(node, 22);
+            }
+            env.kafkaClient().setDisconnectFuture(disconnectFuture);
+            final ListTopicsResult result = env.adminClient().listTopics();
+            env.kafkaClient().prepareResponse(prepareMetadataResponse(cluster, Errors.NONE));
+            assertEquals(0, result.listings().get().size());
+            disconnectFuture.get();
+        }
+    }
+
+    /**
+     * Test that if the client can send to a node, but doesn't receive a response, it will
+     * disconnect and try a different node.
+     */
+    @Test
+    public void testClientSideTimeoutAfterFailureToReceiveResponse() throws Exception {
+        Cluster cluster = mockCluster(3, 0);
+        CompletableFuture<String> disconnectFuture = new CompletableFuture<>();
+        try (final AdminClientUnitTestEnv env = new AdminClientUnitTestEnv(Time.SYSTEM, cluster,
+            newStrMap(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "1",
+                AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "100000",
+                AdminClientConfig.RETRY_BACKOFF_MS_CONFIG, "1"))) {
+            env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
+            env.kafkaClient().setDisconnectFuture(disconnectFuture);
+            final ListTopicsResult result = env.adminClient().listTopics();
+            disconnectFuture.get();
+            assertFalse(result.future.isDone());
+            env.kafkaClient().prepareResponse(prepareMetadataResponse(cluster, Errors.NONE));
+            assertEquals(0, result.listings().get().size());
         }
     }
 
