@@ -20,6 +20,7 @@ package kafka.server.metadata
 import java.util
 import java.util.Collections
 
+import kafka.server.metadata.MetadataPartition.NO_LEADER_CHANGE
 import org.apache.kafka.common.message.LeaderAndIsrRequestData
 import org.apache.kafka.common.message.LeaderAndIsrRequestData.LeaderAndIsrPartitionState
 import org.apache.kafka.common.message.UpdateMetadataRequestData.UpdateMetadataPartitionState
@@ -41,8 +42,8 @@ object MetadataPartition {
       record.isr(),
       record.partitionEpoch(),
       Collections.emptyList(), // TODO KAFKA-12285 handle offline replicas
-      Collections.emptyList(),
-      Collections.emptyList())
+      record.removingReplicas(),
+      record.addingReplicas())
   }
 
   def apply(prevPartition: Option[MetadataPartition],
@@ -55,9 +56,8 @@ object MetadataPartition {
       partition.isr(),
       partition.zkVersion(),
       partition.offlineReplicas(),
-      prevPartition.flatMap(p => Some(p.addingReplicas)).getOrElse(Collections.emptyList()),
-      prevPartition.flatMap(p => Some(p.removingReplicas)).getOrElse(Collections.emptyList())
-    )
+      prevPartition.flatMap(p => Some(p.removingReplicas)).getOrElse(Collections.emptyList()),
+      prevPartition.flatMap(p => Some(p.addingReplicas)).getOrElse(Collections.emptyList()))
   }
 }
 
@@ -69,8 +69,8 @@ case class MetadataPartition(topicName: String,
                              isr: util.List[Integer],
                              partitionEpoch: Int,
                              offlineReplicas: util.List[Integer],
-                             addingReplicas: util.List[Integer],
-                             removingReplicas: util.List[Integer]) {
+                             removingReplicas: util.List[Integer],
+                             addingReplicas: util.List[Integer]) {
   def toTopicPartition: TopicPartition = new TopicPartition(topicName, partitionIndex)
 
   def toLeaderAndIsrPartitionState(isNew: Boolean): LeaderAndIsrRequestData.LeaderAndIsrPartitionState = {
@@ -80,8 +80,8 @@ case class MetadataPartition(topicName: String,
       setLeaderEpoch(leaderEpoch).
       setReplicas(replicas).
       setIsr(isr).
-      setAddingReplicas(addingReplicas).
       setRemovingReplicas(removingReplicas).
+      setAddingReplicas(addingReplicas).
       setIsNew(isNew).
       setZkVersion(partitionEpoch)
   }
@@ -89,26 +89,16 @@ case class MetadataPartition(topicName: String,
   def isReplicaFor(brokerId: Int): Boolean = replicas.contains(Integer.valueOf(brokerId))
 
   def merge(record: PartitionChangeRecord): MetadataPartition = {
-    val (newLeader, newLeaderEpoch) = if (record.leader() == MetadataPartition.NO_LEADER_CHANGE) {
-      (leaderId, leaderEpoch)
-    } else {
-      (record.leader(), leaderEpoch + 1)
-    }
-    val newIsr = if (record.isr() == null) {
-      isr
-    } else {
-      record.isr()
-    }
     MetadataPartition(topicName,
       partitionIndex,
-      newLeader,
-      newLeaderEpoch,
-      replicas,
-      newIsr,
+      if (record.leader() == NO_LEADER_CHANGE) leaderId else record.leader(),
+      if (record.leader() == NO_LEADER_CHANGE) leaderEpoch else leaderEpoch + 1,
+      if (record.replicas() == null) replicas else record.replicas(),
+      if (record.isr() == null) isr else record.isr(),
       partitionEpoch + 1,
       offlineReplicas,
-      addingReplicas,
-      removingReplicas)
+      if (record.removingReplicas() == null) removingReplicas else record.removingReplicas(),
+      if (record.addingReplicas() == null) addingReplicas else record.addingReplicas())
   }
 }
 

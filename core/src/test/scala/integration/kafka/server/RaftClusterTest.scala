@@ -24,9 +24,10 @@ import org.apache.kafka.common.quota.{ClientQuotaAlteration, ClientQuotaEntity, 
 import org.apache.kafka.metadata.BrokerState
 import org.junit.jupiter.api.{Test, Timeout}
 import org.junit.jupiter.api.Assertions._
-
 import java.util
 import java.util.Collections
+
+import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
 @Timeout(120000)
@@ -92,35 +93,14 @@ class RaftClusterTest {
         val newTopic = Collections.singletonList(new NewTopic("test-topic", 1, 3.toShort))
         val createTopicResult = admin.createTopics(newTopic)
         createTopicResult.all().get()
-
-        // List created topic
-        TestUtils.waitUntilTrue(() => {
-          val listTopicsResult = admin.listTopics()
-          val result = listTopicsResult.names().get().size() == newTopic.size()
-          if (result) {
-            newTopic forEach(topic => {
-              assertTrue(listTopicsResult.names().get().contains(topic.name()))
-            })
-          }
-          result
-        }, "Topics created were not listed.")
+        waitForTopicListing(admin, Seq("test-topic"), Seq())
 
         // Delete topic
         val deleteResult = admin.deleteTopics(Collections.singletonList("test-topic"))
         deleteResult.all().get()
 
         // List again
-        TestUtils.waitUntilTrue(() => {
-          val listTopicsResult = admin.listTopics()
-          val result = listTopicsResult.names().get().size() != newTopic.size()
-          if (result) {
-            newTopic forEach(topic => {
-              assertFalse(listTopicsResult.names().get().contains(topic.name()))
-            })
-          }
-          result
-        }, "Topic was not removed from list.")
-
+        waitForTopicListing(admin, Seq(), Seq("test-topic"))
       } finally {
         admin.close()
       }
@@ -147,66 +127,14 @@ class RaftClusterTest {
       try {
         // Create many topics
         val newTopic = new util.ArrayList[NewTopic]()
-        newTopic.add(new NewTopic("test-topic-1", 1, 3.toShort))
-        newTopic.add(new NewTopic("test-topic-2", 1, 3.toShort))
-        newTopic.add(new NewTopic("test-topic-3", 1, 3.toShort))
+        newTopic.add(new NewTopic("test-topic-1", 2, 3.toShort))
+        newTopic.add(new NewTopic("test-topic-2", 2, 3.toShort))
+        newTopic.add(new NewTopic("test-topic-3", 2, 3.toShort))
         val createTopicResult = admin.createTopics(newTopic)
         createTopicResult.all().get()
 
         // List created topic
-        TestUtils.waitUntilTrue(() => {
-          val listTopicsResult = admin.listTopics()
-          val result = listTopicsResult.names().get().size() == newTopic.size()
-          if (result) {
-            newTopic forEach(topic => {
-              assertTrue(listTopicsResult.names().get().contains(topic.name()))
-            })
-          }
-          result
-        }, "Topics created were not listed.")
-      } finally {
-        admin.close()
-      }
-    } finally {
-      cluster.close()
-    }
-  }
-
-  @Test
-  def testCreateClusterAndCreateAndManyTopicsWithManyPartitions(): Unit = {
-    val cluster = new KafkaClusterTestKit.Builder(
-      new TestKitNodes.Builder().
-        setNumBrokerNodes(3).
-        setNumControllerNodes(3).build()).build()
-    try {
-      cluster.format()
-      cluster.startup()
-      cluster.waitForReadyBrokers()
-      TestUtils.waitUntilTrue(() => cluster.brokers().get(0).currentState() == BrokerState.RUNNING,
-        "Broker never made it to RUNNING state.")
-      TestUtils.waitUntilTrue(() => cluster.raftManagers().get(0).kafkaRaftClient.leaderAndEpoch().leaderId.isPresent,
-        "RaftManager was not initialized.")
-      val admin = Admin.create(cluster.clientProperties())
-      try {
-        // Create many topics
-        val newTopic = new util.ArrayList[NewTopic]()
-        newTopic.add(new NewTopic("test-topic-1", 3, 3.toShort))
-        newTopic.add(new NewTopic("test-topic-2", 3, 3.toShort))
-        newTopic.add(new NewTopic("test-topic-3", 3, 3.toShort))
-        val createTopicResult = admin.createTopics(newTopic)
-        createTopicResult.all().get()
-
-        // List created topic
-        TestUtils.waitUntilTrue(() => {
-          val listTopicsResult = admin.listTopics()
-          val result = listTopicsResult.names().get().size() == newTopic.size()
-          if (result) {
-            newTopic forEach(topic => {
-              assertTrue(listTopicsResult.names().get().contains(topic.name()))
-            })
-          }
-          result
-        }, "Topics created were not listed.")
+        waitForTopicListing(admin, Seq("test-topic-1", "test-topic-2", "test-topic-3"), Seq())
       } finally {
         admin.close()
       }
@@ -312,5 +240,18 @@ class RaftClusterTest {
     } finally {
       cluster.close()
     }
+  }
+
+  private def waitForTopicListing(admin: Admin,
+                                  expectedPresent: Seq[String],
+                                  expectedAbsent: Seq[String]): Unit = {
+    val topicsNotFound = new util.HashSet[String]
+    var extraTopics: mutable.Set[String] = null
+    expectedPresent.foreach(topicsNotFound.add(_))
+    TestUtils.waitUntilTrue(() => {
+      admin.listTopics().names().get().forEach(name => topicsNotFound.remove(name))
+      extraTopics = admin.listTopics().names().get().asScala.filter(expectedAbsent.contains(_))
+      topicsNotFound.isEmpty && extraTopics.isEmpty
+    }, s"Failed to find topic(s): ${topicsNotFound.asScala} and NOT find topic(s): ${extraTopics}")
   }
 }

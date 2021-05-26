@@ -274,6 +274,26 @@ class MetadataPartitionsTest {
     assertEquals(Some(topic), recreatedMetadata.topicIdToName(recreatedTopicId))
   }
 
+  @Test
+  def testMergePartitionChangeRecordWithReassignmentData(): Unit = {
+    val partition0 = newPartition("foo", 0, Some(Seq(1, 2, 3)), Some(Seq(1, 2, 3)))
+    val partition1 = partition0.merge(new PartitionChangeRecord().
+      setRemovingReplicas(asJavaList(Seq(3))).
+      setAddingReplicas(asJavaList(Seq(4))).
+      setReplicas(asJavaList(Seq(1, 2, 3, 4))))
+    assertEquals(new MetadataPartition("foo", 0, 1, 100, asJavaList(Seq(1, 2, 3, 4)),
+      asJavaList(Seq(1, 2, 3)), 201, Collections.emptyList(), asJavaList(Seq(3)),
+      asJavaList(Seq(4))), partition1)
+    val partition2 = partition1.merge(new PartitionChangeRecord().
+      setIsr(asJavaList(Seq(1, 2, 4))).
+      setRemovingReplicas(Collections.emptyList()).
+      setAddingReplicas(Collections.emptyList()).
+      setReplicas(asJavaList(Seq(1, 2, 4))))
+    assertEquals(new MetadataPartition("foo", 0, 1, 100, asJavaList(Seq(1, 2, 4)),
+      asJavaList(Seq(1, 2, 4)), 202, Collections.emptyList(), Collections.emptyList(),
+      Collections.emptyList()), partition2)
+  }
+
   private def localRemoved(
     builder: MetadataPartitionsBuilder
   ): Set[TopicPartition] = {
