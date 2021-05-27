@@ -230,6 +230,10 @@
     <allow pkg="org.apache.kafka.timeline" />
   </subpackage>
 
+  <subpackage name="image">
+    <allow pkg="org.apache.kafka.common.config" />
+  </subpackage>
+
   <subpackage name="metadata">
     <allow pkg="org.apache.kafka.clients" />
     <allow pkg="org.apache.kafka.common.annotation" />
