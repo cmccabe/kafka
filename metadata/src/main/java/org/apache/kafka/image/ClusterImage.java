@@ -17,6 +17,12 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.controller.SnapshotWriter;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 
@@ -38,5 +44,13 @@ public final class ClusterImage {
 
     public NodeImage broker(int nodeId) {
         return brokers.get(nodeId);
+    }
+
+    public void write(SnapshotWriter out) throws IOException {
+        List<ApiMessageAndVersion> batch = new ArrayList<>();
+        for (NodeImage nodeImage : brokers.values()) {
+            //batch.addAll(nodeImage.toRecords());
+        }
+        out.writeBatch(batch);
     }
 }

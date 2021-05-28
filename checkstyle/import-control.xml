@@ -234,6 +234,7 @@
     <allow pkg="org.apache.kafka.controller" /> <!-- for Replicas. FIXME -->
     <allow pkg="org.apache.kafka.common.config" />
     <allow pkg="org.apache.kafka.common.metadata" />
+    <allow pkg="org.apache.kafka.server.common" />
   </subpackage>
 
   <subpackage name="metadata">

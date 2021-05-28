@@ -17,6 +17,10 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.controller.SnapshotWriter;
+
+import java.io.IOException;
+
 
 /**
  * The broker metadata image.
@@ -24,13 +28,15 @@ package org.apache.kafka.image;
  * This class is thread-safe.
  */
 public final class MetadataImage {
+    // private final FeaturesImage
+
     private final ClusterImage cluster;
 
     private final TopicsImage topics;
 
     private final ConfigurationsImage configs;
 
-    // private final client quotas
+    // private final ClientQuotasImage
 
     public MetadataImage(ClusterImage cluster,
                          TopicsImage topics,
@@ -50,5 +56,14 @@ public final class MetadataImage {
 
     public ConfigurationsImage configs() {
         return configs;
+    }
+
+    public void write(SnapshotWriter out) throws IOException {
+        //features.write(out);
+        cluster.write(out);
+//        topics.write(out);
+//        configs.write(out);
+        //clientQuotas.write(out);
+        out.completeSnapshot();
     }
 }

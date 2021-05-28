@@ -22,7 +22,7 @@ import java.util.List;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 
-interface SnapshotWriter extends AutoCloseable {
+public interface SnapshotWriter extends AutoCloseable {
     /**
      * @return          The epoch of the snapshot we are writing.
      **/

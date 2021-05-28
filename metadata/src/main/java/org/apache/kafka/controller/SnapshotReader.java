@@ -23,7 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 
 
-interface SnapshotReader extends Iterator<List<ApiMessage>>, AutoCloseable {
+public interface SnapshotReader extends Iterator<List<ApiMessage>>, AutoCloseable {
     /**
      * Returns the snapshot epoch, which is the offset of this snapshot within the log.
      */
