@@ -17,24 +17,26 @@
 
 package org.apache.kafka.image;
 
-import org.apache.kafka.common.config.ConfigResource;
-
 import java.util.Map;
 
 
 /**
- * Represents the configurations in the metadata image.
+ * Represents the configuration of a resource.
  *
  * This class is thread-safe.
  */
-public final class ConfigurationsImage {
-    private final Map<ConfigResource, ConfigurationImage> data;
+public final class ConfigurationImage {
+    private final Map<String, String> data;
 
-    public ConfigurationsImage(Map<ConfigResource, ConfigurationImage> data) {
+    public ConfigurationImage(Map<String, String> data) {
         this.data = data;
     }
 
-    Map<ConfigResource, ConfigurationImage> resourceData() {
+    Map<String, String> data() {
         return data;
+    }
+
+    public boolean isEmpty() {
+        return data.isEmpty();
     }
 }

@@ -18,7 +18,10 @@
 package org.apache.kafka.image;
 
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.metadata.RegisterBrokerRecord;
+import org.apache.kafka.common.metadata.RegisterBrokerRecord.BrokerEndpoint;
 
+import java.util.HashMap;
 import java.util.Map;
 
 
@@ -33,10 +36,28 @@ public final class NodeImage {
     private final Map<String, Node> endpoints;
     private final boolean fenced;
 
+    public NodeImage(RegisterBrokerRecord record) {
+        this.nodeId = record.brokerId();
+        this.rack = record.rack();
+        this.endpoints = new HashMap<>();
+        for (BrokerEndpoint endPoint : record.endPoints()) {
+            this.endpoints.put(endPoint.name(),
+                new Node(nodeId, endPoint.host(), endPoint.port(), record.rack()));
+        }
+        this.fenced = true;
+    }
+
     public NodeImage(int nodeId, String rack, Map<String, Node> endpoints, boolean fenced) {
         this.nodeId = nodeId;
         this.rack = rack;
         this.endpoints = endpoints;
+        this.fenced = fenced;
+    }
+
+    public NodeImage(NodeImage prev, boolean fenced) {
+        this.nodeId = prev.nodeId();
+        this.rack = prev.rack();
+        this.endpoints = prev.endpoints();
         this.fenced = fenced;
     }
 

@@ -28,9 +28,9 @@ public final class MetadataImage {
 
     private final TopicsImage topics;
 
-    // private final client quotas
-
     private final ConfigurationsImage configs;
+
+    // private final client quotas
 
     public MetadataImage(ClusterImage cluster,
                          TopicsImage topics,

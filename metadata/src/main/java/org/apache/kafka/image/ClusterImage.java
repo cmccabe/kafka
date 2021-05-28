@@ -17,7 +17,7 @@
 
 package org.apache.kafka.image;
 
-import java.util.HashMap;
+import java.util.Map;
 
 
 /**
@@ -26,13 +26,13 @@ import java.util.HashMap;
  * This class is thread-safe.
  */
 public final class ClusterImage {
-    private final HashMap<Integer, NodeImage> brokers;
+    private final Map<Integer, NodeImage> brokers;
 
-    public ClusterImage(HashMap<Integer, NodeImage> brokers) {
+    public ClusterImage(Map<Integer, NodeImage> brokers) {
         this.brokers = brokers;
     }
 
-    HashMap<Integer, NodeImage> brokers() {
+    Map<Integer, NodeImage> brokers() {
         return brokers;
     }
 

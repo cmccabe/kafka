@@ -17,6 +17,10 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.common.metadata.PartitionChangeRecord;
+import org.apache.kafka.common.metadata.PartitionRecord;
+import org.apache.kafka.controller.Replicas;
+
 
 /**
  * Represents a partition in the metadata image.
@@ -46,6 +50,28 @@ public final class PartitionImage {
         this.partitionEpoch = partitionEpoch;
         this.removingReplicas = removingReplicas;
         this.addingReplicas = addingReplicas;
+    }
+
+    public PartitionImage(PartitionRecord record) {
+        this.leaderId = record.leader();
+        this.leaderEpoch = record.leaderEpoch();
+        this.replicas = Replicas.toArray(record.replicas());
+        this.isr = Replicas.toArray(record.isr());
+        this.partitionEpoch = record.partitionEpoch();
+        this.removingReplicas = Replicas.toArray(record.removingReplicas());
+        this.addingReplicas = Replicas.toArray(record.addingReplicas());
+    }
+
+    public PartitionImage(PartitionImage other, PartitionChangeRecord record) {
+        this.leaderId = record.leader() == -2 ? other.leaderId : record.leader();
+        this.leaderEpoch = record.leader() == -2 ? other.leaderEpoch : other.leaderEpoch + 1;
+        this.replicas = record.replicas() == null ? other.replicas : Replicas.toArray(record.replicas());
+        this.isr = record.isr() == null ? other.isr : Replicas.toArray(record.isr());
+        this.partitionEpoch = other.partitionEpoch + 1;
+        this.removingReplicas = record.removingReplicas() == null ?
+            other.removingReplicas : Replicas.toArray(record.removingReplicas());
+        this.addingReplicas = record.addingReplicas() == null ?
+            other.addingReplicas : Replicas.toArray(record.addingReplicas());
     }
 
     public int leaderId() {
