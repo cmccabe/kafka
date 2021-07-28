@@ -23,7 +23,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
@@ -68,13 +67,13 @@ public class ElectionStrategizerTest {
     @Test
     public void testParseBoolean() {
         ElectionStrategizer strategizer = createElectionStrategizer();
-        assertFalse(strategizer.parseBoolean("testParseBoolean", "false"));
-        assertFalse(strategizer.parseBoolean("testParseBoolean", "FALSE"));
-        assertTrue(strategizer.parseBoolean("testParseBoolean", "true"));
-        assertTrue(strategizer.parseBoolean("testParseBoolean", "TRUE"));
-        assertNull(strategizer.parseBoolean("testParseBoolean", ""));
-        assertNull(strategizer.parseBoolean("testParseBoolean", " "));
-        assertNull(strategizer.parseBoolean("testParseBoolean", null));
-        assertNull(strategizer.parseBoolean("testParseBoolean", "foo"));
+        assertFalse(strategizer.parseBoolean("testParseBoolean", "false").get());
+        assertFalse(strategizer.parseBoolean("testParseBoolean", "FALSE").get());
+        assertTrue(strategizer.parseBoolean("testParseBoolean", "true").get());
+        assertTrue(strategizer.parseBoolean("testParseBoolean", "TRUE").get());
+        assertFalse(strategizer.parseBoolean("testParseBoolean", "").isPresent());
+        assertFalse(strategizer.parseBoolean("testParseBoolean", " ").isPresent());
+        assertFalse(strategizer.parseBoolean("testParseBoolean", null).isPresent());
+        assertFalse(strategizer.parseBoolean("testParseBoolean", "foo").isPresent());
     }
 }

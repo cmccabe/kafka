@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Function;
 
 
@@ -31,8 +32,8 @@ class ElectionStrategizer {
     private static final Logger log = LoggerFactory.getLogger(ElectionStrategizer.class);
 
     private final int nodeId;
-    private Boolean nodeUncleanConfig = null;
-    private Boolean clusterUncleanConfig = null;
+    private Optional<Boolean> nodeUncleanConfig = null;
+    private Optional<Boolean> clusterUncleanConfig = null;
     private Function<String, String> topicUncleanConfigAccessor = __ -> "false";
     private Map<String, String> topicUncleanOverrides = new HashMap<>();
 
@@ -62,24 +63,24 @@ class ElectionStrategizer {
     }
 
     boolean shouldBeUnclean(String topicName) {
-        Boolean topicConfig = (topicUncleanOverrides.containsKey(topicName)) ?
+        Optional<Boolean> topicConfig = (topicUncleanOverrides.containsKey(topicName)) ?
             parseBoolean("topic", topicUncleanOverrides.get(topicName)) :
             parseBoolean("topic", topicUncleanConfigAccessor.apply(topicName));
-        if (topicConfig != null) return topicConfig.booleanValue();
-        if (nodeUncleanConfig != null) return nodeUncleanConfig.booleanValue();
-        if (clusterUncleanConfig != null) return clusterUncleanConfig.booleanValue();
+        if (topicConfig.isPresent()) return topicConfig.get();
+        if (nodeUncleanConfig.isPresent()) return nodeUncleanConfig.get();
+        if (clusterUncleanConfig.isPresent()) return clusterUncleanConfig.get();
         return false;
     }
 
     // VisibleForTesting
-    Boolean parseBoolean(String what, String value) {
-        if (value == null) return null;
-        if (value.equalsIgnoreCase("true")) return true;
-        if (value.equalsIgnoreCase("false")) return false;
-        if (value.trim().isEmpty()) return null;
+    Optional<Boolean> parseBoolean(String what, String value) {
+        if (value == null) return Optional.empty();
+        if (value.equalsIgnoreCase("true")) return Optional.of(true);
+        if (value.equalsIgnoreCase("false")) return Optional.of(false);
+        if (value.trim().isEmpty()) return Optional.empty();
         log.warn("Invalid value for {} config {} on node {}: '{}'. Expected true or false.",
             what, TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG, nodeId, value);
-        return null;
+        return Optional.empty();
     }
 
     @Override
