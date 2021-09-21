@@ -24,7 +24,7 @@ import kafka.server._
 import kafka.utils.TestUtils
 import kafka.zk.ZooKeeperTestHarness
 import org.apache.kafka.common.security.auth.SecurityProtocol
-import org.junit.jupiter.api.{AfterEach, BeforeEach}
+import org.junit.jupiter.api.{AfterEach, BeforeEach, TestInfo}
 
 import scala.collection.Seq
 import scala.collection.mutable.{ArrayBuffer, Buffer}
@@ -88,8 +88,8 @@ abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
   protected def enableForwarding: Boolean = false
 
   @BeforeEach
-  override def setUp(): Unit = {
-    super.setUp()
+  override def setUp(testInfo: TestInfo): Unit = {
+    super.setUp(testInfo)
 
     if (configs.isEmpty)
       throw new KafkaException("Must supply at least one server config.")

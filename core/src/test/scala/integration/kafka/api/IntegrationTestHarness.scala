@@ -30,7 +30,7 @@ import kafka.integration.KafkaServerTestHarness
 import org.apache.kafka.clients.admin.{Admin, AdminClientConfig}
 import org.apache.kafka.common.network.{ListenerName, Mode}
 import org.apache.kafka.common.serialization.{ByteArrayDeserializer, ByteArraySerializer, Deserializer, Serializer}
-import org.junit.jupiter.api.{AfterEach, BeforeEach}
+import org.junit.jupiter.api.{AfterEach, BeforeEach, TestInfo}
 
 import scala.collection.mutable
 import scala.collection.Seq
@@ -80,17 +80,18 @@ abstract class IntegrationTestHarness extends KafkaServerTestHarness {
   }
 
   @BeforeEach
-  override def setUp(): Unit = {
-    doSetup(createOffsetsTopic = true)
+  override def setUp(testInfo: TestInfo): Unit = {
+    doSetup(testInfo, createOffsetsTopic = true)
   }
 
-  def doSetup(createOffsetsTopic: Boolean): Unit = {
+  def doSetup(testInfo: TestInfo,
+              createOffsetsTopic: Boolean): Unit = {
     // Generate client security properties before starting the brokers in case certs are needed
     producerConfig ++= clientSecurityProps("producer")
     consumerConfig ++= clientSecurityProps("consumer")
     adminClientConfig ++= clientSecurityProps("adminClient")
 
-    super.setUp()
+    super.setUp(testInfo)
 
     producerConfig.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokerList)
     producerConfig.putIfAbsent(ProducerConfig.ACKS_CONFIG, "-1")

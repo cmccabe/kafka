@@ -24,7 +24,7 @@ import org.apache.kafka.common.utils.Time
 import org.apache.zookeeper.client.ZKClientConfig
 import org.apache.zookeeper.{WatchedEvent, Watcher, ZooKeeper}
 import org.junit.jupiter.api.Assertions._
-import org.junit.jupiter.api.{AfterAll, AfterEach, BeforeAll, BeforeEach, Tag}
+import org.junit.jupiter.api.{AfterAll, AfterEach, BeforeAll, BeforeEach, Tag, TestInfo}
 
 @Tag("integration")
 abstract class ZooKeeperTestHarness extends Logging {
@@ -44,7 +44,7 @@ abstract class ZooKeeperTestHarness extends Logging {
   def zkConnect: String = s"127.0.0.1:$zkPort"
   
   @BeforeEach
-  def setUp(): Unit = {
+  def setUp(testInfo: TestInfo): Unit = {
     zookeeper = new EmbeddedZookeeper()
     zkClient = KafkaZkClient(zkConnect, zkAclsEnabled.getOrElse(JaasUtils.isZkSaslEnabled), zkSessionTimeout,
       zkConnectionTimeout, zkMaxInFlightRequests, Time.SYSTEM, name = "ZooKeeperTestHarness", new ZKClientConfig)

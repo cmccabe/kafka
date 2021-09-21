@@ -19,6 +19,7 @@ package kafka.controller
 
 import java.util.Properties
 import java.util.concurrent.{CompletableFuture, CountDownLatch, LinkedBlockingQueue, TimeUnit}
+
 import com.yammer.metrics.core.Timer
 import kafka.api.{ApiVersion, KAFKA_2_6_IV0, KAFKA_2_7_IV0, LeaderAndIsr}
 import kafka.controller.KafkaController.AlterIsrCallback
@@ -33,7 +34,7 @@ import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.{ElectionType, TopicPartition, Uuid}
 import org.apache.log4j.Level
 import org.junit.jupiter.api.Assertions.{assertEquals, assertNotEquals, assertTrue}
-import org.junit.jupiter.api.{AfterEach, BeforeEach, Test}
+import org.junit.jupiter.api.{AfterEach, BeforeEach, Test, TestInfo}
 import org.mockito.Mockito.{doAnswer, spy, verify}
 import org.mockito.invocation.InvocationOnMock
 
@@ -47,8 +48,8 @@ class ControllerIntegrationTest extends ZooKeeperTestHarness {
   val firstControllerEpochZkVersion = KafkaController.InitialControllerEpochZkVersion + 1
 
   @BeforeEach
-  override def setUp(): Unit = {
-    super.setUp()
+  override def setUp(testInfo: TestInfo): Unit = {
+    super.setUp(testInfo)
     servers = Seq.empty[KafkaServer]
   }
 

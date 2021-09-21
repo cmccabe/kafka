@@ -22,7 +22,7 @@ import kafka.controller.LeaderIsrAndControllerEpoch
 import kafka.zk._
 import org.apache.kafka.common.TopicPartition
 import org.junit.jupiter.api.Assertions._
-import org.junit.jupiter.api.{BeforeEach, Test}
+import org.junit.jupiter.api.{BeforeEach, Test, TestInfo}
 
 class ReplicationUtilsTest extends ZooKeeperTestHarness {
   private val zkVersion = 1
@@ -34,8 +34,8 @@ class ReplicationUtilsTest extends ZooKeeperTestHarness {
   private val isr = List(1, 2)
 
   @BeforeEach
-  override def setUp(): Unit = {
-    super.setUp()
+  override def setUp(testInfo: TestInfo): Unit = {
+    super.setUp(testInfo)
     zkClient.makeSurePersistentPathExists(TopicZNode.path(topic))
     val topicPartition = new TopicPartition(topic, partition)
     val leaderAndIsr = LeaderAndIsr(leader, leaderEpoch, isr, 1)
