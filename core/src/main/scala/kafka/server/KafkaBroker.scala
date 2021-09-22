@@ -21,10 +21,12 @@ import com.yammer.metrics.core.MetricName
 import kafka.log.LogManager
 import kafka.metrics.{KafkaMetricsGroup, KafkaYammerMetrics, LinuxIoMetricsCollector}
 import kafka.network.SocketServer
+import kafka.security.CredentialProvider
 import kafka.utils.KafkaScheduler
 import org.apache.kafka.common.ClusterResource
 import org.apache.kafka.common.internals.ClusterResourceListeners
 import org.apache.kafka.common.metrics.{Metrics, MetricsReporter}
+import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.metadata.BrokerState
 import org.apache.kafka.server.authorizer.Authorizer
@@ -76,6 +78,13 @@ trait KafkaBroker extends KafkaMetricsGroup {
   def quotaManagers: QuotaFactory.QuotaManagers
   def replicaManager: ReplicaManager
   def socketServer: SocketServer
+  def credentialProvider: CredentialProvider
+  def startup(): Unit
+  def shutdown(): Unit
+  def awaitShutdown(): Unit
+  def boundPort(listenerName: ListenerName): Int
+  def dataPlaneRequestProcessor(): KafkaApis
+  def metadataCache(): MetadataCache
 
   // For backwards compatibility, we need to keep older metrics tied
   // to their original name when this class was named `KafkaServer`

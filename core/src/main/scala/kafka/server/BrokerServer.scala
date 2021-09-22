@@ -178,7 +178,7 @@ class BrokerServer(
 
   def replicaManager: ReplicaManager = _replicaManager
 
-  def startup(): Unit = {
+  override def startup(): Unit = {
     if (!maybeChangeStatus(SHUTDOWN, STARTING)) return
     try {
       info("Starting broker")
@@ -442,7 +442,7 @@ class BrokerServer(
     }
   }
 
-  def shutdown(): Unit = {
+  override def shutdown(): Unit = {
     if (!maybeChangeStatus(STARTED, SHUTTING_DOWN)) return
     try {
       info("shutting down")
@@ -533,7 +533,7 @@ class BrokerServer(
     }
   }
 
-  def awaitShutdown(): Unit = {
+  override def awaitShutdown(): Unit = {
     lock.lock()
     try {
       while (true) {
@@ -545,6 +545,6 @@ class BrokerServer(
     }
   }
 
-  def boundPort(listenerName: ListenerName): Int = socketServer.boundPort(listenerName)
+  override def boundPort(listenerName: ListenerName): Int = socketServer.boundPort(listenerName)
 
 }
