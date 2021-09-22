@@ -26,8 +26,7 @@ import kafka.zk.ZooKeeperTestHarness
 import org.apache.kafka.common.security.auth.SecurityProtocol
 import org.junit.jupiter.api.{AfterEach, BeforeEach, TestInfo}
 
-import scala.collection.Seq
-import scala.collection.mutable.{ArrayBuffer, Buffer}
+import scala.collection.{Seq, mutable}
 import java.util.Properties
 
 import org.apache.kafka.common.{KafkaException, Uuid}
@@ -40,7 +39,16 @@ import org.apache.kafka.common.utils.Time
  */
 abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
   var instanceConfigs: Seq[KafkaConfig] = null
-  var servers: Buffer[KafkaServer] = new ArrayBuffer
+
+  private val _brokers = new mutable.ArrayBuffer[KafkaBroker]
+
+  def brokers: mutable.Buffer[KafkaBroker] = _brokers
+
+  /**
+   * Get the list of brokers, as instances of KafkaServer.
+   */
+  def servers: mutable.Buffer[KafkaServer] = _brokers.map(_.asInstanceOf[KafkaServer])
+
   var brokerList: String = null
   var alive: Array[Boolean] = null
 
@@ -100,15 +108,15 @@ abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
     // Add each broker to `servers` buffer as soon as it is created to ensure that brokers
     // are shutdown cleanly in tearDown even if a subsequent broker fails to start
     for (config <- configs) {
-      servers += TestUtils.createServer(
+      _brokers += TestUtils.createServer(
         config,
         time = brokerTime(config.brokerId),
         threadNamePrefix = None,
         enableForwarding
       )
     }
-    brokerList = TestUtils.bootstrapServers(servers, listenerName)
-    alive = new Array[Boolean](servers.length)
+    brokerList = TestUtils.bootstrapServers(_brokers, listenerName)
+    alive = new Array[Boolean](_brokers.length)
     Arrays.fill(alive, true)
 
     // default implementation is a no-op, it is overridden by subclasses if required
@@ -117,8 +125,8 @@ abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
 
   @AfterEach
   override def tearDown(): Unit = {
-    if (servers != null) {
-      TestUtils.shutdownServers(servers)
+    if (_brokers != null) {
+      TestUtils.shutdownServers(_brokers)
     }
     super.tearDown()
   }
@@ -129,7 +137,7 @@ abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
    * Return the leader for each partition.
    */
   def createTopic(topic: String, numPartitions: Int = 1, replicationFactor: Int = 1,
-                  topicConfig: Properties = new Properties): scala.collection.immutable.Map[Int, Int] =
+                  topicConfig: Properties = new Properties): Map[Int, Int] =
     TestUtils.createTopic(zkClient, topic, numPartitions, replicationFactor, servers, topicConfig)
 
   /**
@@ -137,7 +145,7 @@ abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
    * Wait until the leader is elected and the metadata is propagated to all brokers.
    * Return the leader for each partition.
    */
-  def createTopic(topic: String, partitionReplicaAssignment: collection.Map[Int, Seq[Int]]): scala.collection.immutable.Map[Int, Int] =
+  def createTopic(topic: String, partitionReplicaAssignment: collection.Map[Int, Seq[Int]]): Map[Int, Int] =
     TestUtils.createTopic(zkClient, topic, partitionReplicaAssignment, servers)
 
   /**
@@ -145,15 +153,15 @@ abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
    * Return the id of the broker killed
    */
   def killRandomBroker(): Int = {
-    val index = TestUtils.random.nextInt(servers.length)
+    val index = TestUtils.random.nextInt(_brokers.length)
     killBroker(index)
     index
   }
 
   def killBroker(index: Int): Unit = {
     if(alive(index)) {
-      servers(index).shutdown()
-      servers(index).awaitShutdown()
+      _brokers(index).shutdown()
+      _brokers(index).awaitShutdown()
       alive(index) = false
     }
   }
@@ -165,22 +173,22 @@ abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
     if (reconfigure) {
       instanceConfigs = null
     }
-    for(i <- servers.indices if !alive(i)) {
+    for(i <- _brokers.indices if !alive(i)) {
       if (reconfigure) {
-        servers(i) = TestUtils.createServer(
+        _brokers(i) = TestUtils.createServer(
           configs(i),
           time = brokerTime(configs(i).brokerId),
           threadNamePrefix = None,
           enableForwarding
         )
       }
-      servers(i).startup()
+      _brokers(i).startup()
       alive(i) = true
     }
   }
 
   def waitForUserScramCredentialToAppearOnAllBrokers(clientPrincipal: String, mechanismName: String): Unit = {
-    servers.foreach { server =>
+    _brokers.foreach { server =>
       val cache = server.credentialProvider.credentialCache.cache(mechanismName, classOf[ScramCredential])
       TestUtils.waitUntilTrue(() => cache.get(clientPrincipal) != null, s"SCRAM credentials not created for $clientPrincipal")
     }
