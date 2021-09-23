@@ -302,8 +302,18 @@ object TestUtils extends Logging {
     } else {
       props.put(KafkaConfig.LogDirProp, tempDir().getAbsolutePath)
     }
-    props.put(KafkaConfig.ZkConnectProp, zkConnect)
-    props.put(KafkaConfig.ZkConnectionTimeoutMsProp, "10000")
+    if (zkConnect == null) {
+      props.put(KafkaConfig.ProcessRolesProp, "broker")
+      // Note: this is just a placeholder value for controller.quorum.voters. JUnit
+      // tests use random port assignment, so the controller ports are not known ahead of
+      // time. Therefore, we ignore controller.quorum.voters and use
+      // controllerQuorumVotersFuture instead.
+      props.put(KafkaConfig.QuorumVotersProp, "0@localhost:0")
+    } else {
+      props.put(KafkaConfig.ZkConnectProp, zkConnect)
+      props.put(KafkaConfig.ZkConnectionTimeoutMsProp, "10000")
+    }
+
     props.put(KafkaConfig.ReplicaSocketTimeoutMsProp, "1500")
     props.put(KafkaConfig.ControllerSocketTimeoutMsProp, "1500")
     props.put(KafkaConfig.ControlledShutdownEnableProp, enableControlledShutdown.toString)

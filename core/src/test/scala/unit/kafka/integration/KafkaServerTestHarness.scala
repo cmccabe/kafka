@@ -47,7 +47,10 @@ abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
   /**
    * Get the list of brokers, as instances of KafkaServer.
    */
-  def servers: mutable.Buffer[KafkaServer] = _brokers.map(_.asInstanceOf[KafkaServer])
+  def servers: mutable.Buffer[KafkaServer] = {
+    checkIsZKTest()
+    _brokers.map(_.asInstanceOf[KafkaServer])
+  }
 
   var brokerList: String = null
   var alive: Array[Boolean] = null
@@ -108,12 +111,16 @@ abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
     // Add each broker to `servers` buffer as soon as it is created to ensure that brokers
     // are shutdown cleanly in tearDown even if a subsequent broker fails to start
     for (config <- configs) {
-      _brokers += TestUtils.createServer(
-        config,
-        time = brokerTime(config.brokerId),
-        threadNamePrefix = None,
-        enableForwarding
-      )
+      if (isKRaftTest()) {
+        _brokers += createAndStartBroker(config, brokerTime(config.brokerId))
+      } else {
+        _brokers += TestUtils.createServer(
+          config,
+          time = brokerTime(config.brokerId),
+          threadNamePrefix = None,
+          enableForwarding
+        )
+      }
     }
     brokerList = TestUtils.bootstrapServers(_brokers, listenerName)
     alive = new Array[Boolean](_brokers.length)
@@ -195,6 +202,7 @@ abstract class KafkaServerTestHarness extends ZooKeeperTestHarness {
   }
 
   def getController(): KafkaServer = {
+    checkIsZKTest()
     val controllerId = TestUtils.waitUntilControllerElected(zkClient)
     servers.filter(s => s.config.brokerId == controllerId).head
   }
