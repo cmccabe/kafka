@@ -92,7 +92,7 @@ class BrokerServer(
 
   this.logIdent = logContext.logPrefix
 
-  @volatile private var lifecycleManager: BrokerLifecycleManager = null
+  val lifecycleManager: BrokerLifecycleManager = new BrokerLifecycleManager(config, time, threadNamePrefix)
 
   private val isShuttingDown = new AtomicBoolean(false)
 
@@ -182,8 +182,6 @@ class BrokerServer(
     if (!maybeChangeStatus(SHUTDOWN, STARTING)) return
     try {
       info("Starting broker")
-
-      lifecycleManager = new BrokerLifecycleManager(config, time, threadNamePrefix)
 
       /* start scheduler */
       kafkaScheduler = new KafkaScheduler(config.backgroundThreads)

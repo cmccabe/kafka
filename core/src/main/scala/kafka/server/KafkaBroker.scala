@@ -18,6 +18,7 @@
 package kafka.server
 
 import com.yammer.metrics.core.MetricName
+import kafka.coordinator.group.GroupCoordinator
 import kafka.log.LogManager
 import kafka.metrics.{KafkaMetricsGroup, KafkaYammerMetrics, LinuxIoMetricsCollector}
 import kafka.network.SocketServer
@@ -85,6 +86,7 @@ trait KafkaBroker extends KafkaMetricsGroup {
   def boundPort(listenerName: ListenerName): Int
   def dataPlaneRequestProcessor(): KafkaApis
   def metadataCache(): MetadataCache
+  def groupCoordinator: GroupCoordinator
 
   // For backwards compatibility, we need to keep older metrics tied
   // to their original name when this class was named `KafkaServer`

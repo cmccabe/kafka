@@ -38,6 +38,13 @@ public class CreateTopicsRequest extends AbstractRequest {
 
         @Override
         public CreateTopicsRequest build(short version) {
+            try {
+                throw new RuntimeException("WOOT WOOT");
+            } catch (Exception e) {
+                System.out.println("=== BEGIN CREATETOPICSREQUEST");
+                e.printStackTrace();
+                System.out.println("=== END CREATETOPICSREQUEST");
+            }
             if (data.validateOnly() && version == 0)
                 throw new UnsupportedVersionException("validateOnly is not supported in version 0 of " +
                         "CreateTopicsRequest");

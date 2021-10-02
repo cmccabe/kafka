@@ -24,6 +24,7 @@ import java.nio.charset.{Charset, StandardCharsets}
 import java.nio.file.{Files, StandardOpenOption}
 import java.security.cert.X509Certificate
 import java.time.Duration
+import java.util
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 import java.util.concurrent.{Callable, CompletableFuture, ExecutionException, Executors, TimeUnit}
 import java.util.{Arrays, Collections, Optional, Properties}
@@ -50,7 +51,7 @@ import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, Produce
 import org.apache.kafka.common.acl.{AccessControlEntry, AccessControlEntryFilter, AclBinding, AclBindingFilter}
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.config.ConfigResource.Type.TOPIC
-import org.apache.kafka.common.errors.{KafkaStorageException, OperationNotAttemptedException, UnknownTopicOrPartitionException}
+import org.apache.kafka.common.errors.{KafkaStorageException, OperationNotAttemptedException, TopicExistsException, UnknownTopicOrPartitionException}
 import org.apache.kafka.common.header.Header
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.memory.MemoryPool
@@ -290,8 +291,17 @@ object TestUtils extends Logging {
     }.mkString(",")
 
     val props = new Properties
-    if (nodeId >= 0) props.put(KafkaConfig.BrokerIdProp, nodeId.toString)
-    props.put(KafkaConfig.ListenersProp, listeners)
+    if (zkConnect == null) {
+      props.put(KafkaConfig.NodeIdProp, nodeId.toString)
+      props.put(KafkaConfig.AdvertisedListenersProp, listeners)
+      props.put(KafkaConfig.ListenersProp, listeners + ",CONTROLLER://localhost:0")
+      props.put(KafkaConfig.ControllerListenerNamesProp, "CONTROLLER")
+      props.put(KafkaConfig.ListenerSecurityProtocolMapProp, protocolAndPorts.
+        map(p => "%s:%s".format(p._1, p._1)).mkString(",") + ",CONTROLLER:PLAINTEXT")
+    } else {
+      if (nodeId >= 0) props.put(KafkaConfig.BrokerIdProp, nodeId.toString)
+      props.put(KafkaConfig.ListenersProp, listeners)
+    }
     if (logDirCount > 1) {
       val logDirs = (1 to logDirCount).toList.map(i =>
         // We would like to allow user to specify both relative path and absolute path as log directory for backward-compatibility reason
@@ -308,7 +318,7 @@ object TestUtils extends Logging {
       // tests use random port assignment, so the controller ports are not known ahead of
       // time. Therefore, we ignore controller.quorum.voters and use
       // controllerQuorumVotersFuture instead.
-      props.put(KafkaConfig.QuorumVotersProp, "0@localhost:0")
+      props.put(KafkaConfig.QuorumVotersProp, "1000@localhost:0")
     } else {
       props.put(KafkaConfig.ZkConnectProp, zkConnect)
       props.put(KafkaConfig.ZkConnectionTimeoutMsProp, "10000")
@@ -344,7 +354,6 @@ object TestUtils extends Logging {
 
     props.put(KafkaConfig.NumPartitionsProp, numPartitions.toString)
     props.put(KafkaConfig.DefaultReplicationFactorProp, defaultReplicationFactor.toString)
-
     props
   }
 
@@ -433,8 +442,67 @@ object TestUtils extends Logging {
     }.toMap
   }
 
+  def createOffsetsTopic[B <: KafkaBroker](adminClientProperties: Properties,
+                                           brokers: Seq[B]): Unit = {
+    val broker = brokers.head
+    createTopic(adminClientProperties,
+      brokers,
+      Topic.GROUP_METADATA_TOPIC_NAME,
+      broker.config.getInt(KafkaConfig.OffsetsTopicPartitionsProp),
+      broker.config.getShort(KafkaConfig.OffsetsTopicReplicationFactorProp).toInt,
+      broker.groupCoordinator.offsetsTopicConfigs)
+  }
+
+  def topicHasSameNumPartitionsAndReplicationFactor(adminClient: Admin,
+                                                    topic: String,
+                                                    numPartitions: Int,
+                                                    replicationFactor: Int): Boolean = {
+    val describedTopics = adminClient.describeTopics(Collections.
+      singleton(topic)).allTopicNames().get()
+    val description = describedTopics.get(topic)
+    (description != null &&
+      description.partitions().size() == numPartitions &&
+      description.partitions().iterator().next().replicas().size() == replicationFactor)
+  }
+
+  def createTopic[B <: KafkaBroker](adminClientProperties: Properties,
+                                    brokers: Seq[B],
+                                    topic: String,
+                                    numPartitions: Int,
+                                    replicationFactor: Int,
+                                    topicConfig: Properties): Unit = {
+    val adminClient = Admin.create(adminClientProperties)
+    val broker = brokers.head
+    try {
+      val configsMap = new util.HashMap[String, String]()
+      topicConfig.forEach((k,v) => configsMap.put(k.toString, v.toString))
+      try {
+        adminClient.createTopics(Collections.singletonList(new NewTopic(
+          Topic.GROUP_METADATA_TOPIC_NAME,
+          broker.config.getInt(KafkaConfig.OffsetsTopicPartitionsProp),
+          replicationFactor.toShort).configs(configsMap))).all().get()
+      } catch {
+        case e: ExecutionException => if (e.getCause != null &&
+            e.getCause.isInstanceOf[TopicExistsException] &&
+            topicHasSameNumPartitionsAndReplicationFactor(adminClient, topic, numPartitions, replicationFactor)) {
+          } else {
+            throw e
+          }
+      }
+    } finally {
+      adminClient.close()
+    }
+    // wait until we've propagated all partitions metadata to all brokers
+    val allPartitionsMetadata = waitForAllPartitionsMetadata(brokers, topic, numPartitions)
+
+    (0 until numPartitions).map { i =>
+      i -> allPartitionsMetadata.get(new TopicPartition(topic, i)).map(_.leader()).getOrElse(
+        throw new IllegalStateException(s"Cannot get the partition leader for topic: $topic, partition: $i in server metadata cache"))
+    }.toMap
+  }
+
   /**
-    * Create the consumer offsets/group metadata topic and wait until the leader is elected and metadata is propagated
+   * Create the consumer offsets/group metadata topic and wait until the leader is elected and metadata is propagated
     * to all brokers.
     */
   def createOffsetsTopic(zkClient: KafkaZkClient, servers: Seq[KafkaServer]): Unit = {

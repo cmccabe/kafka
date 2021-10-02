@@ -82,6 +82,7 @@ object RaftControllerNodeProvider {
             config: KafkaConfig,
             controllerQuorumVoterNodes: Seq[Node]): RaftControllerNodeProvider = {
     val controllerListenerName = new ListenerName(config.controllerListenerNames.head)
+    System.out.println("WATERMELON: config.listenerSecurityProtocolMap = " + config.listenerSecurityProtocolMap)
     val controllerSecurityProtocol = config.listenerSecurityProtocolMap.getOrElse(controllerListenerName, SecurityProtocol.forName(controllerListenerName.value()))
     val controllerSaslMechanism = config.saslMechanismControllerProtocol
     new RaftControllerNodeProvider(

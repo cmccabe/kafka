@@ -71,8 +71,13 @@ abstract class IntegrationTestHarness extends KafkaServerTestHarness {
       config.setProperty(KafkaConfig.InterBrokerListenerNameProp, interBrokerListenerName.value)
 
       val listenerNames = Set(listenerName, interBrokerListenerName)
-      val listeners = listenerNames.map(listenerName => s"${listenerName.value}://localhost:${TestUtils.RandomPort}").mkString(",")
-      val listenerSecurityMap = listenerNames.map(listenerName => s"${listenerName.value}:${securityProtocol.name}").mkString(",")
+      var listeners = listenerNames.map(listenerName => s"${listenerName.value}://localhost:${TestUtils.RandomPort}").mkString(",")
+      var listenerSecurityMap = listenerNames.map(listenerName => s"${listenerName.value}:${securityProtocol.name}").mkString(",")
+
+      if (isKRaftTest()) {
+        listeners += ",CONTROLLER://localhost:0"
+        listenerSecurityMap += s",CONTROLLER:${controllerListenerSecurityProtocol.toString}"
+      }
 
       config.setProperty(KafkaConfig.ListenersProp, listeners)
       config.setProperty(KafkaConfig.ListenerSecurityProtocolMapProp, listenerSecurityMap)
@@ -107,7 +112,7 @@ abstract class IntegrationTestHarness extends KafkaServerTestHarness {
     adminClientConfig.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, brokerList)
 
     if (createOffsetsTopic)
-      TestUtils.createOffsetsTopic(zkClient, servers)
+      TestUtils.createOffsetsTopic(adminClientConfig, brokers)
   }
 
   def clientSecurityProps(certAlias: String): Properties = {

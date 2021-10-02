@@ -17,6 +17,8 @@
 
 package kafka.zk
 
+import java.io.{ByteArrayOutputStream, File, PrintStream}
+import java.net.InetSocketAddress
 import java.util
 import java.util.Collections
 import java.util.concurrent.CompletableFuture
@@ -24,20 +26,22 @@ import java.util.concurrent.CompletableFuture
 import javax.security.auth.login.Configuration
 import kafka.raft.KafkaRaftManager
 import kafka.server.{BrokerServer, ControllerServer, KafkaConfig, KafkaRaftServer, MetaProperties}
+import kafka.tools.StorageTool
 import kafka.utils.{CoreUtils, Logging, TestInfoUtils, TestUtils}
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.common.security.JaasUtils
+import org.apache.kafka.common.security.auth.SecurityProtocol
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.metadata.MetadataRecordSerde
-import org.apache.kafka.raft.RaftConfig.AddressSpec
+import org.apache.kafka.raft.RaftConfig.{AddressSpec, InetAddressSpec}
 import org.apache.kafka.server.common.ApiMessageAndVersion
 import org.apache.zookeeper.client.ZKClientConfig
 import org.apache.zookeeper.{WatchedEvent, Watcher, ZooKeeper}
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.{AfterAll, AfterEach, BeforeAll, BeforeEach, Tag, TestInfo}
 
-import scala.collection.Seq
+import scala.collection.{Seq, immutable}
 
 @Tag("integration")
 abstract class ZooKeeperTestHarness extends Logging {
@@ -99,6 +103,10 @@ abstract class ZooKeeperTestHarness extends Logging {
     }
   }
 
+  protected def controllerListenerSecurityProtocol: SecurityProtocol = SecurityProtocol.PLAINTEXT
+
+  private var _metadataDir: File = null
+
   private var _controllerServer: ControllerServer = null
 
   def controllerServer: ControllerServer = {
@@ -133,6 +141,7 @@ abstract class ZooKeeperTestHarness extends Logging {
   def createAndStartBroker(config: KafkaConfig,
                            time: Time = Time.SYSTEM): BrokerServer = {
     checkIsKRaftTest()
+    System.out.println("config = " + config.originals)
     val broker = new BrokerServer(config = config,
       metaProps = new MetaProperties(_kraftClusterId, config.nodeId),
       raftManager = _raftManager,
@@ -146,17 +155,37 @@ abstract class ZooKeeperTestHarness extends Logging {
     broker
   }
 
+  private def formatDirectories(directories: immutable.Seq[String],
+                                metaProperties: MetaProperties): Unit = {
+    val stream = new ByteArrayOutputStream()
+    var out: PrintStream = null
+    try {
+      out = new PrintStream(stream)
+      if (StorageTool.formatCommand(out, directories, metaProperties, false) != 0) {
+        throw new RuntimeException(out.toString())
+      }
+      debug(s"Formatted storage directory(ies) ${directories}")
+    } finally {
+      if (out != null) out.close()
+      stream.close()
+    }
+  }
+
   private def setUpKRaft(testInfo: TestInfo): Unit = {
     _kraftClusterId = Uuid.randomUuid().toString
+    _metadataDir = TestUtils.tempDir()
     val metaProperties = new MetaProperties(_kraftClusterId, 0)
+    formatDirectories(immutable.Seq(_metadataDir.getAbsolutePath()), metaProperties)
     val controllerMetrics = new Metrics()
     val props = new util.HashMap[String, String]()
     props.put(KafkaConfig.ProcessRolesProp, "controller")
-    props.put(KafkaConfig.NodeIdProp, "0")
-    props.put(KafkaConfig.ListenerSecurityProtocolMapProp, "CONTROLLER:PLAINTEXT")
-    props.put(KafkaConfig.ListenersProp, "CONTROLLER://localhost:0")
-    props.put(KafkaConfig.ControllerListenerNamesProp, "CONTROLLER")
-    props.put(KafkaConfig.QuorumVotersProp, "0@localhost:0")
+    props.put(KafkaConfig.NodeIdProp, "1000")
+    props.put(KafkaConfig.MetadataLogDirProp, _metadataDir.getAbsolutePath())
+    val proto = controllerListenerSecurityProtocol.toString()
+    props.put(KafkaConfig.ListenerSecurityProtocolMapProp, s"${proto}:${proto}")
+    props.put(KafkaConfig.ListenersProp, s"${proto}://localhost:0")
+    props.put(KafkaConfig.ControllerListenerNamesProp, proto)
+    props.put(KafkaConfig.QuorumVotersProp, "1000@localhost:0")
     val config = new KafkaConfig(props)
     val threadNamePrefix = "Controller_" + testInfo.getDisplayName
     _raftManager = new KafkaRaftManager(
@@ -180,15 +209,15 @@ abstract class ZooKeeperTestHarness extends Logging {
 
     _controllerServer.socketServerFirstBoundPortFuture.whenComplete((port, e) => {
       if (e != null) {
+        error("Error completing controller socket server future", e)
         _controllerQuorumVotersFuture.completeExceptionally(e)
       } else {
-        _controllerQuorumVotersFuture.complete(Collections.singletonMap())
-        connectFutureManager.registerPort(node.id(), port);
+        _controllerQuorumVotersFuture.complete(Collections.singletonMap(1000,
+          new InetAddressSpec(new InetSocketAddress("localhost", port))));
       }
     });
-
-    _controllerServer.
-      _raftManager.startup()
+    _controllerServer.startup()
+    _raftManager.startup()
     _controllerServer.startup()
   }
 
