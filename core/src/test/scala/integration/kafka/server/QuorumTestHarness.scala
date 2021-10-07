@@ -20,7 +20,7 @@ package kafka.server
 import java.io.{ByteArrayOutputStream, File, PrintStream}
 import java.net.InetSocketAddress
 import java.util
-import java.util.Collections
+import java.util.{Collections, Properties}
 import java.util.concurrent.CompletableFuture
 
 import javax.security.auth.login.Configuration
@@ -112,6 +112,10 @@ abstract class QuorumTestHarness extends Logging {
    */
   protected def controllerListenerSecurityProtocol: SecurityProtocol = SecurityProtocol.PLAINTEXT
 
+  protected def kraftControllerConfigs(): Seq[Properties] = {
+    Seq(new Properties())
+  }
+
   private var implementation: QuorumImplementation = null
 
   def isKRaftTest(): Boolean = implementation.isInstanceOf[KRaftQuorumImplementation]
@@ -200,15 +204,19 @@ abstract class QuorumTestHarness extends Logging {
     val metaProperties = new MetaProperties(clusterId, 0)
     formatDirectories(immutable.Seq(metadataDir.getAbsolutePath()), metaProperties)
     val controllerMetrics = new Metrics()
-    val props = new util.HashMap[String, String]()
-    props.put(KafkaConfig.ProcessRolesProp, "controller")
-    props.put(KafkaConfig.NodeIdProp, "1000")
-    props.put(KafkaConfig.MetadataLogDirProp, metadataDir.getAbsolutePath())
+    val propsList = kraftControllerConfigs()
+    if (propsList.size != 1) {
+      throw new RuntimeException("Only one KRaft controller is supported for now.")
+    }
+    val props = propsList(0)
+    props.setProperty(KafkaConfig.ProcessRolesProp, "controller")
+    props.setProperty(KafkaConfig.NodeIdProp, "1000")
+    props.setProperty(KafkaConfig.MetadataLogDirProp, metadataDir.getAbsolutePath())
     val proto = controllerListenerSecurityProtocol.toString()
-    props.put(KafkaConfig.ListenerSecurityProtocolMapProp, s"${proto}:${proto}")
-    props.put(KafkaConfig.ListenersProp, s"${proto}://localhost:0")
-    props.put(KafkaConfig.ControllerListenerNamesProp, proto)
-    props.put(KafkaConfig.QuorumVotersProp, "1000@localhost:0")
+    props.setProperty(KafkaConfig.ListenerSecurityProtocolMapProp, s"${proto}:${proto}")
+    props.setProperty(KafkaConfig.ListenersProp, s"${proto}://localhost:0")
+    props.setProperty(KafkaConfig.ControllerListenerNamesProp, proto)
+    props.setProperty(KafkaConfig.QuorumVotersProp, "1000@localhost:0")
     val config = new KafkaConfig(props)
     val threadNamePrefix = "Controller_" + testInfo.getDisplayName
     val controllerQuorumVotersFuture = new CompletableFuture[util.Map[Integer, AddressSpec]]

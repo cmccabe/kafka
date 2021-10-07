@@ -17,21 +17,23 @@
 
 package kafka.server
 
-import java.util.Collections
+import java.util.{Collections, Properties}
 
+import scala.collection.Seq
 import kafka.utils._
 import org.apache.kafka.common.message.DeleteTopicsRequestData
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{DeleteTopicsRequest, DeleteTopicsResponse}
 import org.junit.jupiter.api.Assertions._
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 
 class DeleteTopicsRequestWithDeletionDisabledTest extends BaseRequestTest {
 
   override def brokerCount: Int = 1
 
-  override def generateConfigs = {
-    val props = TestUtils.createBrokerConfigs(brokerCount, zkConnect,
+  override def generateConfigs: Seq[KafkaConfig] = {
+    val props = TestUtils.createBrokerConfigs(brokerCount, zkConnectOrNull,
       enableControlledShutdown = false, enableDeleteTopic = false,
       interBrokerSecurityProtocol = Some(securityProtocol),
       trustStoreFile = trustStoreFile, saslProperties = serverSaslProperties, logDirCount = logDirCount)
@@ -39,8 +41,15 @@ class DeleteTopicsRequestWithDeletionDisabledTest extends BaseRequestTest {
     props.map(KafkaConfig.fromProps)
   }
 
-  @Test
-  def testDeleteRecordsRequest(): Unit = {
+  override def kraftControllerConfigs(): Seq[Properties] = {
+    val props = new Properties()
+    props.setProperty(KafkaConfig.DeleteTopicEnableProp, "false")
+    Seq(props)
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = Array("zk", "kraft"))
+  def testDeleteTopicsRequest(quorum: String): Unit = {
     val topic = "topic-1"
     val request = new DeleteTopicsRequest.Builder(
         new DeleteTopicsRequestData()
