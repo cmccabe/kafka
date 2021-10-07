@@ -72,6 +72,14 @@ public class ConfigurationControlManagerTest {
             define("ghi", ConfigDef.Type.BOOLEAN, true, ConfigDef.Importance.HIGH, "ghi"));
     }
 
+    static class ExampleConfigurationValidator implements ConfigurationValidator {
+        static final ExampleConfigurationValidator INSTANCE = new ExampleConfigurationValidator();
+
+        @Override
+        public void validate(ConfigResource resource, Map<String, String> config) {
+        }
+    }
+
     static final ConfigResource BROKER0 = new ConfigResource(BROKER, "0");
     static final ConfigResource MYTOPIC = new ConfigResource(TOPIC, "mytopic");
 
@@ -93,7 +101,7 @@ public class ConfigurationControlManagerTest {
         SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
         ConfigurationControlManager manager =
             new ConfigurationControlManager(new LogContext(), snapshotRegistry, CONFIGS,
-                Optional.empty());
+                Optional.empty(), ExampleConfigurationValidator.INSTANCE);
         assertEquals(Collections.emptyMap(), manager.getConfigs(BROKER0));
         manager.replay(new ConfigRecord().
             setResourceType(BROKER.id()).setResourceName("0").
@@ -152,7 +160,7 @@ public class ConfigurationControlManagerTest {
         SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
         ConfigurationControlManager manager =
             new ConfigurationControlManager(new LogContext(), snapshotRegistry, CONFIGS,
-                Optional.empty());
+                Optional.empty(), ExampleConfigurationValidator.INSTANCE);
         assertEquals(ControllerResult.atomicOf(Collections.singletonList(new ApiMessageAndVersion(
                 new ConfigRecord().setResourceType(TOPIC.id()).setResourceName("mytopic").
                     setName("abc").setValue("123"), (short) 0)),
@@ -206,7 +214,8 @@ public class ConfigurationControlManagerTest {
             new RequestMetadata(BROKER0, toMap(entry("foo.bar", "123"),
                 entry("quux", "456")))));
         ConfigurationControlManager manager = new ConfigurationControlManager(
-            new LogContext(), snapshotRegistry, CONFIGS, Optional.of(policy));
+            new LogContext(), snapshotRegistry, CONFIGS, Optional.of(policy),
+                ExampleConfigurationValidator.INSTANCE);
 
         assertEquals(ControllerResult.atomicOf(asList(new ApiMessageAndVersion(
                 new ConfigRecord().setResourceType(BROKER.id()).setResourceName("0").
@@ -231,7 +240,7 @@ public class ConfigurationControlManagerTest {
         SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
         ConfigurationControlManager manager =
             new ConfigurationControlManager(new LogContext(), snapshotRegistry, CONFIGS,
-                Optional.empty());
+                Optional.empty(), ExampleConfigurationValidator.INSTANCE);
         assertTrue(manager.isSplittable(BROKER, "foo.bar"));
         assertFalse(manager.isSplittable(BROKER, "baz"));
         assertFalse(manager.isSplittable(BROKER, "foo.baz.quux"));
@@ -244,7 +253,7 @@ public class ConfigurationControlManagerTest {
         SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
         ConfigurationControlManager manager =
             new ConfigurationControlManager(new LogContext(), snapshotRegistry, CONFIGS,
-                Optional.empty());
+                Optional.empty(), ExampleConfigurationValidator.INSTANCE);
         assertEquals("1", manager.getConfigValueDefault(BROKER, "foo.bar"));
         assertEquals(null, manager.getConfigValueDefault(BROKER, "foo.baz.quux"));
         assertEquals(null, manager.getConfigValueDefault(TOPIC, "abc"));
@@ -256,7 +265,7 @@ public class ConfigurationControlManagerTest {
         SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
         ConfigurationControlManager manager =
             new ConfigurationControlManager(new LogContext(), snapshotRegistry, CONFIGS,
-                Optional.empty());
+                Optional.empty(), ExampleConfigurationValidator.INSTANCE);
         List<ApiMessageAndVersion> expectedRecords1 = asList(
             new ApiMessageAndVersion(new ConfigRecord().
                 setResourceType(TOPIC.id()).setResourceName("mytopic").

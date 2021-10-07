@@ -369,7 +369,8 @@ public class ReplicationControlManager {
 
         // Identify topics that already exist and mark them with the appropriate error
         request.topics().stream().filter(creatableTopic -> topicsByName.containsKey(creatableTopic.name()))
-                .forEach(t -> topicErrors.put(t.name(), new ApiError(Errors.TOPIC_ALREADY_EXISTS)));
+                .forEach(t -> topicErrors.put(t.name(), new ApiError(Errors.TOPIC_ALREADY_EXISTS,
+                    "Topic '" + t.name() + "' already exists.")));
 
         // Verify that the configurations for the new topics are OK, and figure out what
         // ConfigRecords should be created.
