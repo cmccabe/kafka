@@ -165,7 +165,7 @@ abstract class AbstractCreateTopicsRequestTest extends BaseRequestTest {
       if (actual == null) {
         throw new RuntimeException(s"No response data found for topic $topicName")
       }
-      assertEquals(expected.error.code(), actual.errorCode(), "The response error should match")
+      assertEquals(expected.error.code(), actual.errorCode(), s"The response error for '${topicName}' should match")
       if (checkErrorMessage) {
         assertEquals(expected.message, actual.errorMessage())
       }
@@ -177,7 +177,7 @@ abstract class AbstractCreateTopicsRequestTest extends BaseRequestTest {
   }
 
   protected def validateTopicExists(topic: String): Unit = {
-    TestUtils.waitForPartitionMetadata(servers, topic, 0)
+    TestUtils.waitForPartitionMetadata(brokers, topic, 0)
     val metadata = sendMetadataRequest(
       new MetadataRequest.Builder(List(topic).asJava, true).build()).topicMetadata.asScala
     assertTrue(metadata.exists(p => p.topic.equals(topic) && p.error == Errors.NONE), "The topic should be created")

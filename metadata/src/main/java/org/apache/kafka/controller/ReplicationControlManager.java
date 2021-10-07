@@ -389,7 +389,12 @@ public class ReplicationControlManager {
         Map<String, CreatableTopicResult> successes = new HashMap<>();
         for (CreatableTopic topic : request.topics()) {
             if (topicErrors.containsKey(topic.name())) continue;
-            ApiError error = createTopic(topic, records, successes);
+            ApiError error;
+            try {
+                error = createTopic(topic, records, successes);
+            } catch (ApiException e) {
+                error = ApiError.fromThrowable(e);
+            }
             if (error.isFailure()) {
                 topicErrors.put(topic.name(), error);
             }
@@ -472,12 +477,8 @@ public class ReplicationControlManager {
             });
             if (error.isFailure()) return error;
         } else if (topic.replicationFactor() < -1 || topic.replicationFactor() == 0) {
-            return new ApiError(Errors.INVALID_REPLICATION_FACTOR,
-                "Replication factor was set to an invalid non-positive value.");
-        } else if (!topic.assignments().isEmpty()) {
-            return new ApiError(INVALID_REQUEST,
-                "Replication factor was not set to -1 but a manual partition " +
-                    "assignment was specified.");
+            return new ApiError(Errors.INVALID_PARTITIONS,
+                "Number of partitions must be larger than 0.");
         } else if (topic.numPartitions() < -1 || topic.numPartitions() == 0) {
             return new ApiError(Errors.INVALID_PARTITIONS,
                 "Number of partitions was set to an invalid non-positive value.");
