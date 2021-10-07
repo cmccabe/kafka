@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.common.config.ConfigDef.ConfigKey;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.ConfigResource.Type;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
@@ -50,6 +51,8 @@ import java.util.Optional;
 
 import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.APPEND;
 import static org.apache.kafka.common.metadata.MetadataRecordType.CONFIG_RECORD;
+import static org.apache.kafka.common.protocol.Errors.INVALID_CONFIG;
+import static org.apache.kafka.common.protocol.Errors.UNKNOWN_SERVER_ERROR;
 
 
 public class ConfigurationControlManager {
@@ -138,7 +141,7 @@ public class ConfigurationControlManager {
                 case SUBTRACT:
                     if (!isSplittable(configResource.type(), key)) {
                         outputResults.put(configResource, new ApiError(
-                            Errors.INVALID_CONFIG, "Can't " + opType + " to " +
+                            INVALID_CONFIG, "Can't " + opType + " to " +
                             "key " + key + " because its type is not LIST."));
                         return;
                     }
@@ -188,7 +191,9 @@ public class ConfigurationControlManager {
             if (alterConfigPolicy.isPresent()) {
                 alterConfigPolicy.get().validate(new RequestMetadata(configResource, newConfigs));
             }
-        } catch (ApiException e) {
+        } catch (ConfigException e) {
+            return new ApiError(INVALID_CONFIG, e.getMessage());
+        } catch (Throwable e) {
             return ApiError.fromThrowable(e);
         }
         return ApiError.NONE;
