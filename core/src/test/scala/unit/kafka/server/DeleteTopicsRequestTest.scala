@@ -56,7 +56,7 @@ class DeleteTopicsRequestTest extends BaseRequestTest {
     // Topic Ids
     createTopic("topic-7", 3, 2)
     createTopic("topic-6", 1, 2)
-    val ids = getTopicIds()
+    val ids = getTopicIds(Seq("topic-6", "topic-7"))
     validateValidDeleteTopicRequestsWithIds(new DeleteTopicsRequest.Builder(
       new DeleteTopicsRequestData()
         .setTopics(Arrays.asList(new DeleteTopicState().setTopicId(ids("topic-7")),
@@ -83,8 +83,9 @@ class DeleteTopicsRequestTest extends BaseRequestTest {
     }
   }
 
-  @Test
-  def testErrorDeleteTopicRequests(): Unit = {
+  @ParameterizedTest
+  @ValueSource(strings = Array("zk", "kraft"))
+  def testErrorDeleteTopicRequests(quorum: String): Unit = {
     val timeout = 30000
     val timeoutTopic = "invalid-timeout"
 
@@ -109,7 +110,7 @@ class DeleteTopicsRequestTest extends BaseRequestTest {
     
     // Topic IDs
     createTopic("topic-id-1", 1, 1)
-    val validId = getTopicIds()("topic-id-1")
+    val validId = getTopicIds(Seq("topic-id-1"))("topic-id-1")
     val invalidId = Uuid.randomUuid
     validateErrorDeleteTopicRequestsWithIds(new DeleteTopicsRequest.Builder(
       new DeleteTopicsRequestData()
@@ -130,9 +131,11 @@ class DeleteTopicsRequestTest extends BaseRequestTest {
           .setTopicNames(Arrays.asList(timeoutTopic))
           .setTimeoutMs(0)).build(),
       Map(timeoutTopic -> Errors.REQUEST_TIMED_OUT))
-    // The topic should still get deleted eventually
-    TestUtils.waitUntilTrue(() => !servers.head.metadataCache.contains(timeoutTopic), s"Topic $timeoutTopic is never deleted")
-    validateTopicIsDeleted(timeoutTopic)
+    if (!isKRaftTest()) {
+      // The topic should still get deleted eventually
+      TestUtils.waitUntilTrue(() => !brokers.head.metadataCache.contains(timeoutTopic), s"Topic $timeoutTopic is never deleted")
+      validateTopicIsDeleted(timeoutTopic)
+    }
   }
 
   private def validateErrorDeleteTopicRequests(request: DeleteTopicsRequest, expectedResponse: Map[String, Errors]): Unit = {

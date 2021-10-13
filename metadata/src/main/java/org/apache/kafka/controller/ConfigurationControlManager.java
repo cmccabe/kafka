@@ -23,8 +23,6 @@ import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.ConfigResource.Type;
 import org.apache.kafka.common.config.ConfigResource;
-import org.apache.kafka.common.errors.ApiException;
-import org.apache.kafka.common.errors.PolicyViolationException;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.protocol.Errors;
@@ -52,7 +50,6 @@ import java.util.Optional;
 import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.APPEND;
 import static org.apache.kafka.common.metadata.MetadataRecordType.CONFIG_RECORD;
 import static org.apache.kafka.common.protocol.Errors.INVALID_CONFIG;
-import static org.apache.kafka.common.protocol.Errors.UNKNOWN_SERVER_ERROR;
 
 
 public class ConfigurationControlManager {

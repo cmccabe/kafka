@@ -138,7 +138,7 @@ public class ReplicationControlManagerTest {
         final ControllerMetrics metrics = new MockControllerMetrics();
         final ConfigurationControlManager configurationControl = new ConfigurationControlManager(
             new LogContext(), snapshotRegistry, Collections.emptyMap(), Optional.empty(),
-                (__, ___) -> {});
+                (__, ___) -> { });
         final ReplicationControlManager replicationControl;
 
         void replay(List<ApiMessageAndVersion> records) throws Exception {

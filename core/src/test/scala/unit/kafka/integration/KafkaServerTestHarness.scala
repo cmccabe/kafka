@@ -18,6 +18,7 @@
 package kafka.integration
 
 import java.io.File
+import java.util
 import java.util.Arrays
 
 import kafka.server.QuorumTestHarness
@@ -27,6 +28,7 @@ import org.apache.kafka.common.security.auth.SecurityProtocol
 import org.junit.jupiter.api.{AfterEach, BeforeEach, TestInfo}
 
 import scala.collection.{Seq, mutable}
+import scala.jdk.CollectionConverters._
 import java.util.Properties
 
 import org.apache.kafka.common.{KafkaException, Uuid}
@@ -214,6 +216,23 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
     checkIsZKTest()
     val controllerId = TestUtils.waitUntilControllerElected(zkClient)
     servers.filter(s => s.config.brokerId == controllerId).head
+  }
+
+  def getTopicIds(names: Seq[String]): Map[String, Uuid] = {
+    val result = new util.HashMap[String, Uuid]()
+    if (isKRaftTest()) {
+      val topicIdsMap = controllerServer.controller.findTopicIds(Long.MaxValue, names.asJava).get()
+      names.foreach { name =>
+        val response = topicIdsMap.get(name)
+        result.put(name, response.result())
+      }
+    } else {
+      val topicIdsMap = getController().kafkaController.controllerContext.topicIds.toMap
+      names.foreach { name =>
+        if (topicIdsMap.contains(name)) result.put(name, topicIdsMap.get(name).get)
+      }
+    }
+    result.asScala.toMap
   }
 
   def getTopicIds(): Map[String, Uuid] = {
