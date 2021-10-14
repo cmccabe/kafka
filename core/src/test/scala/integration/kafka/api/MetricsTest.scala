@@ -15,7 +15,7 @@ package kafka.api
 import java.util.{Locale, Properties}
 
 import kafka.log.LogConfig
-import kafka.server.{KafkaConfig, KafkaServer}
+import kafka.server.{KafkaBroker, KafkaConfig, KafkaServer}
 import kafka.utils.{JaasTestUtils, TestUtils}
 import com.yammer.metrics.core.{Gauge, Histogram, Meter}
 import kafka.metrics.KafkaYammerMetrics
@@ -27,8 +27,10 @@ import org.apache.kafka.common.errors.{InvalidTopicException, UnknownTopicOrPart
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.security.auth.SecurityProtocol
 import org.apache.kafka.common.security.authenticator.TestJaasConfig
-import org.junit.jupiter.api.{AfterEach, BeforeEach, Test, TestInfo}
+import org.junit.jupiter.api.{AfterEach, BeforeEach, TestInfo}
 import org.junit.jupiter.api.Assertions._
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 
 import scala.annotation.nowarn
 import scala.jdk.CollectionConverters._
@@ -72,12 +74,13 @@ class MetricsTest extends IntegrationTestHarness with SaslSetup {
    * Verifies some of the metrics of producer, consumer as well as server.
    */
   @nowarn("cat=deprecation")
-  @Test
-  def testMetrics(): Unit = {
+  @ParameterizedTest
+  @ValueSource(strings = Array("zk", "kraft"))
+  def testMetrics(quorum: String): Unit = {
     val topic = "topicWithOldMessageFormat"
     val props = new Properties
     props.setProperty(LogConfig.MessageFormatVersionProp, "0.9.0")
-    createTopic(topic, numPartitions = 1, replicationFactor = 1, props)
+    createTopic(topic, numPartitions = 1, replicationFactor = 1, props, adminClientConfig)
     val tp = new TopicPartition(topic, 0)
 
     // Produce and consume some records
@@ -95,13 +98,15 @@ class MetricsTest extends IntegrationTestHarness with SaslSetup {
     verifyClientVersionMetrics(consumer.metrics, "Consumer")
     verifyClientVersionMetrics(producer.metrics, "Producer")
 
-    val server = servers.head
-    verifyBrokerMessageConversionMetrics(server, recordSize, tp)
-    verifyBrokerErrorMetrics(servers.head)
-    verifyBrokerZkMetrics(server, topic)
+    val broker = brokers.head
+    verifyBrokerMessageConversionMetrics(broker, recordSize, tp)
+    verifyBrokerErrorMetrics(brokers.head)
+    if (!isKRaftTest()) {
+      verifyBrokerZkMetrics(servers.head, topic)
+    }
 
     generateAuthenticationFailure(tp)
-    verifyBrokerAuthenticationMetrics(server)
+    verifyBrokerAuthenticationMetrics(broker)
   }
 
   private def sendRecords(producer: KafkaProducer[Array[Byte], Array[Byte]], numRecords: Int,
@@ -181,8 +186,8 @@ class MetricsTest extends IntegrationTestHarness with SaslSetup {
     }
   }
 
-  private def verifyBrokerAuthenticationMetrics(server: KafkaServer): Unit = {
-    val metrics = server.metrics.metrics
+  private def verifyBrokerAuthenticationMetrics(broker: KafkaBroker): Unit = {
+    val metrics = broker.metrics.metrics
     TestUtils.waitUntilTrue(() =>
       maxKafkaMetricValue("failed-authentication-total", metrics, "Broker", Some("socket-server-metrics")) > 0,
       "failed-authentication-total not updated")
@@ -192,7 +197,7 @@ class MetricsTest extends IntegrationTestHarness with SaslSetup {
     verifyKafkaMetricRecorded("failed-authentication-total", metrics, "Broker", Some("socket-server-metrics"))
   }
 
-  private def verifyBrokerMessageConversionMetrics(server: KafkaServer, recordSize: Int, tp: TopicPartition): Unit = {
+  private def verifyBrokerMessageConversionMetrics(broker: KafkaBroker, recordSize: Int, tp: TopicPartition): Unit = {
     val requestMetricsPrefix = "kafka.network:type=RequestMetrics"
     val requestBytes = verifyYammerMetricRecorded(s"$requestMetricsPrefix,name=RequestBytes,request=Produce")
     val tempBytes = verifyYammerMetricRecorded(s"$requestMetricsPrefix,name=TemporaryMemoryBytes,request=Produce")
@@ -221,7 +226,7 @@ class MetricsTest extends IntegrationTestHarness with SaslSetup {
     assertEquals("CONNECTED", yammerMetricValue("SessionState"), s"Unexpected ZK state")
   }
 
-  private def verifyBrokerErrorMetrics(server: KafkaServer): Unit = {
+  private def verifyBrokerErrorMetrics(broker: KafkaBroker): Unit = {
 
     def errorMetricCount = KafkaYammerMetrics.defaultRegistry.allMetrics.keySet.asScala.filter(_.getName == "ErrorsPerSec").size
 

@@ -139,7 +139,7 @@ class BrokerServer(
 
   var clientQuotaMetadataManager: ClientQuotaMetadataManager = null
 
-  private var _brokerTopicStats: BrokerTopicStats = null
+  @volatile private var _brokerTopicStats: BrokerTopicStats = null
 
   val brokerFeatures: BrokerFeatures = BrokerFeatures.createDefault()
 
@@ -155,7 +155,7 @@ class BrokerServer(
 
   def kafkaYammerMetrics: kafka.metrics.KafkaYammerMetrics = KafkaYammerMetrics.INSTANCE
 
-  private[kafka] def brokerTopicStats = _brokerTopicStats
+  override def brokerTopicStats = _brokerTopicStats
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
     lock.lock()

@@ -367,13 +367,9 @@ object TestUtils extends Logging {
       config.setProperty(KafkaConfig.LogMessageFormatVersionProp, version.version)
   }
 
-  def createTopicWithAdmin[B <: KafkaBroker](
-      topic: String,
-      numPartitions: Int = 1,
-      replicationFactor: Int = 1,
+  def createAdminClient[B <: KafkaBroker](
       brokers: Seq[B],
-      topicConfig: Properties = new Properties,
-      adminConfig: Properties = new Properties): scala.collection.immutable.Map[Int, Int] = {
+      adminConfig: Properties): Admin = {
     val adminClientProperties = if (adminConfig.isEmpty) {
       val newConfig = new Properties()
       newConfig.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, getBrokerListStrFromServers(brokers))
@@ -381,7 +377,17 @@ object TestUtils extends Logging {
     } else {
       adminConfig
     }
-    val adminClient = Admin.create(adminClientProperties)
+    Admin.create(adminClientProperties)
+  }
+
+  def createTopicWithAdmin[B <: KafkaBroker](
+      topic: String,
+      numPartitions: Int = 1,
+      replicationFactor: Int = 1,
+      brokers: Seq[B],
+      topicConfig: Properties = new Properties,
+      adminConfig: Properties = new Properties): scala.collection.immutable.Map[Int, Int] = {
+    val adminClient = createAdminClient(brokers, adminConfig)
     try {
       val configsMap = new java.util.HashMap[String, String]()
       topicConfig.forEach((k, v) => configsMap.put(k.toString, v.toString))
@@ -420,13 +426,36 @@ object TestUtils extends Logging {
       description.partitions().iterator().next().replicas().size() == replicationFactor)
   }
 
-  def createOffsetsTopicWithAdmin[B <: KafkaBroker](brokers: Seq[B]) = {
+  def createOffsetsTopicWithAdmin[B <: KafkaBroker](
+      brokers: Seq[B],
+      adminConfig: Properties = new Properties) = {
     val broker = brokers.head
     createTopicWithAdmin(topic = Topic.GROUP_METADATA_TOPIC_NAME,
       numPartitions = broker.config.getInt(KafkaConfig.OffsetsTopicPartitionsProp),
       replicationFactor = broker.config.getShort(KafkaConfig.OffsetsTopicReplicationFactorProp).toInt,
       brokers = brokers,
-      topicConfig = broker.groupCoordinator.offsetsTopicConfigs)
+      topicConfig = broker.groupCoordinator.offsetsTopicConfigs,
+      adminConfig = adminConfig)
+  }
+
+  def deleteTopicWithAdmin[B <: KafkaBroker](
+      topic: String,
+      brokers: Seq[B],
+      adminConfig: Properties = new Properties): Unit = {
+    val adminClient = createAdminClient(brokers, adminConfig)
+    try {
+      adminClient.deleteTopics(Collections.singletonList(topic)).all().get()
+    } catch {
+      case e: ExecutionException => if (e.getCause != null &&
+          e.getCause.isInstanceOf[UnknownTopicOrPartitionException]) {
+        // ignore
+      } else {
+        throw e
+      }
+    } finally {
+      adminClient.close()
+    }
+    waitForAllPartitionsMetadata(brokers, topic, 0)
   }
 
   /**
@@ -1039,7 +1068,11 @@ object TestUtils extends Logging {
       topic: String, expectedNumPartitions: Int): Map[TopicPartition, UpdateMetadataPartitionState] = {
     waitUntilTrue(
       () => brokers.forall { broker =>
-        broker.metadataCache.numPartitions(topic) == Some(expectedNumPartitions)
+        if (expectedNumPartitions == 0) {
+          broker.metadataCache.numPartitions(topic) == None
+        } else {
+          broker.metadataCache.numPartitions(topic) == Some(expectedNumPartitions)
+        }
       },
       s"Topic [$topic] metadata not propagated after 60000 ms", waitTimeMs = 60000L)
 
@@ -1315,36 +1348,42 @@ object TestUtils extends Logging {
     }
   }
 
-  def verifyTopicDeletion(zkClient: KafkaZkClient, topic: String, numPartitions: Int, servers: Seq[KafkaServer]): Unit = {
+  def verifyTopicDeletion[B <: KafkaBroker](
+      zkClient: KafkaZkClient,
+      topic: String,
+      numPartitions: Int,
+      brokers: Seq[B]): Unit = {
     val topicPartitions = (0 until numPartitions).map(new TopicPartition(topic, _))
-    // wait until admin path for delete topic is deleted, signaling completion of topic deletion
-    waitUntilTrue(() => !zkClient.isTopicMarkedForDeletion(topic),
-      "Admin path /admin/delete_topics/%s path not deleted even after a replica is restarted".format(topic))
-    waitUntilTrue(() => !zkClient.topicExists(topic),
-      "Topic path /brokers/topics/%s not deleted after /admin/delete_topics/%s path is deleted".format(topic, topic))
+    if (zkClient != null) {
+      // wait until admin path for delete topic is deleted, signaling completion of topic deletion
+      waitUntilTrue(() => !zkClient.isTopicMarkedForDeletion(topic),
+        "Admin path /admin/delete_topics/%s path not deleted even after a replica is restarted".format(topic))
+      waitUntilTrue(() => !zkClient.topicExists(topic),
+        "Topic path /brokers/topics/%s not deleted after /admin/delete_topics/%s path is deleted".format(topic, topic))
+    }
     // ensure that the topic-partition has been deleted from all brokers' replica managers
     waitUntilTrue(() =>
-      servers.forall(server => topicPartitions.forall(tp => server.replicaManager.onlinePartition(tp).isEmpty)),
+      brokers.forall(broker => topicPartitions.forall(tp => broker.replicaManager.onlinePartition(tp).isEmpty)),
       "Replica manager's should have deleted all of this topic's partitions")
     // ensure that logs from all replicas are deleted if delete topic is marked successful in ZooKeeper
-    assertTrue(servers.forall(server => topicPartitions.forall(tp => server.getLogManager.getLog(tp).isEmpty)),
+    assertTrue(brokers.forall(broker => topicPartitions.forall(tp => broker.logManager.getLog(tp).isEmpty)),
       "Replica logs not deleted after delete topic is complete")
     // ensure that topic is removed from all cleaner offsets
-    waitUntilTrue(() => servers.forall(server => topicPartitions.forall { tp =>
-      val checkpoints = server.getLogManager.liveLogDirs.map { logDir =>
+    waitUntilTrue(() => brokers.forall(broker => topicPartitions.forall { tp =>
+      val checkpoints = broker.logManager.liveLogDirs.map { logDir =>
         new OffsetCheckpointFile(new File(logDir, "cleaner-offset-checkpoint")).read()
       }
       checkpoints.forall(checkpointsPerLogDir => !checkpointsPerLogDir.contains(tp))
     }), "Cleaner offset for deleted partition should have been removed")
-    waitUntilTrue(() => servers.forall(server =>
-      server.config.logDirs.forall { logDir =>
+    waitUntilTrue(() => brokers.forall(broker =>
+      broker.config.logDirs.forall { logDir =>
         topicPartitions.forall { tp =>
           !new File(logDir, tp.topic + "-" + tp.partition).exists()
         }
       }
     ), "Failed to soft-delete the data to a delete directory")
-    waitUntilTrue(() => servers.forall(server =>
-      server.config.logDirs.forall { logDir =>
+    waitUntilTrue(() => brokers.forall(broker =>
+      broker.config.logDirs.forall { logDir =>
         topicPartitions.forall { tp =>
           !Arrays.asList(new File(logDir).list()).asScala.exists { partitionDirectoryName =>
             partitionDirectoryName.startsWith(tp.topic + "-" + tp.partition) &&

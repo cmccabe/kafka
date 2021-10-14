@@ -145,14 +145,17 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
   }
 
   /**
-   * Create a topic in ZooKeeper.
+   * Create a topic.
    * Wait until the leader is elected and the metadata is propagated to all brokers.
    * Return the leader for each partition.
    */
-  def createTopic(topic: String, numPartitions: Int = 1, replicationFactor: Int = 1,
-                  topicConfig: Properties = new Properties): scala.collection.immutable.Map[Int, Int] = {
+  def createTopic(topic: String,
+                  numPartitions: Int = 1,
+                  replicationFactor: Int = 1,
+                  topicConfig: Properties = new Properties,
+                  adminClientConfig: Properties = new Properties): scala.collection.immutable.Map[Int, Int] = {
     if (isKRaftTest()) {
-      TestUtils.createTopicWithAdmin(topic, numPartitions, replicationFactor, brokers, topicConfig)
+      TestUtils.createTopicWithAdmin(topic, numPartitions, replicationFactor, brokers, topicConfig, adminClientConfig)
     } else {
       TestUtils.createTopic(zkClient, topic, numPartitions, replicationFactor, servers, topicConfig)
     }
@@ -165,6 +168,14 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
    */
   def createTopic(topic: String, partitionReplicaAssignment: collection.Map[Int, Seq[Int]]): scala.collection.immutable.Map[Int, Int] =
     TestUtils.createTopic(zkClient, topic, partitionReplicaAssignment, servers)
+
+  def deleteTopic(topic: String): Unit = {
+    if (isKRaftTest()) {
+      TestUtils.deleteTopicWithAdmin(topic, brokers)
+    } else {
+      adminZkClient.deleteTopic(topic)
+    }
+  }
 
   /**
    * Pick a broker at random and kill it if it isn't already dead

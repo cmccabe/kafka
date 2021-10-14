@@ -87,6 +87,7 @@ trait KafkaBroker extends KafkaMetricsGroup {
   def dataPlaneRequestProcessor: KafkaApis
   def metadataCache: MetadataCache
   def groupCoordinator: GroupCoordinator
+  def brokerTopicStats: BrokerTopicStats
 
   // For backwards compatibility, we need to keep older metrics tied
   // to their original name when this class was named `KafkaServer`
