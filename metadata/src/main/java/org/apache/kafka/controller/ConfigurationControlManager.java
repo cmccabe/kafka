@@ -126,12 +126,6 @@ public class ConfigurationControlManager {
                     newValue = opValue;
                     break;
                 case DELETE:
-                    if (opValue != null) {
-                        outputResults.put(configResource, new ApiError(
-                            Errors.INVALID_REQUEST, "A DELETE op was given with a " +
-                            "non-null value."));
-                        return;
-                    }
                     newValue = null;
                     break;
                 case APPEND:
