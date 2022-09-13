@@ -159,17 +159,12 @@ public class AclControlManagerTest {
         }
 
         @Override
-        public void loadSnapshot(Map<Uuid, StandardAcl> acls) {
+        public void loadAclSnapshot(Map<Uuid, StandardAcl> acls) {
             this.acls = new HashMap<>(acls);
         }
 
         @Override
-        public void addAcl(Uuid id, StandardAcl acl) {
-            // do nothing
-        }
-
-        @Override
-        public void removeAcl(Uuid id) {
+        public void applyAclChanges(Map<Uuid, Optional<StandardAcl>> aclChanges) {
             // do nothing
         }
 
@@ -225,14 +220,14 @@ public class AclControlManagerTest {
 
         // Once we complete the snapshot load, the ACLs should be reflected in the authorizer.
         MockClusterMetadataAuthorizer authorizer = new MockClusterMetadataAuthorizer();
-        authorizer.loadSnapshot(manager.idToAcl());
+        authorizer.loadAclSnapshot(manager.idToAcl());
         assertEquals(new HashSet<>(StandardAclTest.TEST_ACLS), new HashSet<>(authorizer.acls.values()));
 
         // Test reverting to an empty state and then completing the snapshot load without
         // setting an authorizer. This simulates the case where the user didn't configure
         // a cluster metadata authorizer.
         snapshotRegistry.revertToSnapshot(0);
-        authorizer.loadSnapshot(manager.idToAcl());
+        authorizer.loadAclSnapshot(manager.idToAcl());
         assertFalse(manager.iterator(Long.MAX_VALUE).hasNext());
     }
 
@@ -241,7 +236,7 @@ public class AclControlManagerTest {
         SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
         AclControlManager manager = new AclControlManager(snapshotRegistry, Optional.empty());
         MockClusterMetadataAuthorizer authorizer = new MockClusterMetadataAuthorizer();
-        authorizer.loadSnapshot(manager.idToAcl());
+        authorizer.loadAclSnapshot(manager.idToAcl());
         manager.replay(StandardAclWithIdTest.TEST_ACLS.get(0).toRecord(), Optional.empty());
         assertEquals(new ApiMessageAndVersion(TEST_ACLS.get(0).toRecord(), (short) 0),
             manager.iterator(Long.MAX_VALUE).next().get(0));
@@ -255,7 +250,7 @@ public class AclControlManagerTest {
         SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
         AclControlManager manager = new AclControlManager(snapshotRegistry, Optional.empty());
         MockClusterMetadataAuthorizer authorizer = new MockClusterMetadataAuthorizer();
-        authorizer.loadSnapshot(manager.idToAcl());
+        authorizer.loadAclSnapshot(manager.idToAcl());
 
         List<AclBinding> toCreate = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
@@ -322,7 +317,7 @@ public class AclControlManagerTest {
         SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
         AclControlManager manager = new AclControlManager(snapshotRegistry, Optional.empty());
         MockClusterMetadataAuthorizer authorizer = new MockClusterMetadataAuthorizer();
-        authorizer.loadSnapshot(manager.idToAcl());
+        authorizer.loadAclSnapshot(manager.idToAcl());
 
         AclBinding aclBinding = new AclBinding(new ResourcePattern(TOPIC, "topic-1", LITERAL),
                 new AccessControlEntry("User:user", "10.0.0.1", AclOperation.ALL, ALLOW));

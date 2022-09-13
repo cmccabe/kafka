@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Timeout;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.apache.kafka.metadata.authorizer.StandardAuthorizerData.WILDCARD;
-import static org.apache.kafka.metadata.authorizer.StandardAuthorizerData.WILDCARD_PRINCIPAL;
+import static org.apache.kafka.metadata.authorizer.StandardAuthorizerConstants.WILDCARD;
+import static org.apache.kafka.metadata.authorizer.StandardAuthorizerConstants.WILDCARD_PRINCIPAL;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
@@ -89,12 +89,9 @@ public class StandardAclTest {
     }
 
     @Test
-    public void testCompareTo() {
-        assertEquals(1, signum(TEST_ACLS.get(0).compareTo(TEST_ACLS.get(1))));
-        assertEquals(-1, signum(TEST_ACLS.get(1).compareTo(TEST_ACLS.get(0))));
-        assertEquals(-1, signum(TEST_ACLS.get(2).compareTo(TEST_ACLS.get(3))));
-        assertEquals(1, signum(TEST_ACLS.get(4).compareTo(TEST_ACLS.get(3))));
-        assertEquals(-1, signum(TEST_ACLS.get(3).compareTo(TEST_ACLS.get(4))));
+    public void testResource() {
+        assertEquals(new Resource(ResourceType.CLUSTER, Resource.CLUSTER_NAME), TEST_ACLS.get(0).resource());
+        assertEquals(new Resource(ResourceType.TOPIC, "foo_"), TEST_ACLS.get(1).resource());
     }
 
     @Test
