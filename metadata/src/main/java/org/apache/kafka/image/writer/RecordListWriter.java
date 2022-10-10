@@ -15,30 +15,36 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.server.util;
+package org.apache.kafka.image.writer;
 
-import java.util.Random;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
+
+import java.util.List;
 
 
 /**
- * A subclass of Random with a fixed seed and generation algorithm.
- *
- * This is useful for generating a deterministic sequence of pseudorandom numbers.
+ * Writes a metadata image to a list of records.
  */
-public class MockRandom extends Random {
-    private long state;
+public class RecordListWriter implements ImageWriter {
+    private final List<ApiMessageAndVersion> records;
+    private boolean closed = false;
 
-    public MockRandom() {
-        this(17);
-    }
-
-    public MockRandom(long state) {
-        this.state = state;
+    public RecordListWriter(List<ApiMessageAndVersion> records) {
+        this.records = records;
     }
 
     @Override
-    protected int next(int bits) {
-        state = (state * 2862933555777941757L) + 3037000493L;
-        return (int) (state >>> (64 - bits));
+    public void write(ApiMessageAndVersion record) {
+        if (closed) throw new ImageWriterClosedException();
+        records.add(record);
+    }
+
+    @Override
+    public void close(boolean complete) {
+        if (closed) return;
+        closed = true;
+        if (!complete) {
+            records.clear();
+        }
     }
 }

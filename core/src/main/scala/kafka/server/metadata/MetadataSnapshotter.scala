@@ -27,11 +27,10 @@ trait MetadataSnapshotter {
   /**
    * If there is no other snapshot being written out, start writing out a snapshot.
    *
-   * @param lastContainedLogTime  The highest time contained in the snapshot.
    * @param image                 The metadata image to write out.
    * @param reason                Set of reasons due to which a snapshot is being taken.
    *
    * @return                      True if we will write out a new snapshot; false otherwise.
    */
-  def maybeStartSnapshot(lastContainedLogTime: Long, image: MetadataImage, reason: Set[SnapshotReason]): Boolean
+  def maybeStartSnapshot(image: MetadataImage, reason: Set[SnapshotReason]): Boolean
 }

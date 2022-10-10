@@ -23,6 +23,8 @@ import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
+import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.LeaderRecoveryState;
 import org.apache.kafka.metadata.PartitionRegistration;
 import org.apache.kafka.metadata.RecordTestUtils;
@@ -378,10 +380,11 @@ public class TopicsImageTest {
     }
 
     private void testToImageAndBack(TopicsImage image) throws Throwable {
-        MockSnapshotConsumer writer = new MockSnapshotConsumer();
-        image.write(writer);
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        RecordListWriter writer = new RecordListWriter(records);
+        image.write(writer, new ImageWriterOptions.Builder().build());
         TopicsDelta delta = new TopicsDelta(TopicsImage.EMPTY);
-        RecordTestUtils.replayAllBatches(delta, writer.batches());
+        RecordTestUtils.replayAll(delta, records);
         TopicsImage nextImage = delta.apply();
         assertEquals(image, nextImage);
     }

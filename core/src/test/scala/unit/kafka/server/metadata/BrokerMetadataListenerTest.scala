@@ -84,7 +84,7 @@ class BrokerMetadataListenerTest {
         )
       )
       val imageRecords = listener.getImageRecords().get()
-      assertEquals(0, imageRecords.size())
+      assertEquals(2, imageRecords.size())
       assertEquals(100L, listener.highestMetadataOffset)
       assertEquals(0L, metrics.lastAppliedRecordOffset.get)
       assertEquals(0L, metrics.lastAppliedRecordTimestamp.get)
@@ -138,15 +138,15 @@ class BrokerMetadataListenerTest {
     var prevCommittedEpoch = -1
     var prevLastContainedLogTime = -1L
 
-    override def maybeStartSnapshot(lastContainedLogTime: Long, newImage: MetadataImage, reason: Set[SnapshotReason]): Boolean = {
+    override def maybeStartSnapshot(newImage: MetadataImage, reason: Set[SnapshotReason]): Boolean = {
       try {
         if (activeSnapshotOffset == -1L) {
           assertTrue(prevCommittedOffset <= newImage.highestOffsetAndEpoch().offset)
           assertTrue(prevCommittedEpoch <= newImage.highestOffsetAndEpoch().epoch)
-          assertTrue(prevLastContainedLogTime <= lastContainedLogTime)
+          assertTrue(prevLastContainedLogTime <= newImage.provenance().highestEpoch())
           prevCommittedOffset = newImage.highestOffsetAndEpoch().offset
           prevCommittedEpoch = newImage.highestOffsetAndEpoch().epoch
-          prevLastContainedLogTime = lastContainedLogTime
+          prevLastContainedLogTime = newImage.provenance().highestEpoch()
           image = newImage
           activeSnapshotOffset = newImage.highestOffsetAndEpoch().offset
           true

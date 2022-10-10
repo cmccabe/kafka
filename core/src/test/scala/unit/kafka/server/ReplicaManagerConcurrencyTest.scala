@@ -36,7 +36,7 @@ import org.apache.kafka.common.requests.{FetchRequest, ProduceResponse}
 import org.apache.kafka.common.security.auth.KafkaPrincipal
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{IsolationLevel, TopicIdPartition, TopicPartition, Uuid}
-import org.apache.kafka.image.{MetadataDelta, MetadataImage}
+import org.apache.kafka.image.{ImageProvenance, MetadataDelta, MetadataImage}
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.metadata.PartitionRegistration
 import org.junit.jupiter.api.Assertions._
@@ -357,14 +357,14 @@ class ReplicaManagerConcurrencyTest {
             )
           }
           topic.initialize(delta)
-          latestImage = delta.apply()
+          latestImage = delta.apply(ImageProvenance.EMPTY)
           metadataCache.setImage(latestImage)
           replicaManager.applyDelta(delta.topicsDelta, latestImage)
 
         case AlterIsrEvent(future, topicPartition, leaderAndIsr) =>
           val delta = new MetadataDelta(latestImage)
           val updatedLeaderAndIsr = topic.alterIsr(topicPartition, leaderAndIsr, delta)
-          latestImage = delta.apply()
+          latestImage = delta.apply(ImageProvenance.EMPTY)
           future.complete(updatedLeaderAndIsr)
           replicaManager.applyDelta(delta.topicsDelta, latestImage)
 

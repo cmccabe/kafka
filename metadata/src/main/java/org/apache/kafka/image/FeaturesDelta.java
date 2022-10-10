@@ -56,6 +56,8 @@ public final class FeaturesDelta {
         }
     }
 
+    // ... need a function that can return a boolean if MV changed ...
+
     public void replay(FeatureLevelRecord record) {
         if (record.name().equals(MetadataVersion.FEATURE_NAME)) {
             metadataVersionChange = MetadataVersion.fromFeatureLevel(record.featureLevel());

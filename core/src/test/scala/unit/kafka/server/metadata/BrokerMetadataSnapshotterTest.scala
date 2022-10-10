@@ -21,11 +21,10 @@ import java.nio.ByteBuffer
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, CountDownLatch}
 import org.apache.kafka.common.memory.MemoryPool
-import org.apache.kafka.common.metadata.FenceBrokerRecord
 import org.apache.kafka.common.protocol.ByteBufferAccessor
 import org.apache.kafka.common.record.{CompressionType, MemoryRecords}
 import org.apache.kafka.common.utils.Time
-import org.apache.kafka.image.{MetadataDelta, MetadataImage, MetadataImageTest}
+import org.apache.kafka.image.{ImageProvenance, MetadataDelta, MetadataImage, MetadataImageTest}
 import org.apache.kafka.metadata.MetadataRecordSerde
 import org.apache.kafka.metadata.util.SnapshotReason
 import org.apache.kafka.queue.EventQueue
@@ -36,7 +35,6 @@ import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertTrue}
 import org.junit.jupiter.api.Test
 
 import java.util
-import java.util.Arrays.asList
 import scala.compat.java8.OptionConverters._
 
 class BrokerMetadataSnapshotterTest {
@@ -80,11 +78,11 @@ class BrokerMetadataSnapshotterTest {
             val recordBuffer = record.value().duplicate()
             val messageAndVersion = MetadataRecordSerde.INSTANCE.read(
               new ByteBufferAccessor(recordBuffer), recordBuffer.remaining())
-            delta.replay(committedOffset, committedEpoch, messageAndVersion.message())
+            delta.replay(messageAndVersion.message())
           })
         }
       }
-      image.complete(delta.apply())
+      image.complete(delta.apply(ImageProvenance.EMPTY))
     }
   }
 
@@ -103,8 +101,8 @@ class BrokerMetadataSnapshotterTest {
       val reasons = Set(SnapshotReason.UnknownReason)
 
       snapshotter.eventQueue.append(blockingEvent)
-      assertTrue(snapshotter.maybeStartSnapshot(10000L, MetadataImageTest.IMAGE1, reasons))
-      assertFalse(snapshotter.maybeStartSnapshot(11000L, MetadataImageTest.IMAGE2, reasons))
+      assertTrue(snapshotter.maybeStartSnapshot(MetadataImageTest.IMAGE1, reasons))
+      assertFalse(snapshotter.maybeStartSnapshot(MetadataImageTest.IMAGE2, reasons))
       blockingEvent.latch.countDown()
       assertEquals(MetadataImageTest.IMAGE1, writerBuilder.image.get())
     } finally {
@@ -122,8 +120,8 @@ class BrokerMetadataSnapshotterTest {
       val reasons = Set(SnapshotReason.MaxBytesExceeded, SnapshotReason.MetadataVersionChanged)
 
       snapshotter.eventQueue.append(blockingEvent)
-      assertTrue(snapshotter.maybeStartSnapshot(10000L, MetadataImageTest.IMAGE1, reasons))
-      assertFalse(snapshotter.maybeStartSnapshot(11000L, MetadataImageTest.IMAGE2, reasons))
+      assertTrue(snapshotter.maybeStartSnapshot(MetadataImageTest.IMAGE1, reasons))
+      assertFalse(snapshotter.maybeStartSnapshot(MetadataImageTest.IMAGE2, reasons))
       blockingEvent.latch.countDown()
       assertEquals(MetadataImageTest.IMAGE1, writerBuilder.image.get())
     } finally {
@@ -140,21 +138,5 @@ class BrokerMetadataSnapshotterTest {
     override def append(batch: util.List[ApiMessageAndVersion]): Unit = batches.add(batch)
     override def freeze(): Unit = {}
     override def close(): Unit = {}
-  }
-
-  @Test
-  def testRecordListConsumer(): Unit = {
-    val writer = new MockSnapshotWriter()
-    val consumer = new RecordListConsumer(3, writer)
-    val m = new ApiMessageAndVersion(new FenceBrokerRecord().setId(1).setEpoch(1), 0.toShort)
-    consumer.accept(asList(m, m))
-    assertEquals(asList(asList(m, m)), writer.batches)
-    consumer.accept(asList(m))
-    assertEquals(asList(asList(m, m), asList(m)), writer.batches)
-    consumer.accept(asList(m, m, m, m))
-    assertEquals(asList(asList(m, m), asList(m), asList(m, m, m), asList(m)), writer.batches)
-    consumer.accept(asList(m, m, m, m, m, m, m, m))
-    assertEquals(asList(asList(m, m), asList(m), asList(m, m, m), asList(m), asList(m, m, m), asList(m, m, m), asList(m, m)),
-      writer.batches)
   }
 }

@@ -148,7 +148,7 @@ public enum MetadataVersion {
     // Adds topic IDs to Fetch requests/responses (KIP-516)
     IBP_3_1_IV0(2, "3.1", "IV0", false),
 
-    // Support for leader recovery for unclean leader election (KIP-704)
+    // Support for leader recovery for unclean leader election (KIP-704).
     IBP_3_2_IV0(3, "3.2", "IV0", true),
 
     // Support for metadata.version feature flag and Removes min_version_level from the finalized version range that is written to ZooKeeper (KIP-778)
@@ -238,6 +238,12 @@ public enum MetadataVersion {
 
     public boolean isNoOpRecordSupported() {
         return this.isAtLeast(IBP_3_3_IV1);
+    }
+
+    public boolean isAccessControlRecordSupported() {
+        // Technically, some earlier releases had the record, but didn't support
+        // StandardAuthorizer or RemoveAccessControlEntryRecord, so we don't count them here.
+        return this.isAtLeast(IBP_3_2_IV0);
     }
 
     public boolean isKRaftSupported() {

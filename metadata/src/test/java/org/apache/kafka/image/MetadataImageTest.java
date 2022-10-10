@@ -17,10 +17,15 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
-import org.apache.kafka.raft.OffsetAndEpoch;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -33,9 +38,12 @@ public class MetadataImageTest {
 
     public final static MetadataImage IMAGE2;
 
+    public final static ImageProvenance IMAGE2_PROVENANCE =
+            new ImageProvenance("MetadataImageTest", 100L, 200, 300L);
+
     static {
         IMAGE1 = new MetadataImage(
-            new OffsetAndEpoch(100, 4),
+            ImageProvenance.EMPTY,
             FeaturesImageTest.IMAGE1,
             ClusterImageTest.IMAGE1,
             TopicsImageTest.IMAGE1,
@@ -45,16 +53,16 @@ public class MetadataImageTest {
             AclsImageTest.IMAGE1);
 
         DELTA1 = new MetadataDelta(IMAGE1);
-        RecordTestUtils.replayAll(DELTA1, 200, 5, FeaturesImageTest.DELTA1_RECORDS);
-        RecordTestUtils.replayAll(DELTA1, 200, 5, ClusterImageTest.DELTA1_RECORDS);
-        RecordTestUtils.replayAll(DELTA1, 200, 5, TopicsImageTest.DELTA1_RECORDS);
-        RecordTestUtils.replayAll(DELTA1, 200, 5, ConfigurationsImageTest.DELTA1_RECORDS);
-        RecordTestUtils.replayAll(DELTA1, 200, 5, ClientQuotasImageTest.DELTA1_RECORDS);
-        RecordTestUtils.replayAll(DELTA1, 200, 5, ProducerIdsImageTest.DELTA1_RECORDS);
-        RecordTestUtils.replayAll(DELTA1, 200, 5, AclsImageTest.DELTA1_RECORDS);
+        RecordTestUtils.replayAll(DELTA1, FeaturesImageTest.DELTA1_RECORDS);
+        RecordTestUtils.replayAll(DELTA1, ClusterImageTest.DELTA1_RECORDS);
+        RecordTestUtils.replayAll(DELTA1, TopicsImageTest.DELTA1_RECORDS);
+        RecordTestUtils.replayAll(DELTA1, ConfigurationsImageTest.DELTA1_RECORDS);
+        RecordTestUtils.replayAll(DELTA1, ClientQuotasImageTest.DELTA1_RECORDS);
+        RecordTestUtils.replayAll(DELTA1, ProducerIdsImageTest.DELTA1_RECORDS);
+        RecordTestUtils.replayAll(DELTA1, AclsImageTest.DELTA1_RECORDS);
 
         IMAGE2 = new MetadataImage(
-            new OffsetAndEpoch(200, 5),
+            IMAGE2_PROVENANCE,
             FeaturesImageTest.IMAGE2,
             ClusterImageTest.IMAGE2,
             TopicsImageTest.IMAGE2,
@@ -76,7 +84,7 @@ public class MetadataImageTest {
 
     @Test
     public void testApplyDelta1() throws Throwable {
-        assertEquals(IMAGE2, DELTA1.apply());
+        assertEquals(IMAGE2, DELTA1.apply(ImageProvenance.EMPTY));
     }
 
     @Test
@@ -85,12 +93,12 @@ public class MetadataImageTest {
     }
 
     private void testToImageAndBack(MetadataImage image) throws Throwable {
-        MockSnapshotConsumer writer = new MockSnapshotConsumer();
-        image.write(writer);
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        RecordListWriter writer = new RecordListWriter(records);
+        image.write(writer, new ImageWriterOptions.Builder().build());
         MetadataDelta delta = new MetadataDelta(MetadataImage.EMPTY);
-        RecordTestUtils.replayAllBatches(
-            delta, image.highestOffsetAndEpoch().offset, image.highestOffsetAndEpoch().epoch, writer.batches());
-        MetadataImage nextImage = delta.apply();
+        RecordTestUtils.replayAll(delta, records);
+        MetadataImage nextImage = delta.apply(IMAGE2_PROVENANCE);
         assertEquals(image, nextImage);
     }
 }

@@ -18,6 +18,8 @@
 package org.apache.kafka.image;
 
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
+import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
@@ -86,10 +88,11 @@ public class FeaturesImageTest {
     }
 
     private void testToImageAndBack(FeaturesImage image) throws Throwable {
-        MockSnapshotConsumer writer = new MockSnapshotConsumer();
-        image.write(writer);
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        RecordListWriter writer = new RecordListWriter(records);
+        image.write(writer, new ImageWriterOptions.Builder().build());
         FeaturesDelta delta = new FeaturesDelta(FeaturesImage.EMPTY);
-        RecordTestUtils.replayAllBatches(delta, writer.batches());
+        RecordTestUtils.replayAll(delta, records);
         FeaturesImage nextImage = delta.apply();
         assertEquals(image, nextImage);
     }

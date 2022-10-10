@@ -18,10 +18,10 @@ package kafka.server.metadata
 
 import java.util
 import java.util.concurrent.{CompletableFuture, TimeUnit}
-import java.util.function.Consumer
 import kafka.metrics.KafkaMetricsGroup
-import org.apache.kafka.image.{MetadataDelta, MetadataImage}
+import org.apache.kafka.image.{ImageProvenance, MetadataDelta, MetadataImage}
 import org.apache.kafka.common.utils.{LogContext, Time}
+import org.apache.kafka.image.writer.{ImageWriterOptions, RecordListWriter}
 import org.apache.kafka.metadata.util.SnapshotReason
 import org.apache.kafka.queue.{EventQueue, KafkaEventQueue}
 import org.apache.kafka.raft.{Batch, BatchReader, LeaderAndEpoch, RaftClient}
@@ -78,6 +78,8 @@ class BrokerMetadataListener(
    * The highest metadata offset that we've seen.  Written only from the event queue thread.
    */
   @volatile var _highestOffset = -1L
+
+  var _highestEpoch = -1
 
   /**
    * The highest metadata log time that we've seen. Written only from the event queue thread.
@@ -179,8 +181,13 @@ class BrokerMetadataListener(
     snapshotter.foreach { snapshotter =>
       if (metadataFaultOccurred.get()) {
         trace("Not starting metadata snapshot since we previously had an error")
-      } else if (snapshotter.maybeStartSnapshot(_highestTimestamp, _delta.apply(), reason)) {
-        _bytesSinceLastSnapshot = 0L
+      } else {
+        val newProvenance = new ImageProvenance("BrokerMetadataListener",
+          _highestOffset, _highestEpoch, _highestTimestamp)
+        val newImage = _delta.apply(newProvenance)
+        if (snapshotter.maybeStartSnapshot(newImage, reason)) {
+          _bytesSinceLastSnapshot = 0L
+        }
       }
     }
   }
@@ -257,7 +264,6 @@ class BrokerMetadataListener(
     while (iterator.hasNext) {
       val batch = iterator.next()
 
-      val epoch = lastCommittedEpoch.getOrElse(batch.epoch())
       _highestTimestamp = lastAppendTimestamp.getOrElse(batch.appendTimestamp())
 
       var index = 0
@@ -267,8 +273,9 @@ class BrokerMetadataListener(
             s" ${messageAndVersion.message}")
         }
         _highestOffset = lastCommittedOffset.getOrElse(batch.baseOffset() + index)
+        _highestEpoch = lastCommittedEpoch.getOrElse(batch.epoch())
         try {
-          delta.replay(highestMetadataOffset, epoch, messageAndVersion.message())
+          delta.replay(messageAndVersion.message())
         } catch {
           case e: Throwable => snapshotName match {
             case None => metadataLoadingFaultHandler.handleFault(
@@ -340,7 +347,11 @@ class BrokerMetadataListener(
   private def publish(publisher: MetadataPublisher): Unit = {
     val delta = _delta
     try {
-      _image = _delta.apply()
+      val provenance = new ImageProvenance("BrokerMetadataListener",
+        _highestOffset,
+        _highestEpoch,
+        _highestTimestamp)
+      _image = _delta.apply(provenance)
     } catch {
       case t: Throwable =>
         // If we cannot apply the delta, this publish event will throw and we will not publish a new image.
@@ -350,7 +361,7 @@ class BrokerMetadataListener(
 
     _delta = new MetadataDelta(_image)
     if (isDebugEnabled) {
-      debug(s"Publishing new metadata delta $delta at offset ${_image.highestOffsetAndEpoch().offset}.")
+      debug(s"Publishing new metadata delta $delta at offset ${_image.provenance().highestOffset()}.")
     }
 
     // This publish call is done with its own try-catch and fault handler
@@ -390,14 +401,18 @@ class BrokerMetadataListener(
   }
 
   class GetImageRecordsEvent(future: CompletableFuture[util.List[ApiMessageAndVersion]])
-      extends EventQueue.FailureLoggingEvent(log) with Consumer[util.List[ApiMessageAndVersion]] {
-    val records = new util.ArrayList[ApiMessageAndVersion]()
-    override def accept(batch: util.List[ApiMessageAndVersion]): Unit = {
-      records.addAll(batch)
-    }
-
+      extends EventQueue.FailureLoggingEvent(log) {
     override def run(): Unit = {
-      _image.write(this)
+      val records = new util.ArrayList[ApiMessageAndVersion]
+      val writer = new RecordListWriter(records)
+      val options = new ImageWriterOptions.Builder().
+        setMetadataVersion(_image.features().metadataVersion()).
+        build()
+      try {
+        _image.write(writer, options)
+      } finally {
+        writer.close()
+      }
       future.complete(records)
     }
   }
