@@ -26,6 +26,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.utils.LogContext;
@@ -269,5 +270,91 @@ public class KafkaEventQueueTest {
         assertTrue(queue.isEmpty());
         queue.close();
         assertTrue(queue.isEmpty());
+    }
+
+    /**
+     * Test that we continue handling events after Event#handleException itself throws an exception.
+     */
+    @Test
+    public void testHandleExceptionThrowingAnException() throws Exception {
+        KafkaEventQueue queue = new KafkaEventQueue(Time.SYSTEM, new LogContext(),
+                "testHandleExceptionThrowingAnException");
+        CompletableFuture<Void> initialFuture = new CompletableFuture<>();
+        queue.append(() -> initialFuture.get());
+        AtomicInteger counter = new AtomicInteger(0);
+        queue.append(new EventQueue.Event() {
+            @Override
+            public void run() throws Exception {
+                counter.incrementAndGet();
+                throw new IllegalStateException("First exception");
+            }
+
+            @Override
+            public void handleException(Throwable e) {
+                if (e instanceof IllegalStateException) {
+                    counter.incrementAndGet();
+                    throw new RuntimeException("Second exception");
+                }
+            }
+        });
+        queue.append(() -> counter.incrementAndGet());
+        assertEquals(3, queue.size());
+        initialFuture.complete(null);
+        TestUtils.waitForCondition(() -> counter.get() == 3,
+                "Failed to see all events execute as planned.");
+        queue.close();
+    }
+
+    private static class InterruptableEvent implements EventQueue.Event {
+        private final CompletableFuture<Void> runFuture;
+        private final CompletableFuture<Thread> queueThread;
+        private final AtomicInteger numCallsToRun;
+        private final AtomicInteger numInterruptedExceptionsSeen;
+
+        InterruptableEvent(
+            CompletableFuture<Thread> queueThread,
+            AtomicInteger numCallsToRun,
+            AtomicInteger numInterruptedExceptionsSeen
+        ) {
+            this.runFuture = new CompletableFuture<>();
+            this.queueThread = queueThread;
+            this.numCallsToRun = numCallsToRun;
+            this.numInterruptedExceptionsSeen = numInterruptedExceptionsSeen;
+        }
+
+        @Override
+        public void run() throws Exception {
+            numCallsToRun.incrementAndGet();
+            queueThread.complete(Thread.currentThread());
+            runFuture.get();
+        }
+
+        @Override
+        public void handleException(Throwable e) {
+            System.out.println("handleException");
+            e.printStackTrace();
+            if (e instanceof InterruptedException) {
+                numInterruptedExceptionsSeen.incrementAndGet();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    @Test
+    public void testInterruptedExceptionHandling() throws Exception {
+        KafkaEventQueue queue = new KafkaEventQueue(Time.SYSTEM, new LogContext(),
+                "testInterruptedExceptionHandling");
+        CompletableFuture<Thread> queueThread = new CompletableFuture<>();
+        AtomicInteger numCallsToRun = new AtomicInteger(0);
+        AtomicInteger numInterruptedExceptionsSeen = new AtomicInteger(0);
+        queue.append(new InterruptableEvent(queueThread, numCallsToRun, numInterruptedExceptionsSeen));
+        queue.append(new InterruptableEvent(queueThread, numCallsToRun, numInterruptedExceptionsSeen));
+        queue.append(new InterruptableEvent(queueThread, numCallsToRun, numInterruptedExceptionsSeen));
+        queue.append(new InterruptableEvent(queueThread, numCallsToRun, numInterruptedExceptionsSeen));
+        queueThread.get().interrupt();
+        TestUtils.retryOnExceptionWithTimeout(30000,
+                () -> assertEquals(1, numCallsToRun.get()));
+        TestUtils.retryOnExceptionWithTimeout(30000,
+                () -> assertEquals(4, numInterruptedExceptionsSeen.get()));
     }
 }

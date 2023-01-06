@@ -21,10 +21,45 @@ import org.slf4j.Logger;
 
 import java.util.OptionalLong;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 
+/**
+ * The EventQueue executes a series of events in its own thread.
+ *
+ * There are two kinds of events: those that are queued to be run as soon as possible, and those
+ * that are scheduled for the future.
+ *
+ * Events can have deadlines, which are times at which they are completed with a TimeoutException.
+ * This is useful for shedding work in the case where the event queue gets too long. Currently,
+ * deferred events cannot have deadlines.
+ *
+ * There are two reasons why Event.handleException might be called. One reason is because the event
+ * queue could not run the event because of an exception (like a timeout). Another reason is if the
+ * queue ran the event but the run function threw an exception.
+ *
+ * The default Event.handleException function does not do anything. However, this behavior can be
+ * overridden. One simple way of handling exceptions is to log them by subclassing
+ * FailureLoggingEvent.
+ *
+ * The event queue has a shutting down state. When in this state, no new events can be added.
+ * Existing events will be run -- unless they are deferred, in which case they will be timed out.
+ * At the end of the shutdown process, the cleanup event will always be run.
+ *
+ * The event queue also has an interrupted state. It enters this state when the thread is sent an
+ * InterruptedException or when the thread remains in interrupted state after running a user-supplied
+ * event. When in this state, no new events can be added, and all existing events will receive an
+ * InterruptedException. However, the queue will not shut down until beginShutdown is called.
+ * The cleanup event will be run as usual (it will not receive an InterruptedException unless an
+ * external thread sends one).
+ *
+ * You can always rely on the cleanup event being run
+ *
+ * beginShutdown is asynchronous and does not clear up the event queue thread. It is necessary to
+ * call close() to clean up that thread. The reason beginShutdown is separate from close is that
+ * this allows the caller thread that is cleaning up to perform some other actions while waiting
+ * for the queue to finish shutting down.
+ */
 public interface EventQueue extends AutoCloseable {
     interface Event {
         /**
@@ -211,24 +246,12 @@ public interface EventQueue extends AutoCloseable {
 
     /**
      * Asynchronously shut down the event queue with no unnecessary delay.
-     * @see #beginShutdown(String, Event, long, TimeUnit)
+     * @see #beginShutdown(String, Event)
      *
      * @param source                The source of the shutdown.
      */
     default void beginShutdown(String source) {
         beginShutdown(source, new VoidEvent());
-    }
-
-    /**
-     * Asynchronously shut down the event queue with no unnecessary delay.
-     *
-     * @param source        The source of the shutdown.
-     * @param cleanupEvent  The mandatory event to invoke after all other events have
-     *                      been processed.
-     * @see #beginShutdown(String, Event, long, TimeUnit)
-     */
-    default void beginShutdown(String source, Event cleanupEvent) {
-        beginShutdown(source, cleanupEvent, 0, TimeUnit.SECONDS);
     }
 
     /**
@@ -240,13 +263,8 @@ public interface EventQueue extends AutoCloseable {
      * @param source        The source of the shutdown.
      * @param cleanupEvent  The mandatory event to invoke after all other events have
      *                      been processed.
-     * @param timeSpan      The amount of time to use for the timeout.
-     *                      Once the timeout elapses, any remaining queued
-     *                      events will get a
-     *                      {@link org.apache.kafka.common.errors.TimeoutException}.
-     * @param timeUnit      The time unit to use for the timeout.
      */
-    void beginShutdown(String source, Event cleanupEvent, long timeSpan, TimeUnit timeUnit);
+    void beginShutdown(String source, Event cleanupEvent);
 
     /**
      * @return The number of pending and running events. If this is 0, there is no running event and
