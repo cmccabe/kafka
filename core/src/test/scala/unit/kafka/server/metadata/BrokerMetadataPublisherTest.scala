@@ -42,6 +42,7 @@ import org.mockito.Mockito.doThrow
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
 
+import java.util.concurrent.TimeUnit
 import scala.jdk.CollectionConverters._
 
 class BrokerMetadataPublisherTest {
@@ -247,7 +248,8 @@ class BrokerMetadataPublisherTest {
       }
       val publisher = Mockito.spy(broker.metadataPublisher)
       doThrow(new RuntimeException("injected failure")).when(publisher).updateCoordinator(any(), any(), any(), any(), any())
-      broker.metadataListener.alterPublisher(publisher).get()
+      broker.sharedServer.loader.removeAndClosePublisher(broker.metadataPublisher).get(1, TimeUnit.MINUTES)
+      broker.sharedServer.loader.installPublishers(List(publisher).asJava).get(1, TimeUnit.MINUTES)
       val admin = Admin.create(cluster.clientProperties())
       try {
         admin.createTopics(singletonList(new NewTopic("foo", 1, 1.toShort))).all().get()
