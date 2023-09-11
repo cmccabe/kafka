@@ -26,12 +26,13 @@ import java.util.function.Consumer
 import kafka.network.RequestChannel
 import kafka.raft.RaftManager
 import kafka.server.QuotaFactory.QuotaManagers
+import kafka.server.metadata.KRaftMetadataCache
 import kafka.utils.Logging
 import org.apache.kafka.clients.admin.{AlterConfigOp, EndpointType}
 import org.apache.kafka.common.Uuid.ZERO_UUID
 import org.apache.kafka.common.acl.AclOperation.{ALTER, ALTER_CONFIGS, CLUSTER_ACTION, CREATE, CREATE_TOKENS, DELETE, DESCRIBE, DESCRIBE_CONFIGS}
 import org.apache.kafka.common.config.ConfigResource
-import org.apache.kafka.common.errors.{ApiException, ClusterAuthorizationException, InvalidRequestException, TopicDeletionDisabledException}
+import org.apache.kafka.common.errors.{ApiException, ClusterAuthorizationException, InvalidRequestException, TopicDeletionDisabledException, UnsupportedVersionException}
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.message.AlterConfigsResponseData.{AlterConfigsResourceResponse => OldAlterConfigsResourceResponse}
@@ -73,11 +74,13 @@ class ControllerApis(
   val config: KafkaConfig,
   val metaProperties: MetaProperties,
   val registrationsPublisher: ControllerRegistrationsPublisher,
-  val apiVersionManager: ApiVersionManager
+  val apiVersionManager: ApiVersionManager,
+  val metadataCache: KRaftMetadataCache
 ) extends ApiRequestHandler with Logging {
 
   this.logIdent = s"[ControllerApis nodeId=${config.nodeId}] "
   val authHelper = new AuthHelper(authorizer)
+  val configHelper = new ConfigHelper(metadataCache, config, metadataCache)
   val requestHelper = new RequestHandlerHelper(requestChannel, quotas, time)
   private val aclApis = new AclApis(authHelper, authorizer, requestHelper, "controller", config)
 
@@ -115,6 +118,7 @@ class ControllerApis(
         case ApiKeys.SASL_AUTHENTICATE => handleSaslAuthenticateRequest(request)
         case ApiKeys.ALLOCATE_PRODUCER_IDS => handleAllocateProducerIdsRequest(request)
         case ApiKeys.CREATE_PARTITIONS => handleCreatePartitions(request)
+        case ApiKeys.DESCRIBE_CONFIGS => handleDescribeConfigsRequest(request)
         case ApiKeys.DESCRIBE_ACLS => aclApis.handleDescribeAcls(request)
         case ApiKeys.CREATE_ACLS => aclApis.handleCreateAcls(request)
         case ApiKeys.DELETE_ACLS => aclApis.handleDeleteAcls(request)
@@ -791,6 +795,13 @@ class ControllerApis(
     }
   }
 
+  def handleDescribeConfigsRequest(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val responseData = configHelper.handleDescribeConfigsRequest(request, authHelper)
+    requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs =>
+      new DescribeConfigsResponse(responseData.setThrottleTimeMs(requestThrottleMs)))
+    CompletableFuture.completedFuture[Unit](())
+  }
+
   def createPartitions(
     context: ControllerRequestContext,
     request: CreatePartitionsRequestData,
@@ -1028,6 +1039,10 @@ class ControllerApis(
   def handleDescribeCluster(request: RequestChannel.Request): CompletableFuture[Unit] = {
     // Unlike on the broker, DESCRIBE_CLUSTER on the controller requires a high level of
     // permissions (ALTER on CLUSTER).
+    if (!apiVersionManager.features.metadataVersion().isControllerRegistrationSupported()) {
+      throw new UnsupportedVersionException("Direct-to-controller communication is not " +
+        "supported with the current MetadataVersion.")
+    }
     authHelper.authorizeClusterOperation(request, ALTER)
     val response = authHelper.computeDescribeClusterResponse(
       request,

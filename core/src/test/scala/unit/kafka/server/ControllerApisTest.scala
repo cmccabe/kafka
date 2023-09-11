@@ -20,6 +20,7 @@ package kafka.server
 import kafka.network.RequestChannel
 import kafka.raft.RaftManager
 import kafka.server.QuotaFactory.QuotaManagers
+import kafka.server.metadata.KRaftMetadataCache
 import kafka.test.MockController
 import kafka.utils.NotNothing
 import org.apache.kafka.clients.admin.AlterConfigOp
@@ -117,6 +118,7 @@ class ControllerApisTest {
   )
   private val replicaQuotaManager: ReplicationQuotaManager = mock(classOf[ReplicationQuotaManager])
   private val raftManager: RaftManager[ApiMessageAndVersion] = mock(classOf[RaftManager[ApiMessageAndVersion]])
+  private val metadataCache: KRaftMetadataCache = MetadataCache.kRaftMetadataCache(0)
 
   private val quotasNeverThrottleControllerMutations = QuotaManagers(
     clientQuotaManager,
@@ -160,7 +162,8 @@ class ControllerApisTest {
         ListenerType.CONTROLLER,
         true,
         false,
-        () => Features.fromKRaftVersion(MetadataVersion.latest()))
+        () => Features.fromKRaftVersion(MetadataVersion.latest())),
+      metadataCache
     )
   }
 
