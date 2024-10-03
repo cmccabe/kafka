@@ -188,7 +188,7 @@ abstract class QuorumTestHarness extends Logging {
   }
 
   def isZkMigrationTest(): Boolean = {
-    TestInfoUtils.isZkMigrationTest(testInfo)
+    false
   }
 
   def isShareGroupTest(): Boolean = {

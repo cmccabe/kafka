@@ -41,15 +41,7 @@ object TestInfoUtils {
         throw new RuntimeException(s"Unknown quorum value")
       }
     } else {
-      false
-    }
-  }
-
-  def isZkMigrationTest(testInfo: TestInfo): Boolean = {
-    if (!isKRaft(testInfo)) {
-      false
-    } else {
-      testInfo.getDisplayName.contains("quorum=zkMigration")
+      true
     }
   }
 
